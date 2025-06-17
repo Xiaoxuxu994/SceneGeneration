@@ -74,7 +74,7 @@ epochs = 600
 log_every = 500
 ckpt_every = 500
 # resume = None
-resume = './exp0417_3D_geometry_vae_releaseV1_ddp/020-VecSetAEV4/epoch579-global_step120500/'
+resume = './exp0417_3D_geometry_vae_releaseV1_ddp/026-VecSetAEV4/epoch579-global_step120500/'
 load = None
 
 lr = 1e-4 

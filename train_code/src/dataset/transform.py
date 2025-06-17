@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from collections.abc import Sequence, Mapping
+import torch.distributed as dist
 
 from src.registry import TRANSFORMS
               
@@ -38,7 +39,9 @@ class GridSample(object):
         scaled_coord -= min_coord
         min_coord = min_coord * np.array(self.grid_size)
         key = self.hash(grid_coord)
-        idx_sort = np.argsort(key)
+        idx_sort = np.argsort(key, kind='merge_sort')
+        # if dist.get_rank() == 0:
+        #     print(idx_sort)
         key_sort = key[idx_sort]
         _, inverse, count = np.unique(key_sort, return_inverse=True, return_counts=True)
         if self.mode == "train":  # train mode
@@ -46,7 +49,10 @@ class GridSample(object):
                 np.cumsum(np.insert(count, 0, 0)[0:-1])
                 + np.random.randint(0, count.max(), count.size) % count
             )
+            
             idx_unique = idx_sort[idx_select]
+            # if dist.get_rank() == 0:
+            #     print(idx_select, count.max(), count.size)
             if "sampled_index" in data_dict:
                 # for ScanNet data efficient, we need to make sure labeled point is sampled.
                 idx_unique = np.unique(

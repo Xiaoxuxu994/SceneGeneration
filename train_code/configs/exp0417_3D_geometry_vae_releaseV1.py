@@ -54,6 +54,7 @@ model = dict(
         output_dim = 1,
         # deterministic = True, # ['Auto' or 'KL'] ## TODO
     ),
+    use_cpu_fps=False
 )
 
 # dataloader

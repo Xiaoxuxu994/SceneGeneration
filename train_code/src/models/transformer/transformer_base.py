@@ -5,6 +5,7 @@ from torch import nn, einsum
 import torch.nn.functional as F
 from einops import rearrange, repeat
 from timm.models.layers import DropPath
+import torch.distributed as dist
 
 try:
     import flash_attn
@@ -134,6 +135,7 @@ class Attention(nn.Module):
                 #     scale_value = self.scale,
                 #     input_layout = "BSH",
                 # )
+                
                 out = torch_npu.npu_fusion_attention(
                     q.bfloat16(),
                     k.bfloat16(),
@@ -141,7 +143,8 @@ class Attention(nn.Module):
                     head_num=h,
                     scale=self.scale,
                     input_layout="BSH"
-                )
+                )[0]
+                # print(out.requires_grad)
             # q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b n h d', h = h), (q, k, v))
             # ## enable flash_attn
             # if attn_dtype == 'fp16':

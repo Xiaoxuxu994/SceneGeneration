@@ -1,6 +1,7 @@
 # %%
 import os
-
+import numpy as np
+import random
 import torch
 import torch_npu
 from torch_npu.contrib import transfer_to_npu
@@ -53,6 +54,11 @@ def main():
     # 1. args & cfg
     # ======================================================
     cfg = parse_configs(training=True)
+    random.seed(1234)
+    np.random.seed(1234)
+    torch.manual_seed(1234)
+    torch.npu.manual_seed(1234)
+    torch.npu.manual_seed_all(1234)
     
     exp_name, exp_dir = create_experiment_workspace(cfg)
     save_training_config(cfg._cfg_dict, exp_dir)
@@ -135,11 +141,13 @@ def main():
         train_dataset,
         batch_size=cfg.batch_size,
         num_workers=cfg.num_workers,
-        shuffle=True,
+        shuffle=False,
         drop_last=True,
         pin_memory=True,
         process_group=get_data_parallel_group(),
     )
+
+    
 
     val_dataloader = prepare_dataloader(
         val_dataset,
@@ -267,13 +275,16 @@ def main():
         ) as pbar:
             for step in pbar:
                 input_dict = next(traindataloader_iter)
+                # if coordinator.is_master():
+                #     import pdb; pdb.set_trace()
+                # else:
+                #     import time; time.sleep(100000)
                 for key in input_dict.keys():
                     if isinstance(input_dict[key], torch.Tensor):
                         input_dict[key] = input_dict[key][0].to(device)
-
+                
                 model.train()
                 outputs = model(input_dict)
-                
 
                 pc_query_label = input_dict['pc_query_label'].unsqueeze(0)
                 output_logit = outputs['logits']

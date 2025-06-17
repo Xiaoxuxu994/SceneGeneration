@@ -2,6 +2,7 @@ import os
 import torch
 from torch.utils.data import Dataset
 from src.dataset.transform import *
+import torch.distributed as dist
  
 class DatasetForScanNetV2(Dataset):
     def __init__(
@@ -82,9 +83,17 @@ class DatasetForScanNetV2(Dataset):
 
                                 
     def prepare_train_data(self, input_dict):
-
+        # if dist.get_rank() == 0:
+        #     print('*******1', input_dict)
         input_dict = self.T_GridSample(input_dict)
+        # if dist.get_rank() == 0:
+        #     print('*******2', input_dict)
         input_dict = self.T_ToTensor(input_dict)
+        # if dist.get_rank() == 0:
+        #     print(input_dict)
+        # if dist.get_rank() == 0:
+        #     print('*******3', input_dict)
+        # exit(-1)
 
         coord = input_dict["coord"]
         grid_coord = input_dict["grid_coord"]

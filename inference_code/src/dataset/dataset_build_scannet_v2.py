@@ -47,7 +47,7 @@ class DatasetForScanNetV2Test(Dataset):
         self.T_ToTensor = ToTensor()
 
     def sample_pc_query(self, points, labels,sample_rate):
-    
+        # 这个函数有三次random打乱。
         points_label_0 = points[labels == 0]
         points_label_1 = points[labels == 1]
 
@@ -66,7 +66,8 @@ class DatasetForScanNetV2Test(Dataset):
         # combine & shuffle
         points_combined = torch.cat((points_label_0_down, points_label_1_down), dim=0)
         labels_combined = torch.cat((labels_label_0_down, labels_label_1_down), dim=0)
-
+        
+        
         indices_combined = torch.randperm(len(points_combined))
         points_combined = points_combined[indices_combined]
         labels_combined = labels_combined[indices_combined]
@@ -101,7 +102,6 @@ class DatasetForScanNetV2Test(Dataset):
             return pc_query, pc_query_label
                         
     def prepare_train_data(self, input_dict):
-        
         # input_dict = self.T_Centershift_before(input_dict)
         if self.normalize_coord:
             input_dict = self.Normalize_coord(input_dict)

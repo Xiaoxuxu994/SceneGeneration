@@ -130,10 +130,10 @@ class VecSetAEV4(nn.Module):
         # idx = fps(pos, batch, ratio=ratio,random_start = self.encoder.training)
         # idx = fps(pos, batch, ratio=ratio)
         # 120000为经验数值。最终版本应不添加此限制。
-        if self.use_cpu_fps and N <= 120000:
-            idx = sample_farthest_points(pc.cpu(), lengths=torch.tensor([N], dtype=torch.long), K=self.num_latent, random_start_point=True).view(-1).to(pc.device)
+        if self.use_cpu_fps and N <= 80000:
+            idx = sample_farthest_points(pc.cpu(), lengths=torch.tensor([N], dtype=torch.long), K=self.num_latent, random_start_point=False).view(-1).to(pc.device)
         else:
-            idx = self.fps_fallback(pos, batch, ratio=ratio)
+            idx = self.fps_fallback(pos, batch, ratio=ratio, random_start=False)
 
         sampled_pc = pos[idx]
         sampled_pc = sampled_pc.view(B, -1, 3)
@@ -207,11 +207,19 @@ class VecSetAEV4(nn.Module):
             ## directly use the pcd encoder feature
             latent =  pc_embeddings
         else:
+            # if dist.get_rank() == 0:
+            #     import pdb; pdb.set_trace()
+            # else:
+            #     import time; time.sleep(1000000)
             idx, sampled_pc = self.pc_fps(input_dict['coord'])
+            # if dist.get_rank() == 0:
+            #     print('After fps ********', idx)
+            
 
             if self.query_encoder_dict.type == 'VecSet':
                sampled_pc_embeddings =  self.point_embed(sampled_pc) # [1,num_latent,512]
-
+            # if dist.get_rank() == 0:
+            #     print('after point embedding********************', pc_embeddings)
             if self.query_encoder_dict.type == 'PointTransformerV3' or 'PointTransformerV3_2':
                 if self.encoder_dict.cls_mode == True:
                     # ptvs enc only
@@ -238,8 +246,13 @@ class VecSetAEV4(nn.Module):
             ## cross attn block
             cross_attn, cross_ff = self.cross_attend_blocks
             # import pdb; pdb.set_trace()
+            
             latent= cross_attn(sampled_pc_embeddings, context = pc_embeddings, mask = None, enable_flash = self.encoder_dict.enable_ca_flash) + sampled_pc_embeddings
+            # if dist.get_rank() == 0:
+            #     print('Latent before FF ********************', latent)
             latent = cross_ff(latent) + latent
+            # if dist.get_rank() == 0:
+            #     print('Latent after FF ******************', latent)
 
 
         if self.enable_seg_head:

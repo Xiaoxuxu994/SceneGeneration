@@ -207,8 +207,6 @@ torch::Tensor farthest_point_sampling_cpu_kdtree(
         for (int64_t k = 1; k < batch_k; ++k) {
             // 使用KD-Tree进行最近邻搜索优化
             std::vector<nanoflann::ResultItem<size_t, float>> ret_matches;  // 使用nanoflann的正确返回类型
-            nanoflann::SearchParameters params;
-            params.sorted = false;
 
             // 查找距离当前点最远的未选择点
             size_t farthest_idx = 0;
@@ -216,7 +214,8 @@ torch::Tensor farthest_point_sampling_cpu_kdtree(
             
             #pragma omp simd reduction(max:max_dist)
             for (int64_t p = 0; p < batch_length; ++p) {
-                if (!selected_points_mask[p] && dists[p] > max_dist) {
+                if (!selected_points_mask[p] &&
+                     dists[p] > max_dist) {
                     max_dist = dists[p];
                     farthest_idx = p;
                 }
@@ -229,7 +228,7 @@ torch::Tensor farthest_point_sampling_cpu_kdtree(
 
             // 使用KD-Tree进行半径搜索优化距离更新
             const float radius = std::sqrt(max_dist);
-            kdtree.radiusSearch(new_point, radius, ret_matches, params);
+            kdtree.radiusSearch(new_point, radius*1.05f, ret_matches, nanoflann::SearchParameters(0.05, false));
 
             #pragma omp simd
             for (size_t i = 0; i < ret_matches.size(); ++i) {
