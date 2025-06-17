@@ -3,7 +3,7 @@ dtype = "fp32"  # fp16, bf16, fp32,
 grad_checkpoint = True
 plugin = "zero2"
 sp_size = 1
-seed = 42
+seed = 1234
 
 # model setting
 model = dict(
@@ -70,11 +70,11 @@ train_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_train2.txt'
 val_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_val.txt'
 
 # scheduler settings
-epochs = 600 
+epochs = 500 
 log_every = 500
 ckpt_every = 500
-# resume = None
-resume = './exp0417_3D_geometry_vae_releaseV1_ddp/026-VecSetAEV4/epoch579-global_step120500/'
+resume = None
+# resume = './exp0417_3D_geometry_vae_releaseV1_ddp/026-VecSetAEV4/epoch579-global_step120500/'
 load = None
 
 lr = 1e-4 

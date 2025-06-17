@@ -141,7 +141,7 @@ def main():
         train_dataset,
         batch_size=cfg.batch_size,
         num_workers=cfg.num_workers,
-        shuffle=False,
+        shuffle=True,
         drop_last=True,
         pin_memory=True,
         process_group=get_data_parallel_group(),

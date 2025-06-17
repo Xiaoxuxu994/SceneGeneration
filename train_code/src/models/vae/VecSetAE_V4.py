@@ -131,9 +131,9 @@ class VecSetAEV4(nn.Module):
         # idx = fps(pos, batch, ratio=ratio)
         # 120000为经验数值。最终版本应不添加此限制。
         if self.use_cpu_fps and N <= 80000:
-            idx = sample_farthest_points(pc.cpu(), lengths=torch.tensor([N], dtype=torch.long), K=self.num_latent, random_start_point=False).view(-1).to(pc.device)
+            idx = sample_farthest_points(pc.cpu(), lengths=torch.tensor([N], dtype=torch.long), K=self.num_latent, random_start_point=True).view(-1).to(pc.device)
         else:
-            idx = self.fps_fallback(pos, batch, ratio=ratio, random_start=False)
+            idx = self.fps_fallback(pos, batch, ratio=ratio, random_start=True)
 
         sampled_pc = pos[idx]
         sampled_pc = sampled_pc.view(B, -1, 3)
