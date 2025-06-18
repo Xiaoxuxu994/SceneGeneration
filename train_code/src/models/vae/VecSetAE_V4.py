@@ -130,7 +130,7 @@ class VecSetAEV4(nn.Module):
         # idx = fps(pos, batch, ratio=ratio,random_start = self.encoder.training)
         # idx = fps(pos, batch, ratio=ratio)
         # 120000为经验数值。最终版本应不添加此限制。
-        if self.use_cpu_fps and N <= 80000:
+        if self.use_cpu_fps and N <= 120000:
             idx = sample_farthest_points(pc.cpu(), lengths=torch.tensor([N], dtype=torch.long), K=self.num_latent, random_start_point=True).view(-1).to(pc.device)
         else:
             idx = self.fps_fallback(pos, batch, ratio=ratio, random_start=True)
@@ -185,8 +185,7 @@ class VecSetAEV4(nn.Module):
         return torch.cat(output_idx, dim=0)
 
     def encode(self, input_dict):
-        
-        ## -- pcd encoder
+    ## -- pcd encoder
         if self.encoder_dict.type == 'PointTransformerV3' or 'PointTransformerV3_2':
             # pcd ptv3 encoder
             fea_enc = self.encoder(input_dict)
@@ -246,10 +245,8 @@ class VecSetAEV4(nn.Module):
             ## cross attn block
             cross_attn, cross_ff = self.cross_attend_blocks
             # import pdb; pdb.set_trace()
-            
+
             latent= cross_attn(sampled_pc_embeddings, context = pc_embeddings, mask = None, enable_flash = self.encoder_dict.enable_ca_flash) + sampled_pc_embeddings
-            # if dist.get_rank() == 0:
-            #     print('Latent before FF ********************', latent)
             latent = cross_ff(latent) + latent
             # if dist.get_rank() == 0:
             #     print('Latent after FF ******************', latent)
@@ -333,6 +330,8 @@ class VecSetAEV4(nn.Module):
                 
                 latent = self.encode(input_dict)
         # print('After encode')
+
+        #     print(latent)
         # pc_query_key = 'pc_query_1.0'
         # query_points = input_dict[pc_query_key].unsqueeze(0)
         query_points = input_dict['pc_query'].unsqueeze(0)

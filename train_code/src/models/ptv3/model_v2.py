@@ -536,10 +536,6 @@ class SerializedAttention(PointModule):
                 # ).reshape(-1, C)
             if self.attn_dtype == 'bf16':
                 import torch_npu
-                # if dist.get_rank() == 0:
-                #     import pdb; pdb.set_trace()
-                # else:
-                #     import time; time.sleep(10000)
                 
                 feat = torch_npu.npu_fusion_attention(
                     q.bfloat16(),

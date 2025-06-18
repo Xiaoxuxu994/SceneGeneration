@@ -54,11 +54,11 @@ def main():
     # 1. args & cfg
     # ======================================================
     cfg = parse_configs(training=True)
-    random.seed(1234)
-    np.random.seed(1234)
-    torch.manual_seed(1234)
-    torch.npu.manual_seed(1234)
-    torch.npu.manual_seed_all(1234)
+    random.seed(cfg.seed)
+    np.random.seed(cfg.seed)
+    torch.manual_seed(cfg.seed)
+    torch.npu.manual_seed(cfg.seed)
+    torch.npu.manual_seed_all(cfg.seed)
     
     exp_name, exp_dir = create_experiment_workspace(cfg)
     save_training_config(cfg._cfg_dict, exp_dir)
@@ -146,14 +146,12 @@ def main():
         pin_memory=True,
         process_group=get_data_parallel_group(),
     )
-
     
-
     val_dataloader = prepare_dataloader(
         val_dataset,
         batch_size=1,#cfg.batch_size,
         num_workers=cfg.num_workers,
-        shuffle=False,
+        shuffle=True,
         drop_last=False,
         pin_memory=True,
         process_group=get_data_parallel_group(),
@@ -200,7 +198,7 @@ def main():
     # model, optimizer, _, train_dataloader, lr_scheduler = booster.boost(
     #     model=model, optimizer=optimizer, lr_scheduler=lr_scheduler, dataloader=train_dataloader
     # )
-    model = DDP(model, device_ids=[device.index],find_unused_parameters=True)
+    model = DDP(model, device_ids=[device.index])
     
     torch.set_default_dtype(torch.float)
     num_steps_per_epoch = len(train_dataloader)
@@ -275,10 +273,6 @@ def main():
         ) as pbar:
             for step in pbar:
                 input_dict = next(traindataloader_iter)
-                # if coordinator.is_master():
-                #     import pdb; pdb.set_trace()
-                # else:
-                #     import time; time.sleep(100000)
                 for key in input_dict.keys():
                     if isinstance(input_dict[key], torch.Tensor):
                         input_dict[key] = input_dict[key][0].to(device)
@@ -288,7 +282,9 @@ def main():
 
                 pc_query_label = input_dict['pc_query_label'].unsqueeze(0)
                 output_logit = outputs['logits']
-
+                # if dist.get_rank() == 0:
+                    # print(output_logit, input_dict)
+                # exit(-1)
                 loss = torch.tensor(0).to(device, dtype)
 
                 loss_occ = cfg.loss_weight_occ * occ_criterion(output_logit, pc_query_label)
@@ -300,6 +296,7 @@ def main():
                 optimizer.zero_grad()
                 # booster.backward(loss=loss, optimizer=optimizer)
                 loss.backward()
+
                 optimizer.step()
 
                 # update scheduler after each iter
