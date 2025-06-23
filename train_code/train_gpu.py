@@ -2,11 +2,11 @@
 import os
 
 import torch
-import torch_npu
-from torch_npu.contrib import transfer_to_npu
-torch._C._jit_set_profiling_mode(False)
 import torch.distributed as dist
 from tqdm import tqdm
+from torch.optim.adamw import AdamW
+import numpy as np
+import random
 
 ## colossalai
 import colossalai
@@ -44,7 +44,7 @@ import gc
 print(os.environ['MASTER_PORT'])
 
 def cleanup_memory():
-    torch.npu.empty_cache()
+    torch.cuda.empty_cache()
     gc.collect() 
 
 def main():
@@ -52,6 +52,11 @@ def main():
     # 1. args & cfg
     # ======================================================
     cfg = parse_configs(training=True)
+    random.seed(1234)
+    np.random.seed(1234)
+    torch.manual_seed(1234)
+    torch.cuda.manual_seed(1234)
+    torch.cuda.manual_seed_all(1234)
     print("====== cfg: ",cfg)
     exp_name, exp_dir = create_experiment_workspace(cfg)
     save_training_config(cfg._cfg_dict, exp_dir)
@@ -61,7 +66,7 @@ def main():
     # ======================================================
     # 2. runtime variables & colossalai launch
     # ======================================================
-    assert torch.npu.is_available(), "Training currently requires at least one GPU."
+    assert torch.cuda.is_available(), "Training currently requires at least one GPU."
     assert cfg.dtype in ["fp32", "fp16", "bf16"], f"Unknown mixed precision {cfg.dtype}"
 
     # 2.1. colossalai init distributed training
@@ -129,11 +134,12 @@ def main():
         train_dataset,
         batch_size=cfg.batch_size,
         num_workers=cfg.num_workers,
-        shuffle=True,
+        shuffle=False,
         drop_last=True,
         pin_memory=True,
         process_group=get_data_parallel_group(),
     )
+    
 
     val_dataloader = prepare_dataloader(
         val_dataset,
@@ -166,8 +172,11 @@ def main():
         load_checkpoint(model, cfg.load, save_as_pt=False, strict=False)  
 
     # 4.4. setup optimizer & lr_scheduler
-    optimizer = HybridAdam(
-        filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr, weight_decay=cfg.weight_decay, adamw_mode=True
+    # optimizer = HybridAdam(
+    #     filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr, weight_decay=cfg.weight_decay, adamw_mode=True
+    # )
+    optimizer = AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr, weight_decay=cfg.weight_decay
     )
     # lr_scheduler = None
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.cos_total_iter, eta_min=cfg.cos_eta_min)
@@ -265,6 +274,9 @@ def main():
 
                 model.train()
                 outputs = model.forward(input_dict)
+                # if dist.get_rank() == 0:
+                #     print(outputs, input_dict)
+                # exit(-1)
 
                 pc_query_label = input_dict['pc_query_label'].unsqueeze(0)
                 output_logit = outputs['logits']
@@ -328,7 +340,7 @@ def main():
                     # del tensor
                     del loss, loss_occ
                     del precision_score, recall_score, f1_score, iou_score
-                    torch.npu.empty_cache()
+                    torch.cuda.empty_cache()
 
                 # Save checkpoint
                 if cfg.ckpt_every > 0 and (global_step) % cfg.ckpt_every == 0:
@@ -414,7 +426,7 @@ def main():
                                 # del tensor
                                 del eval_loss, eval_loss_occ
                                 del eval_precision_score, eval_recall_score, eval_f1_score, eval_iou_score
-                                torch.npu.empty_cache()
+                                torch.cuda.empty_cache()
 
                                 inout_dir = os.path.join(exp_dir, f"epoch{epoch}-global_step{global_step}", "input_output_results/val")
                                 save_inout_pc(inout_dir, input_dict, output_logit)
@@ -429,7 +441,7 @@ def main():
         # the continue epochs are not resumed, so we need to reset the sampler start index and start step
         train_dataloader.sampler.set_start_index(0)
         start_step = 0
-        torch.npu.empty_cache()
+        torch.cuda.empty_cache()
 
 
 

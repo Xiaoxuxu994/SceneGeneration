@@ -5,6 +5,7 @@ from torch import nn, einsum
 import torch.nn.functional as F
 from einops import rearrange, repeat
 from timm.models.layers import DropPath
+import torch.distributed as dist
 
 try:
     import flash_attn
@@ -91,13 +92,15 @@ class Attention(nn.Module):
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0. else nn.Identity()
 
     def forward(self, x, context = None, mask = None, enable_flash = False, attn_dtype='fp16'):
+
+
         h = self.heads
         
-        # q = self.to_q(x)
-        q = linear_manual_nd(x, self.to_q)
+        q = self.to_q(x)
+        # q = linear_manual_nd(x, self.to_q)
         context = default(context, x)
-        # k, v = self.to_kv(context).chunk(2, dim = -1)
-        k, v = linear_manual_nd(context, self.to_kv).chunk(2, dim=-1)
+        k, v = self.to_kv(context).chunk(2, dim = -1)
+        # k, v = linear_manual_nd(context, self.to_kv).chunk(2, dim=-1)
 
         if not enable_flash:
             q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h = h), (q, k, v))
@@ -115,44 +118,45 @@ class Attention(nn.Module):
             out = rearrange(out, '(b h) n d -> b n (h d)', h = h)
         
         else:
-            import torch_npu
-            if attn_dtype == 'fp16':
-                out = torch_npu.npu_prompt_flash_attention(
-                    q.half(),
-                    k.half(),
-                    v.half(),
-                    num_heads = h,
-                    scale_value = self.scale,
-                    input_layout = "BSH",
-                )
-            if attn_dtype == 'bf16':
-                # out = torch_npu.npu_prompt_flash_attention(
-                #     q.bfloat16(),
-                #     k.bfloat16(),
-                #     v.bfloat16(),
-                #     num_heads = h,
-                #     scale_value = self.scale,
-                #     input_layout = "BSH",
-                # )
-                out = torch_npu.npu_fusion_attention(
-                    q.bfloat16(),
-                    k.bfloat16(),
-                    v.bfloat16(),
-                    head_num=h,
-                    scale=self.scale,
-                    input_layout="BSH"
-                )
-            # q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b n h d', h = h), (q, k, v))
-            # ## enable flash_attn
+            # import torch_npu
             # if attn_dtype == 'fp16':
-            #     out = flash_attn.flash_attn_func(q.half(), k.half(), v.half(), dropout_p= self.drop_path_rate, softmax_scale=self.scale, causal=False,
-            #             window_size=(-1, -1), alibi_slopes=None, deterministic=False)  
+            #     out = torch_npu.npu_prompt_flash_attention(
+            #         q.half(),
+            #         k.half(),
+            #         v.half(),
+            #         num_heads = h,
+            #         scale_value = self.scale,
+            #         input_layout = "BSH",
+            #     )
             # if attn_dtype == 'bf16':
-            #     out = flash_attn.flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), dropout_p= self.drop_path_rate, softmax_scale=self.scale, causal=False,
-            #             window_size=(-1, -1), alibi_slopes=None, deterministic=False)  
-            # out = rearrange(out, 'b n h d -> b n (h d)', h = h)
+            #     # out = torch_npu.npu_prompt_flash_attention(
+            #     #     q.bfloat16(),
+            #     #     k.bfloat16(),
+            #     #     v.bfloat16(),
+            #     #     num_heads = h,
+            #     #     scale_value = self.scale,
+            #     #     input_layout = "BSH",
+            #     # )
+            #     out = torch_npu.npu_fusion_attention(
+            #         q.bfloat16(),
+            #         k.bfloat16(),
+            #         v.bfloat16(),
+            #         head_num=h,
+            #         scale=self.scale,
+            #         input_layout="BSH"
+            #     )
+            q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b n h d', h = h), (q, k, v))
+            ## enable flash_attn
+            if attn_dtype == 'fp16':
+                out = flash_attn.flash_attn_func(q.half(), k.half(), v.half(), dropout_p= self.drop_path_rate, softmax_scale=self.scale, causal=False,
+                        window_size=(-1, -1), alibi_slopes=None, deterministic=False)  
+            if attn_dtype == 'bf16':
+                out = flash_attn.flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), dropout_p= self.drop_path_rate, softmax_scale=self.scale, causal=False,
+                        window_size=(-1, -1), alibi_slopes=None, deterministic=False)  
+            out = rearrange(out, 'b n h d -> b n (h d)', h = h)
             out = out.to(q.dtype)
-        return self.drop_path(linear_manual_nd(out, self.to_out))
+        # return self.drop_path(linear_manual_nd(out, self.to_out))
+        return self.drop_path(self.to_out(out))
 
 
 class PointEmbed(nn.Module):

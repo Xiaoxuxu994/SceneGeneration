@@ -64,7 +64,7 @@ max_query_number = 100000
 grid_size = 0.05
 
 # dataset settings
-data_root = '/mnt/nvme3/z00533370/dataset/scannetpp_trainval_v6'
+data_root = '/data0/l00874616/3dgvae_data/scannetpp_trainval_v6/'
 train_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_train2.txt'
 val_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_val.txt'
 
