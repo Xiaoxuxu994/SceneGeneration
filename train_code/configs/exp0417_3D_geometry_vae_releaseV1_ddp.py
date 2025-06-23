@@ -73,8 +73,8 @@ val_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_val.txt'
 epochs = 500 
 log_every = 500
 ckpt_every = 500
-resume = None
-# resume = './exp0417_3D_geometry_vae_releaseV1_ddp/026-VecSetAEV4/epoch579-global_step120500/'
+# resume = None
+resume = './exp0417_3D_geometry_vae_releaseV1_ddp/024-VecSetAEV4/epoch180-global_step75000/'
 load = None
 
 lr = 1e-4 
@@ -94,7 +94,7 @@ eval_metric_list = ['precision','recall','f1','iou']
 occ_threshold = 0.0
 
 # Others
-outputs = "./exp0417_3D_geometry_vae_releaseV1_ddp/"
+outputs = "/mnt/nvme3/ljr/exp0417_3D_geometry_vae_releaseV1_ddp/"
 
 
 

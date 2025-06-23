@@ -155,7 +155,7 @@ class VecSetAEV4(nn.Module):
         # 其实这个不是3D VAE的核心模块，VecSetAE的Transformer Block才是。
 
         # import pdb; pdb.set_trace()
-        if not self.use_cpu_fps:
+        if not self.use_cpu_fps and N < 80000:
             idx = self.fps_fallback(pos, batch, ratio=ratio) ## fps callback torch实现
         else:
             idx = sample_farthest_points(pc.cpu(), lengths=torch.tensor([N], dtype=torch.long), K=self.num_latent).view(-1).to(pc.device)

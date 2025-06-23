@@ -14,7 +14,7 @@ model = dict(
         enc_num_head=(32,),
         enc_patch_size=(1024,),
         enable_cpe_block=False,
-        enable_flash=False,#True,
+        enable_flash=True,#True,
         attn_dtype='bf16',
         enable_ca_flash=False,
         drop_path=0.3,
@@ -30,7 +30,7 @@ model = dict(
         enc_num_head=(32,),
         enc_patch_size=(1024,),
         enable_cpe_block=False,
-        enable_flash=False,#True,
+        enable_flash=True,#True,
         attn_dtype='bf16',
         enable_ca_flash=False,
         shuffle_orders=False,
@@ -69,7 +69,7 @@ occ_threshold = 0.0
 
 # ckpt and output result
 root = '../ckpt/'
-ckpt_name = '/home/ljr/3DGeometryVAE_npu/train_code/exp0417_3D_geometry_vae_releaseV1_ddp/026-VecSetAEV4/epoch579-global_step120500'
-outputs = "./test_result_geometryvae/"
+ckpt_name = '/mnt/nvme3/ljr/exp0417_3D_geometry_vae_releaseV1_ddp/000-VecSetAEV4/epoch484-global_step201000'
+outputs = "./test_result_geometryvae_v2/"
 prefix = "eval_mode"
 

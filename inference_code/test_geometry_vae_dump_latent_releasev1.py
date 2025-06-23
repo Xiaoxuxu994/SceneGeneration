@@ -55,7 +55,7 @@ def main():
     # ======================================================
     # 3. exp output dir
     # ======================================================
-    ckpt_path = os.path.join(cfg.root,cfg.ckpt_name,'ckpt579.pth')
+    ckpt_path = os.path.join(cfg.root,cfg.ckpt_name,'ckpt484.pth')
     exp_name = os.path.join(cfg.outputs, cfg.ckpt_name, cfg.prefix)
     os.makedirs(exp_name, mode = 0o777, exist_ok = True)
     print(f"Saving latent embeddings to: {os.path.abspath(exp_name)}")

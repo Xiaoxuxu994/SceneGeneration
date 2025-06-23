@@ -1,5 +1,9 @@
 
 ** 3DGeometryVAE Train Code NPU 代码 **
+** 2025.06.23 **
+最新npu分支代码验证精度：
+iou: 80.17  precision: 85.47    recall:92.57    f1:0.8870
+
 ** 2025.06.13 **
 新增fps_cpu模块，用cpu算子，基于simd和kd-tree开发的一个适用于小规模fps采样（N<=120k）的算子。安装步骤如下：
 1. 从源代码安装nanoflann:

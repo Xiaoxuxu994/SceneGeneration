@@ -80,10 +80,10 @@ def sample_farthest_points(
 
     with torch.no_grad():
         # pyre-fixme[16]: `pytorch3d_._C` has no attribute `sample_farthest_points`.
-        if P<=30000:
-            idx = fps_cpu.farthest_point_sampling_cpu_small(points, lengths, K, start_idxs)
-        else:
-            idx = fps_cpu.farthest_point_sampling_cpu_large(points, lengths, K, start_idxs)
+        # if P<=30000:
+        idx = fps_cpu.farthest_point_sampling_cpu_small(points, lengths, K, start_idxs)
+        # else:
+        #     idx = fps_cpu.farthest_point_sampling_cpu_large(points, lengths, K, start_idxs)
     # sampled_points = masked_gather(points, idx)ffff
 
     return idx

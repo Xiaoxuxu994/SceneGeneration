@@ -228,7 +228,12 @@ torch::Tensor farthest_point_sampling_cpu_kdtree(
 
             // 使用KD-Tree进行半径搜索优化距离更新
             const float radius = std::sqrt(max_dist);
-            kdtree.radiusSearch(new_point, radius, ret_matches, nanoflann::SearchParameters(0.05, false));
+            kdtree.radiusSearch(
+                new_point, 
+                radius, 
+                ret_matches, 
+                nanoflann::SearchParameters(0.05, false)
+            );
 
             #pragma omp simd
             for (size_t i = 0; i < ret_matches.size(); ++i) {

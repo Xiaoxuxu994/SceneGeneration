@@ -389,20 +389,34 @@ class SerializedAttention(PointModule):
                     actual_seq_lengths_kv = cu_seqlens_list
                 ).reshape(-1, C)
             if self.attn_dtype == 'bf16':
-                feat = torch_npu.npu_prompt_flash_attention(
+                # feat = torch_npu.npu_prompt_flash_attention(
+                #     q.bfloat16(),
+                #     k.bfloat16(),
+                #     v.bfloat16(),
+                #     num_heads = H,
+                #     scale_value = self.scale,
+                #     input_layout = "BSH",
+                #     actual_seq_lengths = cu_seqlens_list,
+                # ).reshape(-1, C)
+                b, s, h = q.shape
+                q = q.reshape(b, s, H, h // H).reshape(-1, H, h//H)
+                k = k.reshape(b, s, H, h // H).reshape(-1, H, h//H)
+                v = v.reshape(b, s, H, h // H).reshape(-1, H, h//H)
+                feat = torch_npu.npu_fusion_attention(
                     q.bfloat16(),
                     k.bfloat16(),
                     v.bfloat16(),
-                    num_heads = H,
-                    scale_value = self.scale,
-                    input_layout = "BSH",
-                    actual_seq_lengths = cu_seqlens_list,
-                    actual_seq_lengths_kv = cu_seqlens_list
-                ).reshape(-1, C)
+                    head_num=H, 
+                    scale=self.scale,
+                    input_layout="TND",
+                    actual_seq_qlen=cu_seqlens[1:].cpu().tolist(),
+                    actual_seq_kvlen=cu_seqlens[1:].cpu().tolist()
+                )[0]
+                feat = feat.reshape(b,s,H, h//H).reshape(b,s,-1).reshape(-1,C)
             feat = feat.to(qkv.dtype)
         feat = feat[inverse]
 
-        # ffn
+        # ffnf
         # feat = self.proj(feat)
         # manually replace
         feat = linear_manual_nd(feat,self.proj)
