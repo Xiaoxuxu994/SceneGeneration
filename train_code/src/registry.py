@@ -3,6 +3,19 @@ from copy import deepcopy
 import torch.nn as nn
 from mmengine.registry import Registry
 
+def build_dataset_kwargs(cfg):
+    kwargs = {}
+    if hasattr(cfg, "vs_res"):
+        kwargs["vs_res"] = cfg.vs_res
+    if hasattr(cfg, "query_sample_rate"):
+        kwargs["query_sample_rate"] = cfg.query_sample_rate
+    if hasattr(cfg, "max_query_number"):
+        kwargs["max_query_number"] = cfg.max_query_number
+    if getattr(cfg, "query_class_balance_sample", False):
+        kwargs["query_class_balance_sample"] = True
+        kwargs["pos_neg_ratio"] = getattr(cfg, "pos_neg_ratio", 0.5)
+        kwargs["max_pos_keep"] = getattr(cfg, "max_pos_keep", 100000)
+    return kwargs
 
 def build_module(module, builder, **kwargs):
     """Build module from config or return the module itself.
