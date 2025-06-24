@@ -122,7 +122,7 @@ class VecSetAEV4CTF(nn.Module):
         self.decoder1 = build_module(self.decoder_dict1, MODELS)
         self.decoder2 = build_module(self.decoder_dict2, MODELS)
         self.decoder3 = build_module(self.decoder_dict3, MODELS)
-        self.decoder4 = build_module(self.decoder_dict3, MODELS)
+        self.decoder4 = build_module(self.decoder_dict4, MODELS)
 
     # def pc_fps(self,pc):
     #     # input point cloud: B x N x 3
