@@ -98,14 +98,25 @@ class VecSetAEV4CTF(nn.Module):
         if use_cpu_fps:
             print('Using fps_cpu kernel...')
 
+        self.mode = 'coarse_to_fine'
+
         ## ptv3 encoder
-        if self.encoder_dict.type == 'PointTransformerV3' or 'PointTransformerV3_2':
-            self.encoder = build_module(self.encoder_dict, MODELS)     
+        if self.encoder_dict.type in ['PointTransformerV3', 'PointTransformerV3_2']:
+            self.encoder = build_module(self.encoder_dict, MODELS) 
+        elif self.encoder_dict.type == "PE":
+            self.encoder = PointEmbed(dim=self.latent_dim)
+        else:
+            raise ValueError(f"Unknown mode: {self.encoder_dict.type}")
+
 
         ## query encoder
-        if self.query_encoder_dict.type == 'PointTransformerV3' or 'PointTransformerV3_2':
+        if self.query_encoder_dict.type in ['PointTransformerV3', 'PointTransformerV3_2']:
             self.query_encoder = build_module(self.query_encoder_dict, MODELS)   
-
+        elif self.query_encoder_dict.type == "PE":
+            self.query_encoder = PointEmbed(dim=self.latent_dim)
+        else:
+            raise ValueError(f"Unknown mode: {self.query_encoder_dict.type}")
+        
         ## encoder cross attention
         if not self.encoder_dict.enable_ca_flash:
             self.cross_attend_blocks = nn.ModuleList([
@@ -119,10 +130,10 @@ class VecSetAEV4CTF(nn.Module):
             ])            
 
         ## decoder
-        self.decoder1 = build_module(self.decoder_dict1, MODELS)
-        self.decoder2 = build_module(self.decoder_dict2, MODELS)
-        self.decoder3 = build_module(self.decoder_dict3, MODELS)
-        self.decoder4 = build_module(self.decoder_dict4, MODELS)
+        self.decoder1 = build_module(self.decoder_dict1, MODELS) if self.decoder_dict1 else None
+        self.decoder2 = build_module(self.decoder_dict2, MODELS) if self.decoder_dict2 else None
+        self.decoder3 = build_module(self.decoder_dict3, MODELS) if self.decoder_dict3 else None
+        self.decoder4 = build_module(self.decoder_dict4, MODELS) if self.decoder_dict4 else None
 
     # def pc_fps(self,pc):
     #     # input point cloud: B x N x 3
@@ -144,6 +155,10 @@ class VecSetAEV4CTF(nn.Module):
     #     sampled_pc = pos[idx]
     #     sampled_pc = sampled_pc.view(B, -1, 3)
     #     return idx, sampled_pc
+
+    def set_mode(self, mode):
+        assert mode in ['gt', 'coarse_to_fine']
+        self.mode = mode
 
     def pc_fps(self,pc):
         # input point cloud: B x N x 3
@@ -250,13 +265,13 @@ class VecSetAEV4CTF(nn.Module):
     def encode(self, input_dict):
         
         ## -- pcd encoder
-        if self.encoder_dict.type == 'PointTransformerV3' or 'PointTransformerV3_2':
+        if self.encoder_dict.type in ['PointTransformerV3', 'PointTransformerV3_2']:
             # pcd ptv3 encoder
             fea_enc = self.encoder(input_dict)
             pc_embeddings = fea_enc['feat'].unsqueeze(0)
         else:
             ## pcd vecset encoder
-            pc_embeddings = self.point_embed(input_dict['coord'].unsqueeze(0))
+            pc_embeddings = self.encoder(input_dict['coord'].unsqueeze(0))
 
         ## -- query encoder
         if self.query_encoder_dict.type == 'None':
@@ -265,10 +280,10 @@ class VecSetAEV4CTF(nn.Module):
         else:
             idx, sampled_pc = self.pc_fps(input_dict['coord'])
 
-            if self.query_encoder_dict.type == 'VecSet':
-               sampled_pc_embeddings =  self.point_embed(sampled_pc) # [1,num_latent,512]
+            if self.query_encoder_dict.type == 'PE':
+               sampled_pc_embeddings =  self.query_encoder(sampled_pc) # [1,num_latent,512]
 
-            if self.query_encoder_dict.type == 'PointTransformerV3' or 'PointTransformerV3_2':
+            if self.query_encoder_dict.type in ['PointTransformerV3', 'PointTransformerV3_2']:
                 if self.encoder_dict.cls_mode == True:
                     # ptvs enc only
                     sample_pc_dict = input_dict.copy()
@@ -298,298 +313,87 @@ class VecSetAEV4CTF(nn.Module):
 
         return latent
 
-    # def _get_level_inputs(self, input_dict, scale, mask=None):
-    #     query_key = f'pc_query_{scale}'
-    #     label_key = f'pc_query_label_fine_prop_{scale}'
-    #     grid_key = f'pc_query_grid_{scale}'
+    def _forward_by_mode(self, input_dict, gt: bool, return_mask=False):
+        latent = self.encode(input_dict)
 
-    #     query = input_dict[query_key]
-    #     label = input_dict[label_key]
-    #     grid = input_dict[grid_key]
+        logit_list, targets_list, mask_list = [], [], [None]
+        prev_latents = []
+        latent_input = latent
 
-    #     if mask is not None:
-    #         query = query[mask]
-    #         label = label[mask]
-    #         grid = grid[mask]
+        decoder_info = [
+            ("decoder1", 16, 32, 'pc_query_label_fine_prop_16'),
+            ("decoder2", 32, 64, 'pc_query_label_fine_prop_32'),
+            ("decoder3", 64, 128, 'pc_query_label_fine_prop_64'),
+            ("decoder4", 128, None, 'pc_query_label_128'),
+        ]
 
-    #     return query, label, grid
+        for i, (decoder_name, res, next_res, label_key) in enumerate(decoder_info):
+            decoder = getattr(self, decoder_name)
+            if decoder is None:
+                continue
 
+            query_key = f'pc_query_{res}'
+            grid_key = f'pc_query_grid_{res}'
+            if mask_list[-1] is not None:
+                query_pts = input_dict[query_key][mask_list[-1]].unsqueeze(0)
+                target = input_dict[label_key][mask_list[-1]]
+                grid = input_dict[grid_key][mask_list[-1]]
+            else:
+                query_pts = input_dict[query_key].unsqueeze(0)
+                target = input_dict[label_key]
+                grid = input_dict[grid_key]
 
-    # def coarse_to_fine_decode(self, latent, input_dict, scale_list, 
-    #                           decoder_list, scale_factor):
-    #     logit_list, targets_list = [], []
-
-    #     prev_mask = None
-    #     prev_grid = None
-
-    #     for i, s in enumerate(scale_list):
-    #         decoder = decoder_list[i]
-
-    #         # 获取当前层数据
-    #         query_pts, target, grid = self._get_level_inputs(input_dict, s, prev_mask)
-
-    #         # Decoder forward
-    #         logit, latent = decoder(latent, query_pts.unsqueeze(0))  # logit: (1, N)
-
-    #         logit_list.append(logit)
-    #         targets_list.append(target)
-
-    #         # coarse prediction + GT union（仅用于训练）
-    #         if self.training:
-    #             pred_label = self.logit2label(logit, 0.5)
-    #             label_c = target.bool() | pred_label
-    #         else:
-    #             label_c = self.logit2label(logit, 0.5)
-
-    #         # 不是最后一层 → 生成 mask for finer resolution
-    #         if i < len(scale_list) - 1:
-    #             fine_s = scale_list[i + 1]
-    #             fine_grid = input_dict[f'pc_query_grid_{fine_s}']
-    #             mask = self.get_fine_voxel_mask_from_coarse_labels(
-    #                 coarse_label=label_c,
-    #                 scale_factor=scale_factor,
-    #                 resolution_fine=fine_s,
-    #                 coarse_grid=grid,
-    #                 fine_grid=fine_grid
-    #             )
-    #             prev_mask = mask
-    #             prev_grid = fine_grid
-
-    #     return logit_list, targets_list
+            # Skip connection: only add previous block
+            if self.use_skip:
+                if len(prev_latents) == 1:
+                    # 第二层：latent + latent_16
+                    latent_input = prev_latents[0] + latent  # latent_16 + encoder latent
+                elif len(prev_latents) >= 2:
+                    # 第三及以上层：latent_n + latent_{n-1}
+                    latent_input = prev_latents[-1] + prev_latents[-2]
+                else:
+                    # 第1层（不跳跃）
+                    latent_input = latent
+            else:
+                latent_input = prev_latents[-1] if prev_latents else latent
 
 
-    # def forward(self, input_dict):
-    #     latent = self.encode(input_dict)
+            logit, latent_out = decoder(latent_input, query_pts)
 
-    #     scale_list = [16, 32, 64, 128]
-    #     decoder_list = [self.decoder1, self.decoder2, self.decoder3, self.decoder3]
-    #     scale_factor = 2
+            # coarse-to-fine label propagation logic
+            if not gt and next_res is not None:
+                label_pred = self.logit2label(logit, 0.5)
+                label_c = target.bool() | label_pred if self.training else label_pred
+            else:
+                label_c = target.bool()
 
-    #     return self.coarse_to_fine_decode(
-    #         latent, input_dict, scale_list, decoder_list, scale_factor
-    #     )
+            logit_list.append(logit.squeeze(-1).squeeze(0))
+            targets_list.append(target)
+            prev_latents.append(latent_out)
 
+            if next_res is not None:
+                fine_grid = input_dict[f'pc_query_grid_{next_res}']
+                mask = self.get_fine_voxel_mask_from_coarse_labels(
+                    coarse_label=label_c,
+                    scale_factor=2,
+                    resolution_fine=next_res,
+                    coarse_grid=grid,
+                    fine_grid=fine_grid
+                )
+                mask_list.append(mask)
+
+        return (logit_list, targets_list, mask_list) if return_mask else (logit_list, targets_list)
+
+    def forward_ctf(self, input_dict, return_mask=False):
+        return self._forward_by_mode(input_dict, gt=False, return_mask=return_mask)
+
+    def forward_gt(self, input_dict, return_mask=False):
+        return self._forward_by_mode(input_dict, gt=True, return_mask=return_mask)
 
     def forward(self, input_dict,return_mask=False):
-        # encoder
-        latent = self.encode(input_dict)
-
-        ### Coarse to fine decoder
-        logit_list,targets_list,mask_list= [],[],[None,]
-        # ------------------------------------------------------------------------
-        ## -- vs16 --
-        query_points_16 = input_dict['pc_query_16'].unsqueeze(0)
-        # print('query_points_16: ',query_points_16.shape)
-        target_16 = input_dict['pc_query_label_fine_prop_16']
-        grid_16 = input_dict['pc_query_grid_16']
-
-        logit_16,latent_16 = self.decoder1(latent,query_points_16)
-        label_16 = self.logit2label(logit_16,0.5)
-        if self.training:
-            label_c = target_16.bool() | label_16
+        if self.mode == 'gt':
+            return self.forward_gt(input_dict,return_mask=return_mask)
+        elif self.mode == 'coarse_to_fine':
+            return self.forward_ctf(input_dict,return_mask=return_mask)
         else:
-            label_c = label_16
-
-        #- mask for next level
-        mask = self.get_fine_voxel_mask_from_coarse_labels(
-            coarse_label=label_c,
-            scale_factor=2,
-            resolution_fine=32,
-            coarse_grid=grid_16,
-            fine_grid=input_dict['pc_query_grid_32']
-        )
-        #- current pred-gt pair
-        logit_list.append(logit_16.squeeze(-1).squeeze(0))
-        targets_list.append(target_16)
-        mask_list.append(mask)
-        # ------------------------------------------------------------------------
-        ## -- vs32 --
-        query_points_32 = input_dict['pc_query_32'][mask].unsqueeze(0)
-        # print('query_points_32: ',query_points_32.shape)
-        target_32 = input_dict['pc_query_label_fine_prop_32'][mask]
-        grid_32 = input_dict['pc_query_grid_32'][mask]
-
-        # 控制 skip connection 的输入
-        latent_input = latent + latent_16 if self.use_skip else latent_16
-        
-        logit_32,latent_32 = self.decoder2(latent_input,query_points_32)
-        label_32 = self.logit2label(logit_32,0.5)
-        if self.training:
-            label_c = target_32.bool() | label_32
-        else:
-            label_c = label_32
-
-        #- mask for next level
-        mask = self.get_fine_voxel_mask_from_coarse_labels(
-            coarse_label=label_c,
-            scale_factor=2,
-            resolution_fine=64,
-            coarse_grid=grid_32,
-            fine_grid=input_dict['pc_query_grid_64']
-        )
-        #- current pred-gt pair
-        logit_list.append(logit_32.squeeze(-1).squeeze(0))
-        targets_list.append(target_32)
-        mask_list.append(mask)
-        # ------------------------------------------------------------------------
-
-        # ------------------------------------------------------------------------
-        ## -- vs64 --
-        query_points_64 = input_dict['pc_query_64'][mask].unsqueeze(0)
-        # print('query_points_64: ',query_points_64.shape)
-        target_64 = input_dict['pc_query_label_fine_prop_64'][mask]
-        grid_64 = input_dict['pc_query_grid_64'][mask]
-
-        latent_input = latent_16 + latent_32 if self.use_skip else latent_32
-        logit_64,latent_64 = self.decoder3(latent_input,query_points_64)
-        label_64 = self.logit2label(logit_64,0.5)
-        
-        if self.training:
-            label_c = target_64.bool() | label_64
-        else:
-            label_c = label_64
-
-        #- mask for next level
-        mask = self.get_fine_voxel_mask_from_coarse_labels(
-            coarse_label=label_c,
-            scale_factor=2,
-            resolution_fine=128,
-            coarse_grid=grid_64,
-            fine_grid=input_dict['pc_query_grid_128']
-        )
-        #- current pred-gt pair
-        logit_list.append(logit_64.squeeze(-1).squeeze(0))
-        targets_list.append(target_64)
-        mask_list.append(mask)
-        # ------------------------------------------------------------------------
-        # ------------------------------------------------------------------------
-        ## -- vs128 --
-        query_points_128 = input_dict['pc_query_128'][mask].unsqueeze(0)
-        # print('query_points_128: ',query_points_128.shape)
-        target_128 = input_dict['pc_query_label_128'][mask]
-        latent_input = latent_32 + latent_64 if self.use_skip else latent_64
-
-        logit_128,latent_128 = self.decoder4(latent_input,query_points_128)
-        #- current pred-gt pair
-        logit_list.append(logit_128.squeeze(-1).squeeze(0))
-        targets_list.append(target_128)
-        mask_list.append(mask)
-        # ------------------------------------------------------------------------       
-        if return_mask:
-            return logit_list,targets_list,mask_list
-        else:
-            return logit_list,targets_list
-    
-    def forward_gt(self, input_dict, return_mask=False):
-        # encoder
-        latent = self.encode(input_dict)
-
-        ### Coarse to fine decoder
-        logit_list,targets_list,mask_list= [],[],[None,]
-        # ------------------------------------------------------------------------
-        ## -- vs16 --
-        query_points_16 = input_dict['pc_query_16'].unsqueeze(0)
-        # print('query_points_16: ',query_points_16.shape)
-        target_16 = input_dict['pc_query_label_fine_prop_16']
-        grid_16 = input_dict['pc_query_grid_16']
-
-        logit_16,latent_16 = self.decoder1(latent,query_points_16)
-        label_16 = self.logit2label(logit_16,0.5)
-        # if self.training:
-        #     label_c = target_16.bool() #| label_16
-        # else:
-        #     label_c = label_16
-        label_c = target_16.bool()
-
-        #- mask for next level
-        mask = self.get_fine_voxel_mask_from_coarse_labels(
-            coarse_label=label_c,
-            scale_factor=2,
-            resolution_fine=32,
-            coarse_grid=grid_16,
-            fine_grid=input_dict['pc_query_grid_32']
-        )
-        #- current pred-gt pair
-        logit_list.append(logit_16.squeeze(-1).squeeze(0))
-        targets_list.append(target_16)
-        mask_list.append(mask)
-        # ------------------------------------------------------------------------
-        ## -- vs32 --
-        query_points_32 = input_dict['pc_query_32'][mask].unsqueeze(0)
-        # print('query_points_32: ',query_points_32.shape)
-        target_32 = input_dict['pc_query_label_fine_prop_32'][mask]
-        grid_32 = input_dict['pc_query_grid_32'][mask]
-
-        # 控制 skip connection 的输入
-        latent_input = latent + latent_16 if self.use_skip else latent_16
-        
-        logit_32,latent_32 = self.decoder2(latent_input,query_points_32)
-        label_32 = self.logit2label(logit_32,0.5)
-        # if self.training:
-        #     label_c = target_32.bool() #| label_32
-        # else:
-        #     label_c = label_32
-        label_c = target_32.bool()
-        # print('level32: ',label_c.sum())
-        #- mask for next level
-        mask = self.get_fine_voxel_mask_from_coarse_labels(
-            coarse_label=label_c,
-            scale_factor=2,
-            resolution_fine=64,
-            coarse_grid=grid_32,
-            fine_grid=input_dict['pc_query_grid_64']
-        )
-        #- current pred-gt pair
-        logit_list.append(logit_32.squeeze(-1).squeeze(0))
-        targets_list.append(target_32)
-        mask_list.append(mask)
-        # ------------------------------------------------------------------------
-
-        # ------------------------------------------------------------------------
-        ## -- vs64 --
-        query_points_64 = input_dict['pc_query_64'][mask].unsqueeze(0)
-        # print('query_points_64: ',query_points_64.shape)
-        target_64 = input_dict['pc_query_label_fine_prop_64'][mask]
-        grid_64 = input_dict['pc_query_grid_64'][mask]
-
-        latent_input = latent_16 + latent_32 if self.use_skip else latent_32
-        logit_64,latent_64 = self.decoder3(latent_input,query_points_64)
-        label_64 = self.logit2label(logit_64,0.5)
-        
-        # if self.training:
-        #     label_c = target_64.bool() #| label_64
-        # else:
-        #     label_c = label_64
-        label_c = target_64.bool()
-        # print('level64: ',label_c.sum())
-        #- mask for next level
-        mask = self.get_fine_voxel_mask_from_coarse_labels(
-            coarse_label=label_c,
-            scale_factor=2,
-            resolution_fine=128,
-            coarse_grid=grid_64,
-            fine_grid=input_dict['pc_query_grid_128']
-        )
-        #- current pred-gt pair
-        logit_list.append(logit_64.squeeze(-1).squeeze(0))
-        targets_list.append(target_64)
-        mask_list.append(mask)
-        # ------------------------------------------------------------------------
-        # ------------------------------------------------------------------------
-        ## -- vs128 --
-        query_points_128 = input_dict['pc_query_128'][mask].unsqueeze(0)
-        # print('query_points_128: ',query_points_128.shape)
-        target_128 = input_dict['pc_query_label_128'][mask]
-        
-        latent_input = latent_32 + latent_64 if self.use_skip else latent_64
-
-        logit_128,latent_128 = self.decoder4(latent_input,query_points_128)
-        #- current pred-gt pair
-        logit_list.append(logit_128.squeeze(-1).squeeze(0))
-        targets_list.append(target_128)
-        # ------------------------------------------------------------------------       
-        if return_mask:
-            return logit_list,targets_list,mask_list
-        else:
-            return logit_list,targets_list
-    
+            raise ValueError(f"Unknown mode: {self.mode}")

@@ -13,8 +13,7 @@ from opensora_local.utils.config_utils import parse_configs
 ## src code
 from src.registry import MODELS, build_module,build_dataset_kwargs
 from src.dataset.dataset_build_scannet_v6 import DatasetForScanNetV6
-# from src.utils.misc import save_inout_pc_input,save_inout_pc_ctf
-## TODO: got the save code or re-write
+from src.utils.misc import save_inout_pc_input,save_inout_pc_ctf
 from src.utils.metric import occ_eval_metric_all,init_running_metrics
 
 def log_metrics(metrics, step_count):
@@ -118,7 +117,7 @@ def main():
         sub_folder = input_dict['scene_id'][0]
         inout_dir = os.path.join(exp_name, sub_folder)
         os.makedirs(inout_dir, exist_ok=True)
-        # save_inout_pc_input(inout_dir, input_dict)
+        save_inout_pc_input(inout_dir, input_dict)
 
         result_txt_path = os.path.join(inout_dir, 'result.txt')
         # ======== 计算 OCC 指标 =========
@@ -138,7 +137,7 @@ def main():
                 if scale != vs_c:
                     logit = fill_missing_as_negative(logit, mask, scale*scale*scale)
                 
-                # save_inout_pc_ctf(inout_dir, input_dict, logit, mask, scale, occ_threshold=cfg.occ_threshold)
+                save_inout_pc_ctf(inout_dir, input_dict, logit, mask, scale, occ_threshold=cfg.occ_threshold)
                 
                 if scale == vs_f:
                     metrics = occ_eval_metric_all(logit, input_dict[f'pc_query_label_{scale}'], occ_threshold=cfg.occ_threshold)
