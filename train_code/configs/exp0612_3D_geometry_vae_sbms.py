@@ -12,7 +12,7 @@ model = dict(
     num_latent = 2048,
     latent_dim = 512,
     kl_latent_dim = 64,
-    enable_kl = True,
+    enable_kl = False,
     enable_ca_flash = False, # VAE cross attention
     encoder_dict = dict(
         type = "PointTransformerV3_2",
@@ -79,7 +79,7 @@ val_dataset = dict(
     grid_size = 0.05,
 )   
 # dataloader
-batch_size = 6
+batch_size = 4
 num_workers = 1
 
 # scheduler settings

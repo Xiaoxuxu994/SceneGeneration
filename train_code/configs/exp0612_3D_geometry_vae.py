@@ -12,8 +12,8 @@ model = dict(
     num_latent = 2048,
     latent_dim = 512,
     kl_latent_dim = 128,
-    enable_kl = True,
-    enable_ca_flash = True,  # VAE cross attention
+    enable_kl = False,
+    enable_ca_flash = False,  # VAE cross attention
     encoder_dict = dict(
         type = "PointTransformerV3_2",
         in_channels = 3, # ['coord]
@@ -59,7 +59,7 @@ model = dict(
 
 # dataset
 train_dataset = dict(
-    type="DatasetForScanNetV2",
+    type="DatasetForScanNetV5",
     data_root='../../data/scannetpp_pcd/train',
     fps_root='../../data/scannetpp_pcd/train_fps_fix',
     data_list_name='datacache/scannetpp_trainval/nvs_sem_train.txt',
@@ -83,11 +83,11 @@ batch_size = 1 # currently only support batchsize = 1
 num_workers = 1
 
 # scheduler settings
-epochs = 500
+epochs = 100
 log_every = 1
 eval_every = 2000
 ckpt_every = 13900
-resume = "./output/expr/003-VecSetAEV4/ckpt-epoch267-global_step55599.pth"
+resume = None #"./output/expr/003-VecSetAEV4/ckpt-epoch267-global_step55599.pth"
 load = None
 
 lr = 1e-4 
@@ -109,7 +109,7 @@ eval_metric_list = ['precision','recall','f1','iou']
 occ_threshold = 0.0
 
 # Others
-outputs = "./output/expr"
+outputs = "./test/expr"
 
 
 

@@ -42,6 +42,7 @@ from src.registry import MODELS, DATASETS, build_module
 from src.utils.savepcd import save_inout_pc
 from src.utils.metric import occ_eval_metric
 from src.utils.stat import register_activation_hooks
+from src.dataset.prefetcher import Prefetcher, AsyncSamplerProfiler
 
 def main():
     rank = int(os.environ["LOCAL_RANK"])
@@ -64,7 +65,7 @@ def main():
     assert n_npus >= 2, f"Requires at least 2 NPUs to run, but got {n_npus}"
     dist.init_process_group("hccl")
     torch.npu.set_device(rank)
-    
+
     # random seed set
     
     assert cfg.dtype in ["fp32", "fp16", "bf16"], f"Unknown mixed precision {cfg.dtype}"
@@ -108,6 +109,7 @@ def main():
         pin_memory=True,
         process_group=get_data_parallel_group(),
     )
+    prefetcher_train = Prefetcher(train_dataloader, torch.device(rank), profiler=AsyncSamplerProfiler(), policy=train_dataset.policy)
     logger.info(f"Train Dataset contains {len(train_dataset)} data: ({cfg.train_dataset.data_list_name})")
     logger.info(f"Val Dataset contains {len(val_dataset)} data: ({cfg.val_dataset.data_list_name})")
     total_batch_size = cfg.batch_size * dist.get_world_size() // cfg.sp_size
@@ -185,7 +187,9 @@ def main():
     for epoch in range(start_epoch, cfg.epochs):
         train_dataloader.sampler.set_epoch(epoch)
         traindataloader_iter = iter(train_dataloader)
+        # prefetcher_train.reset(epoch)
         logger.info(f"Beginning epoch {epoch}...")
+        # input_dict = prefetcher_train.next()
 
         with tqdm(
             range(start_step, num_steps_per_epoch),
@@ -232,6 +236,7 @@ def main():
                     # update model parameter with Scaler
                     optimizer.zero_grad()
                     scaler.scale(loss).backward()
+                    next_batch = prefetcher_train.next()
                     scaler.unscale_(optimizer)
                     grad_norm = clip_grad_norm_(model.parameters(), max_norm=cfg.grad_clip)
                     scaler.step(optimizer)
@@ -240,6 +245,7 @@ def main():
                     # update without scaler
                     optimizer.zero_grad()
                     loss.backward()
+                    next_batch = prefetcher_train.next()
                     optimizer.step()
                     grad_norm = 0
 
@@ -322,19 +328,19 @@ def main():
                             initial=start_step_eval,
                         ) as pbar_val:
                         for _ in pbar_val:
-                            input_dict = next(valdataloader_iter)
-                            for key in input_dict.keys():
-                                if isinstance(input_dict[key], torch.Tensor):
-                                    input_dict[key] = input_dict[key][0].to(rank)
+                            input_dict_val = next(valdataloader_iter)
+                            for key in input_dict_val.keys():
+                                if isinstance(input_dict_val[key], torch.Tensor):
+                                    input_dict_val[key] = input_dict_val[key][0].to(rank)
 
                             model.eval()
                             with torch.no_grad():
-                                outputs = model.forward(input_dict)
+                                outputs = model.forward(input_dict_val)
                             
                             # calculate final loss
                             eval_loss = torch.tensor(0).to(rank, dtype)
                             # oss loss
-                            pc_query_label = input_dict['pc_query_label'].unsqueeze(0)
+                            pc_query_label = input_dict_val['pc_query_label'].unsqueeze(0)
                             output_logit = outputs['logits']
                             eval_loss_occ = cfg.loss_weight_occ * occ_criterion(output_logit.detach(), pc_query_label.detach())
                             running_eval_loss_occ += eval_loss_occ.item()
@@ -382,11 +388,12 @@ def main():
                             writer.add_scalar("eval_iou_score", eval_iou_score.mean().item(), global_step)
                             
                             inout_dir = os.path.join(exp_dir, f"epoch{epoch}-global_step{global_step}", "input_output_results/val")
-                            save_inout_pc(inout_dir, input_dict, output_logit)
+                            save_inout_pc(inout_dir, input_dict_val, output_logit)
 
                     val_dataloader.sampler.set_start_index(0)
                     start_step_eval = 0                    
-                #torch.npu.empty_cache()        
+                input_dict = next_batch
+                # torch.npu.empty_cache()   
         # the continue epochs are not resumed, so we need to reset the sampler start index and start step
         # torch.npu.empty_cache()  
         train_dataloader.sampler.set_start_index(0)

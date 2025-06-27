@@ -232,6 +232,10 @@ class VecSetAEV4(nn.Module):
                     sampled_pc = input_dict['coord_fps']
                     idx = input_dict['fps_index']
 
+                if input_dict['data_type'] == 3:
+                    idx = input_dict['fps_index']
+                    sampled_pc = input_dict['coord'][idx]
+                    
                 if self.query_encoder_dict.type == 'VecSet':
                     sampled_pc_embeddings =  self.point_embed(sampled_pc) # [1,num_latent,512]
 

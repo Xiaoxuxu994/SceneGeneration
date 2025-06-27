@@ -1,2 +1,3 @@
 from .transform import *
-from .dataset_build_scannet import DatasetForScanNetV2, DatasetForScanNetV3, DatasetForScanNetV4
+from .dataset_build_scannet import DatasetForScanNetV2, DatasetForScanNetV3, DatasetForScanNetV4, DatasetForScanNetV5
+from .prefetcher import *
