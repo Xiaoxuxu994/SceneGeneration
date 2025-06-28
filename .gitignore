@@ -10,3 +10,4 @@ __pycache__
 .vscode/
 test_result*
 data-dump
+.ipynb_checkpoints
