@@ -150,41 +150,44 @@ def save(
     coordinator=None,
     save_dir='',
 ):
-
-    save_dir = os.path.join(save_dir, f"epoch{epoch}-global_step{global_step}")
-    os.makedirs(os.path.join(save_dir, "model"), exist_ok=True)
-    running_states = {
-        "epoch": epoch,
-        "step": step,
-        "global_step": global_step,
-        "sample_start_index": step * batch_size,
-    }
-    if booster is None:
-        # import pdb; pdb.set_trace()
-        if is_initialized():
-            rank = dist.get_rank()
-            if rank == 0:
+    if save_dir is not None:
+        save_dir = os.path.join(save_dir, f"epoch{epoch}-global_step{global_step}")
+        os.makedirs(os.path.join(save_dir, "model"), exist_ok=True)
+        running_states = {
+            "epoch": epoch,
+            "step": step,
+            "global_step": global_step,
+            "sample_start_index": step * batch_size,
+        }
+        if booster is None:
+            # import pdb; pdb.set_trace()
+            if is_initialized():
+                rank = dist.get_rank()
+                if rank == 0:
+                    torch.save({
+                        "model": model.module.state_dict(),
+                        "optimizer": optimizer.state_dict()
+                    }, os.path.join(save_dir, f'ckpt{epoch}.pth'))
+            else:
                 torch.save({
-                    "model": model.module.state_dict(),
-                    "optimizer": optimizer.state_dict()
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
                 }, os.path.join(save_dir, f'ckpt{epoch}.pth'))
         else:
-            torch.save({
-                "model": model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-            }, os.path.join(save_dir, f'ckpt{epoch}.pth'))
-    else:
-        booster.save_model(model, os.path.join(save_dir, "model"), shard=True)
-        # ema is not boosted, so we don't need to use booster.save_model
+            booster.save_model(model, os.path.join(save_dir, "model"), shard=True)
+            # ema is not boosted, so we don't need to use booster.save_model
 
-        booster.save_optimizer(optimizer, os.path.join(save_dir, "optimizer"), shard=True, size_per_shard=4096)
-        if lr_scheduler is not None:
-            booster.save_lr_scheduler(lr_scheduler, os.path.join(save_dir, "lr_scheduler"))
-    
-    if coordinator is None or coordinator.is_master():
-        save_json(running_states, os.path.join(save_dir, "running_states.json"))
-    if coordinator is not None:
-        dist.barrier()
+            booster.save_optimizer(optimizer, os.path.join(save_dir, "optimizer"), shard=True, size_per_shard=4096)
+            if lr_scheduler is not None:
+                booster.save_lr_scheduler(lr_scheduler, os.path.join(save_dir, "lr_scheduler"))
+        
+        if coordinator is None or coordinator.is_master():
+            save_json(running_states, os.path.join(save_dir, "running_states.json"))
+        if coordinator is not None:
+            dist.barrier()
+    else:
+        if coordinator is not None:
+            dist.barrier()
 
 
 def load(
@@ -211,7 +214,7 @@ def load(
             booster.load_lr_scheduler(lr_scheduler, os.path.join(load_dir, "lr_scheduler"))
         
         dist.barrier()
-    return running_states["epoch"], running_states["step"], running_states["sample_start_index"]
+    return running_states["epoch"], running_states["step"] + 1, running_states["sample_start_index"] + 1
 
 
 def create_logger(logging_dir):

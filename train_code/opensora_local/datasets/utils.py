@@ -11,7 +11,6 @@ from torch.utils.data.distributed import DistributedSampler
 from torchvision.io import write_video
 from torchvision.utils import save_image
 
-
 def save_sample(x, fps=8, save_path=None, normalize=True, value_range=(-1, 1)):
     """
     Args:
@@ -60,7 +59,6 @@ class StatefulDistributedSampler(DistributedSampler):
     def set_start_index(self, start_index: int) -> None:
         self.start_index = start_index
 
-
 def prepare_dataloader(
     dataset,
     batch_size,
@@ -108,6 +106,19 @@ def prepare_dataloader(
         torch.manual_seed(worker_seed)
         random.seed(worker_seed)
 
+    def collate_fn(batch):
+        merge = {}
+        for key in batch[0].keys():
+            if isinstance(batch[0][key], torch.Tensor):
+                merge[key] = torch.cat([data[key] for data in batch], dim = 0).unsqueeze(0)  # [1,sum(s),d] / [1,sum(s)]
+            else:
+                merge[key] = batch[0][key]
+        if 'offset' in merge.keys():
+            merge['offset'] = torch.cumsum(merge['offset'], dim=1).long() # [s1,s1+s2,...,s1+s2+..+sb]
+        if 'pc_query_offset' in merge.keys():
+            merge['pc_query_offset'] = torch.cumsum(merge['pc_query_offset'], dim=1).long() # [r1,r1+r2,...,r1+r2+..+rb]
+        return merge
+
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -116,6 +127,7 @@ def prepare_dataloader(
         drop_last=drop_last,
         pin_memory=pin_memory,
         num_workers=num_workers,
+        collate_fn=collate_fn,
         **_kwargs,
     )
 

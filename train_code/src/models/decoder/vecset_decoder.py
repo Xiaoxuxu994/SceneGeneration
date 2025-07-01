@@ -4,6 +4,7 @@ from src.models.transformer.transformer_base import PointEmbed,PreNorm,Attention
 from timm.models.layers import DropPath
 
 from ...registry import MODELS
+
 @MODELS.register_module()
 class VecSetDecoder(nn.Module):
     def __init__(
@@ -68,7 +69,7 @@ class VecSetDecoder(nn.Module):
     def forward(self, x, queries):
         
         for self_attn, self_ff in self.layers:
-            x = self_attn(x, enable_flash = self.enable_flash,attn_dtype=self.attn_dtype) + x
+            x = self_attn(x, enable_flash = self.enable_flash, attn_dtype=self.attn_dtype) + x
             x = self_ff(x) + x
 
         # cross attend from decoder queries to latents

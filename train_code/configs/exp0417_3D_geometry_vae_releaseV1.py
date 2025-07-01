@@ -54,7 +54,7 @@ model = dict(
         output_dim = 1,
         # deterministic = True, # ['Auto' or 'KL'] ## TODO
     ),
-    use_cpu_fps=False
+    use_cpu_fps=True
 )
 
 # dataloader
@@ -65,12 +65,12 @@ max_query_number = 100000
 grid_size = 0.05
 
 # dataset settings
-data_root = '/mnt/nvme3/z00533370/dataset/scannetpp_trainval_v6'
+data_root = '../../data/scannetpp_pcd'
 train_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_train2.txt'
 val_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_val.txt'
 
 # scheduler settings
-epochs = 500 
+epochs = 1
 log_every = 500
 ckpt_every = 500
 resume = None
@@ -93,7 +93,7 @@ eval_metric_list = ['precision','recall','f1','iou']
 occ_threshold = 0.0
 
 # Others
-outputs = "./exp0417_3D_geometry_vae_releaseV1/"
+outputs = "./test/expr-match"
 
 
 

@@ -11,6 +11,9 @@ model = dict(
     input_pcd_num = 50000,
     num_latent = 2048,
     latent_dim = 512,
+    kl_latent_dim = 64,
+    enable_kl = False,
+    enable_ca_flash=False,
     encoder_dict = dict(
         type = "PointTransformerV3_2",
         in_channels = 3, # ['coord]
@@ -21,8 +24,7 @@ model = dict(
         enc_patch_size=(1024,),
         enable_cpe_block=False,
         enable_flash=True,
-        attn_dtype='bf16',
-        enable_ca_flash=False,
+        attn_dtype='bf16',       
         drop_path=0.3,
         shuffle_orders=True,
         cls_mode=True, #True for enc only; False for enc-dec backbone
@@ -38,7 +40,6 @@ model = dict(
         enable_cpe_block=False,
         enable_flash=True,
         attn_dtype='bf16',
-        enable_ca_flash=False,
         shuffle_orders=False,
         cls_mode=True, #True for enc only; False for enc-dec backbone        
     ),
@@ -65,13 +66,13 @@ max_query_number = 100000
 grid_size = 0.05
 
 # dataset settings
-data_root = '/mnt/nvme3/z00533370/dataset/scannetpp_trainval_v6'
+data_root = '../../data/scannetpp_pcd'
 train_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_train2.txt'
 val_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_val.txt'
 
 # scheduler settings
-epochs = 500 
-log_every = 500
+epochs = 500
+log_every = 1
 ckpt_every = 500
 resume = None
 # resume = './exp0417_3D_geometry_vae_releaseV1_ddp/026-VecSetAEV4/epoch579-global_step120500/'
@@ -94,7 +95,7 @@ eval_metric_list = ['precision','recall','f1','iou']
 occ_threshold = 0.0
 
 # Others
-outputs = "./exp0417_3D_geometry_vae_releaseV1_ddp/"
+outputs = "./test/expr-match"
 
 
 
