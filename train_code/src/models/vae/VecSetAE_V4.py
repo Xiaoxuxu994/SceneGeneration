@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
+import numpy as np
 import torch.distributed as dist
 # from torch_cluster import fps
 import math
@@ -22,6 +23,45 @@ def fps(points, device, num_samples, random_start=True):
             start = torch.argmax(distances).to(torch.long)
     return sampled_indices
 
+class DiagonalGaussianDistribution(object):
+    def __init__(self, mean, logvar, deterministic=False):
+        self.mean = mean
+        self.logvar = logvar
+        self.logvar = torch.clamp(self.logvar, -30.0, 20.0)
+        self.deterministic = deterministic
+        self.std = torch.exp(0.5 * self.logvar)
+        self.var = torch.exp(self.logvar)
+        if self.deterministic:
+            self.var = self.std = torch.zeros_like(self.mean, device=self.mean.device)
+    def sample(self):
+        x = self.mean + self.std * torch.randn(self.mean.shape, device=self.mean.device)
+        return x
+
+    def kl(self, other=None):
+        if self.deterministic:
+            return torch.Tensor([0.])
+        else:
+            if other is None:
+                return 0.5 * torch.mean(torch.pow(self.mean, 2)
+                                       + self.var - 1.0 - self.logvar,
+                                       dim=[1, 2])
+            else:
+                return 0.5 * torch.mean(
+                    torch.pow(self.mean - other.mean, 2) / other.var
+                    + self.var / other.var - 1.0 - self.logvar + other.logvar,
+                    dim=[1, 2, 3])
+
+    def nll(self, sample, dims=[1,2,3]):
+        if self.deterministic:
+            return torch.Tensor([0.])
+        logtwopi = np.log(2.0 * np.pi)
+        return 0.5 * torch.sum(
+            logtwopi + self.logvar + torch.pow(sample - self.mean, 2) / self.var,
+            dim=dims)
+
+    def mode(self):
+        return self.mean
+
 from util import sample_farthest_points
 @MODELS.register_module()
 class VecSetAEV4(nn.Module):
@@ -34,6 +74,7 @@ class VecSetAEV4(nn.Module):
                 enable_seg_head=False,
                 seg_dim = 512,
                 seg_class = 100,
+                enable_kl = False,
                 encoder_dict = dict(
                     type = "PointTransformerV3_2",
                     in_channels = 3, # ['coord]
@@ -73,7 +114,7 @@ class VecSetAEV4(nn.Module):
         self.latent_dim = latent_dim
         self.enable_multilevel = enable_multilevel
         self.feafuse_channels = feafuse_channels
-
+        self.enable_kl = enable_kl
 
         self.encoder_dict = encoder_dict
         self.query_encoder_dict = query_encoder_dict
@@ -196,6 +237,99 @@ class VecSetAEV4(nn.Module):
             output_idx.append(batch_indices)
 
         return torch.cat(output_idx, dim=0)
+    
+    def encode_v2(self, input_dict):
+        ## -- pcd encoder
+        if self.encoder_dict.type == 'PointTransformerV3' or 'PointTransformerV3_2':
+            # pcd ptv3 encoder
+            fea_enc = self.encoder(input_dict) #[S,D]
+            pc_embeddings = fea_enc['feat'].unsqueeze(0) # [B,S,D]
+            # if not self.encoder_dict.cls_mode and self.pc_latent_embedding:
+            #     # pcd ptv3 full backbone, enc-dec, add one linear to lift feature to latent dim
+            #     pc_embeddings = self.pc_latent_embedding(pc_embeddings)
+        else:
+            ## pcd vecset encoder
+            pc_embeddings = self.point_embed(input_dict['coord'].unsqueeze(0))
+
+        ## ---- seg head
+        if self.enable_seg_head:
+            seg_logits = self.seg_head(pc_embeddings)
+
+        ## -- query encoder
+        if self.query_encoder_dict.type == 'None':
+            ## directly use the pcd encoder feature
+            latent =  pc_embeddings
+        else:
+            if input_dict['data_type'] == 2: # 限定了 PointTransformerV3_2 + cls_mode = True
+                #if self.query_encoder_dict.type == 'VecSet':
+                #   sampled_pc_embeddings =  self.point_embed(sampled_pc) # [1,num_latent,512]
+                # if self.query_encoder_dict.type == 'PointTransformerV3' or 'PointTransformerV3_2':
+                #     if self.encoder_dict.cls_mode == True:
+      
+                # ptvs enc only
+                sample_pc_dict = input_dict.copy()
+                sample_pc_dict["coord"] = input_dict['fps_coord']
+                sample_pc_dict["grid_coord"] = input_dict['fps_grid_coord']
+                sample_pc_dict["feat"] = input_dict['fps_feat']
+                sample_pc_dict['offset'] = torch.tensor([self.num_latent], deivce=pc_embeddings.device)
+                sample_fea_enc = self.query_encoder(sample_pc_dict)
+                sampled_pc_embeddings = sample_fea_enc['feat'].unsqueeze(0)    
+            else:
+                if input_dict['data_type'] == 0:
+                    idx, sampled_pc = self.pc_fps(input_dict['coord'])
+                    # if dist.get_rank() == 0:
+                    #     with open('idx.txt', 'a') as f:
+                    #         for i in range(self.num_latent):
+                    #             f.write(f"{idx[i].item()}\n")
+                if input_dict['data_type'] == 1:
+                    sampled_pc = input_dict['coord_fps']
+                    idx = input_dict['fps_index']
+
+                if input_dict['data_type'] == 3:
+                    idx = input_dict['fps_index']
+                    sampled_pc = input_dict['coord'][idx]
+                    
+                if self.query_encoder_dict.type == 'VecSet':
+                    sampled_pc_embeddings =  self.point_embed(sampled_pc) # [1,num_latent,512]
+
+                if self.query_encoder_dict.type == 'PointTransformerV3' or 'PointTransformerV3_2':
+                    if self.encoder_dict.cls_mode == True:
+                        # ptvs enc only
+                        sample_pc_dict = input_dict.copy()
+                        if "coord" in input_dict.keys():
+                            sample_pc_dict["coord"] = input_dict["coord"][idx]
+                        if "grid_coord" in input_dict.keys():
+                            sample_pc_dict["grid_coord"] = input_dict["grid_coord"][idx]
+                        if "segment" in input_dict.keys():
+                            sample_pc_dict["segment"] = input_dict["segment"][idx]
+                        if "ptv3_embedding" in input_dict.keys():
+                            sample_pc_dict["ptv3_embedding"] = input_dict["ptv3_embedding"][idx]
+                        if "feat" in input_dict.keys():
+                            sample_pc_dict["feat"] = input_dict["feat"][idx]
+                        sample_pc_dict['offset'] = torch.tensor([self.num_latent], device=pc_embeddings.device)
+                        sample_fea_enc = self.query_encoder(sample_pc_dict)
+                        sampled_pc_embeddings = sample_fea_enc['feat'].unsqueeze(0)
+                    else:
+                        # ptv3 full backbone
+                        sampled_pc_embeddings = pc_embeddings[:,idx,:]
+                        # sampled_pc_embeddings = pc_embeddings.half()[idx].unsqueeze(0)
+            ## cross attn block
+            cross_attn, cross_ff = self.cross_attend_blocks
+            latent = cross_attn(sampled_pc_embeddings, context = pc_embeddings, mask = None, enable_flash = self.enable_ca_flash) + sampled_pc_embeddings
+            latent = cross_ff(latent) + latent
+        
+        if self.enable_kl:
+            mean = self.mean_fc(latent)
+            logvar = self.logvar_fc(latent)
+            posterior = DiagonalGaussianDistribution(mean, logvar, deterministic=False)
+            latent = posterior.sample()
+            kl = posterior.kl()
+        
+        if not self.enable_seg_head:
+            seg_logits = None
+        if not self.enable_kl:
+            kl = None
+        return latent, seg_logits, kl
 
     def encode(self, input_dict):
     ## -- pcd encoder
@@ -261,8 +395,6 @@ class VecSetAEV4(nn.Module):
 
             latent= cross_attn(sampled_pc_embeddings, context = pc_embeddings, mask = None, enable_flash = self.encoder_dict.enable_ca_flash) + sampled_pc_embeddings
             latent = cross_ff(latent) + latent
-            # if dist.get_rank() == 0:
-            #     print('Latent after FF ******************', latent)
 
 
         if self.enable_seg_head:
@@ -336,12 +468,9 @@ class VecSetAEV4(nn.Module):
         # print('before encode')
         if self.enable_multilevel:
             latent = self.encode_multilevel(input_dict)
+            seg_logits, kl = None, None
         else:
-            if self.enable_seg_head:
-                latent,seg_logits = self.encode(input_dict)
-            else:
-                
-                latent = self.encode(input_dict)
+            latent, seg_logits, kl = self.encode_v2(input_dict)
         # print('After encode')
 
         #     print(latent)
@@ -353,6 +482,6 @@ class VecSetAEV4(nn.Module):
         output = output.squeeze(-1)   
         
         if self.enable_seg_head:
-            return {'logits': output,'seg_logits':seg_logits}
+            return {'logits': output,'seg_logits':seg_logits, 'kl':kl}
         else:
-            return {'logits': output}
+            return {'logits': output, 'kl':kl}

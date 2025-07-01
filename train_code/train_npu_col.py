@@ -38,7 +38,7 @@ from opensora_local.utils.misc import all_reduce_mean, format_numel_str, get_mod
 
 ## src code
 from src.registry import MODELS, build_module
-from src.dataset.dataset_build_scannet_v2 import DatasetForScanNetV2
+from src.dataset.dataset_build_scannet_v2 import DatasetForScanNetV2, DatasetForScanNetV4
 from src.utils.misc import save_inout_pc,occ_eval_metric
 
 import gc
