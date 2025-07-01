@@ -1,2 +1,1 @@
 from .vecset_decoder import VecSetDecoder
-from .vecset_decoder_sbms import VecSetDecoder_SBMS

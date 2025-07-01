@@ -259,3 +259,15 @@ def load_checkpoint(model, ckpt_path, save_as_pt=True,strict=True): ##TODO ckpt 
             print(f"Model checkpoint saved to {save_path}")
     else:
         raise ValueError(f"Invalid checkpoint path: {ckpt_path}")
+
+def load_checkpoint_ckpt(model, path: str, device: str): # 用ddp保存的state_dict初始化非ddp下的模型, ddp保存的是module.xxx.yyy， 而非ddp的是xxx.yyy
+    checkpoint = torch.load(path, map_location=device)
+    state_dict_ddp = checkpoint["model"]
+    state_dict = {}
+    for k, v in state_dict_ddp.items():
+        if k.startswith("module."):
+            new_k = k[7:]
+        else:
+            new_k = k
+        state_dict[new_k] = v
+    model.load_state_dict(state_dict)

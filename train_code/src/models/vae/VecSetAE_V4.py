@@ -174,6 +174,19 @@ class VecSetAEV4(nn.Module):
         if use_cpu_fps:
             print('Using fps_cpu kernel...')
 
+    def pc_fps_sbms(self, pc, offset:torch.Tensor):
+        B = offset.shape[0]
+        idx = torch.zeros((self.num_latent * B), dtype=torch.long, device=pc.device)
+        offset_ext = torch.cat([torch.tensor([0], device=pc.device, dtype=torch.long), offset], dim=0) # [0, s1, s1+s2, ..., s1+s2+...+sb]
+        for i in range(B):
+            N = offset_ext[i+1] - offset_ext[i]
+            if self.use_cpu_fps and N <= 120000:
+                idx[(i*self.num_latent):((i+1)*self.num_latent)] = sample_farthest_points(pc[offset_ext[i]:offset_ext[i+1]].unsqueeze(0).cpu(), lengths=torch.tensor([N], dtype=torch.long), K=self.num_latent, random_start_point=True).view(-1).to(pc.device)
+            else:
+                idx[(i*self.num_latent):((i+1)*self.num_latent)] = fps(pc[offset_ext[i]:offset_ext[i+1]], pc.device, self.num_latent, random_start=True) + offset_ext[i]            
+        sampled_pc = pc[idx].view(-1, self.num_latent * B, 3)
+        return idx, sampled_pc
+
     def pc_fps(self, pc):
         # input point cloud: B x N x 3
         # use fps to get the initial learnable query points
@@ -249,8 +262,8 @@ class VecSetAEV4(nn.Module):
         ## -- pcd encoder
         if self.encoder_dict.type == 'PointTransformerV3' or 'PointTransformerV3_2':
             # pcd ptv3 encoder
-            fea_enc = self.encoder(input_dict) #[S,D]
-            pc_embeddings = fea_enc['feat'].unsqueeze(0) # [B,S,D]
+            fea_enc = self.encoder(input_dict) #[S,D] or [sum(S), D]
+            pc_embeddings = fea_enc['feat'].unsqueeze(0) # [1,S,D] or [1,sum(S),D]
             # if not self.encoder_dict.cls_mode and self.pc_latent_embedding:
             #     # pcd ptv3 full backbone, enc-dec, add one linear to lift feature to latent dim
             #     pc_embeddings = self.pc_latent_embedding(pc_embeddings)
@@ -278,17 +291,19 @@ class VecSetAEV4(nn.Module):
                 sample_pc_dict["coord"] = input_dict['fps_coord']
                 sample_pc_dict["grid_coord"] = input_dict['fps_grid_coord']
                 sample_pc_dict["feat"] = input_dict['fps_feat']
-                sample_pc_dict['offset'] = torch.tensor([self.num_latent], dtype=torch.long, device=pc_embeddings.device)
+                sample_pc_dict['offset'] = torch.tensor([self.num_latent*(i+1) for i in range(input_dict['offset'].shape[0])], dtype=torch.long, device=pc_embeddings.device)
                 sample_fea_enc = self.query_encoder(sample_pc_dict)
                 sampled_pc_embeddings = sample_fea_enc['feat'].unsqueeze(0)    
             else:
                 if input_dict['data_type'] == 0:
-                    idx, sampled_pc = self.pc_fps(input_dict['coord'])
+                    idx, sampled_pc = self.pc_fps_sbms(input_dict['coord'], input_dict['offset'])
 
                 if input_dict['data_type'] == 1:
                     sampled_pc = input_dict['coord_fps']
                     idx = input_dict['fps_index']
-                
+                    for i in range(input_dict['offset'].shape[0] - 1): # 多序列dataloader载入的idx只拼接是没有offset偏移的
+                        idx[((i+1)*self.num_latent):((i+2)*self.num_latent)] += input_dict['offset'][i]
+
                 if self.query_encoder_dict.type == 'VecSet':
                     sampled_pc_embeddings =  self.point_embed(sampled_pc) # [1,num_latent,512]
 
@@ -306,7 +321,7 @@ class VecSetAEV4(nn.Module):
                             sample_pc_dict["ptv3_embedding"] = input_dict["ptv3_embedding"][idx]
                         if "feat" in input_dict.keys():
                             sample_pc_dict["feat"] = input_dict["feat"][idx]
-                        sample_pc_dict['offset'] = torch.tensor([self.num_latent], device=pc_embeddings.device)
+                        sample_pc_dict['offset'] = torch.tensor([self.num_latent*(i+1) for i in range(input_dict['offset'].shape[0])], dtype=torch.long, device=pc_embeddings.device)
                         sample_fea_enc = self.query_encoder(sample_pc_dict)
                         sampled_pc_embeddings = sample_fea_enc['feat'].unsqueeze(0)
                     else:
@@ -315,7 +330,7 @@ class VecSetAEV4(nn.Module):
                         # sampled_pc_embeddings = pc_embeddings.half()[idx].unsqueeze(0)
             ## cross attn block
             cross_attn, cross_ff = self.cross_attend_blocks
-            latent = cross_attn(sampled_pc_embeddings, context = pc_embeddings, mask = None, enable_flash = self.enable_ca_flash) + sampled_pc_embeddings
+            latent = cross_attn(sampled_pc_embeddings, sample_pc_dict['offset'], context = pc_embeddings, context_offset=input_dict['offset'], mask = None, enable_flash = self.enable_ca_flash) + sampled_pc_embeddings
             latent = cross_ff(latent) + latent
         
         if self.enable_kl:
@@ -387,10 +402,10 @@ class VecSetAEV4(nn.Module):
         return latent
 
 
-    def decode(self, latent, query_points):
+    def decode(self, latent, *args):
         if self.enable_kl:
             latent = self.proj(latent)
-        output = self.decoder(latent, query_points)
+        output = self.decoder(latent, *args)
         return output
 
     def forward(self, input_dict):
@@ -399,7 +414,8 @@ class VecSetAEV4(nn.Module):
             seg_logits, kl = None, None
         else:
             latent, seg_logits, kl = self.encode(input_dict)
-        query_points = input_dict['pc_query'].unsqueeze(0)
-        output = self.decode(latent, query_points)
+        query_points = input_dict['pc_query'].unsqueeze(0) # [1,sum(s),d]
+        latent_offset = torch.tensor([self.num_latent*(i+1) for i in range(input_dict['pc_query_offset'].shape[0])], dtype=torch.long, device=input_dict['pc_query_offset'].device)
+        output = self.decode(latent, latent_offset, query_points, input_dict['pc_query_offset'])
         output = output.squeeze(-1)
         return {'logits': output,'seg_logits': seg_logits, 'kl': kl}

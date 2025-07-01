@@ -3,7 +3,9 @@ import torch
 from torch.utils.data import Dataset
 from src.dataset.transform import *
 import torch.distributed as dist
- 
+from src.registry import DATASETS
+
+@DATASETS.register_module()
 class DatasetForScanNetV2(Dataset):
     def __init__(
         self,
@@ -120,6 +122,7 @@ class DatasetForScanNetV2(Dataset):
         return len(self.samples)
 
 # offline fps dataset fps/(pcd x epoch)
+@DATASETS.register_module()
 class DatasetForScanNetV3(Dataset):
     def __init__(
         self,
@@ -135,7 +138,7 @@ class DatasetForScanNetV3(Dataset):
         """
         Args:
             data_root: Path to root directory containing .pth data
-            index_root: Path to root directory containing .pth index (epoch)
+            fps_root: Path to root directory containing .pth index (epoch)
             data_list_name: File containing list of sample paths (relative or absolute)
             query_sample_rate: Sampling ratio for pc_query
             max_query_number: Max number of points to sample from each label class
@@ -253,6 +256,7 @@ class DatasetForScanNetV3(Dataset):
         return len(self.samples)
     
 # offline fps dataset fps/pcd
+@DATASETS.register_module()
 class DatasetForScanNetV4(Dataset):
     def __init__(
         self,
@@ -376,7 +380,8 @@ class DatasetForScanNetV4(Dataset):
     def __len__(self):
         return len(self.samples)
 
-# add for iou 
+# add for iou and ctf
+@DATASETS.register_module()
 class DatasetForScanNetV6(Dataset):
     def __init__(self, data_root: str, data_list_name: str, **kwargs):
         """

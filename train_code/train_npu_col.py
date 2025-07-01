@@ -37,8 +37,7 @@ from opensora_local.utils.config_utils import (
 from opensora_local.utils.misc import all_reduce_mean, format_numel_str, get_model_numel, to_torch_dtype
 
 ## src code
-from src.registry import MODELS, build_module
-from src.dataset.dataset_build_scannet_v2 import DatasetForScanNetV2
+from src.registry import MODELS, DATASETS, build_module
 from src.utils.metric import occ_eval_metric
 from src.utils.savepcd import save_inout_pc
 
@@ -62,8 +61,9 @@ def main():
     torch.npu.manual_seed_all(cfg.seed)
 
     # 精确复现实验需开启
-    torch.use_deterministic_algorithms(True)
-    os.environ['HCCL_DETERMINISTIC'] = 'True'
+    if cfg.accurate_reproduce:
+        torch.use_deterministic_algorithms(True)
+        os.environ['HCCL_DETERMINISTIC'] = 'True'
 
     # ======================================================
     # 2. runtime variables & colossalai launch
@@ -125,23 +125,8 @@ def main():
     # 3. build dataset and dataloader
     # ======================================================
     # DatasetForScanNet
-    train_dataset = DatasetForScanNetV2(
-        data_root=cfg.data_root,
-        data_list_name=cfg.train_data_list_name,
-        query_sample_rate=cfg.query_sample_rate,
-        max_query_number=cfg.max_query_number,
-        Gridsample_mode = 'train',
-        grid_size = cfg.grid_size
-    )
-
-    val_dataset = DatasetForScanNetV2(
-        data_root=cfg.data_root,
-        data_list_name=cfg.val_data_list_name,
-        query_sample_rate=cfg.query_sample_rate,
-        max_query_number=cfg.max_query_number,
-        Gridsample_mode = 'train',
-        grid_size = cfg.grid_size
-    )
+    train_dataset = build_module(cfg.train_dataset, DATASETS)
+    val_dataset = build_module(cfg.val_dataset, DATASETS)
 
     train_dataloader = prepare_dataloader(
         train_dataset,
@@ -163,8 +148,8 @@ def main():
         process_group=get_data_parallel_group(),
     )
 
-    logger.info(f"Train Dataset contains {len(train_dataset)} data: ({cfg.train_data_list_name})")
-    logger.info(f"Val Dataset contains {len(val_dataset)} data: ({cfg.val_data_list_name})")
+    logger.info(f"Train Dataset contains {len(train_dataset)} data: ({cfg.train_dataset.data_list_name})")
+    logger.info(f"Val Dataset contains {len(val_dataset)} data: ({cfg.val_dataset.data_list_name})")
 
     total_batch_size = cfg.batch_size * dist.get_world_size() // cfg.sp_size
     logger.info(f"Total batch size: {total_batch_size}")
@@ -208,7 +193,6 @@ def main():
     
     torch.set_default_dtype(torch.float)
     num_steps_per_epoch = len(train_dataloader)
-    num_steps_per_epoch = 20
     num_steps_per_epoch_val = len(val_dataloader)
     logger.info("Boost model for distributed training")
 
