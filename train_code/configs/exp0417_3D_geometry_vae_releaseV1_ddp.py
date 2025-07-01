@@ -7,13 +7,13 @@ seed = 1234
 
 # model setting
 model = dict(
-    type="VecSetAEV4",
+    type="VecSetAEV4_SBMS",
     input_pcd_num = 50000,
     num_latent = 2048,
     latent_dim = 512,
     kl_latent_dim = 64,
     enable_kl = False,
-    enable_ca_flash=False,
+    enable_ca_flash = False,
     encoder_dict = dict(
         type = "PointTransformerV3_2",
         in_channels = 3, # ['coord]
@@ -44,7 +44,7 @@ model = dict(
         cls_mode=True, #True for enc only; False for enc-dec backbone        
     ),
     decoder_dict = dict(
-        type = "VecSetDecoder", #['VecSetDecoder','VecSetKLDecoder']
+        type = "VecSetDecoder_SBMS", #['VecSetDecoder','VecSetKLDecoder']
         depth = 8, #24,
         dim = 512,
         queries_dim = 512,
@@ -59,21 +59,22 @@ model = dict(
 )
 
 # dataloader
-batch_size = 1 # currently only support batchsize = 1
+batch_size = 4
 num_workers = 1
 query_sample_rate = 0.1
 max_query_number = 100000
 grid_size = 0.05
 
 # dataset settings
-data_root = '../../data/scannetpp_pcd'
+data_root = '/mnt/data1/z00912387/scannetpp_pcd'
 train_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_train2.txt'
 val_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_val.txt'
 
 # scheduler settings
-epochs = 500
+epochs = 1
 log_every = 1
 ckpt_every = 500
+eval_every = 500
 resume = None
 # resume = './exp0417_3D_geometry_vae_releaseV1_ddp/026-VecSetAEV4/epoch579-global_step120500/'
 load = None

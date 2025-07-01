@@ -62,8 +62,8 @@ def main():
     torch.npu.manual_seed_all(cfg.seed)
 
     # 精确复现实验需开启
-    # torch.use_deterministic_algorithms(True)
-    # os.environ['HCCL_DETERMINISTIC'] = 'True'
+    torch.use_deterministic_algorithms(True)
+    os.environ['HCCL_DETERMINISTIC'] = 'True'
 
     # ======================================================
     # 2. runtime variables & colossalai launch
@@ -208,6 +208,7 @@ def main():
     
     torch.set_default_dtype(torch.float)
     num_steps_per_epoch = len(train_dataloader)
+    num_steps_per_epoch = 20
     num_steps_per_epoch_val = len(val_dataloader)
     logger.info("Boost model for distributed training")
 
@@ -252,7 +253,7 @@ def main():
     # 8. Training loss and Eval metric Define
     # =======================================================
     # 8.1. Training loss related   
-    running_loss ,running_loss_occ, running_loss_occ = 0.0, 0.0, 0.0
+    running_loss ,running_loss_occ, running_loss_kl = 0.0, 0.0, 0.0
 
     # bceloss
     occ_criterion = torch.nn.BCEWithLogitsLoss()

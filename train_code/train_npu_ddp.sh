@@ -1,2 +1,2 @@
-ASCEND_RT_VISIBLE_DEVICES=4,5,6,7 nohup torchrun --nproc_per_node=4 --master-port 29503 train_npu_col.py \
+ASCEND_RT_VISIBLE_DEVICES=2,3 nohup torchrun --nproc_per_node=2 --master-port 29540 train_npu_col.py \
     --config configs/exp0417_3D_geometry_vae_releaseV1_ddp.py > train.log 2>&1 &
