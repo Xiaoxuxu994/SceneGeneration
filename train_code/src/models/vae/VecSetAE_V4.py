@@ -9,6 +9,19 @@ from src.models.transformer.transformer_base import PointEmbed,PreNorm,Attention
 
 from ...registry import MODELS
 
+def fps(points, device, num_samples, random_start=True):
+    with torch.no_grad():
+        sampled_indices = torch.zeros((num_samples), dtype=torch.long, device=device)
+        start = torch.randint(0, len(points), (1,), dtype=torch.long, device=device) if random_start else torch.tensor([0], dtype=torch.long, device=device)
+        distances = torch.full((len(points),), 1e10, device=device)
+        for i in range(num_samples):
+            sampled_indices[i] = start 
+            last_sampled = points[start]
+            dist_tmp = torch.sqrt(torch.sum((points - last_sampled) ** 2, dim=1))
+            distances = torch.minimum(distances, dist_tmp)
+            start = torch.argmax(distances).to(torch.long)
+    return sampled_indices
+
 from util import sample_farthest_points
 @MODELS.register_module()
 class VecSetAEV4(nn.Module):
