@@ -50,7 +50,7 @@
             Gridsample_mode = 'train',
             grid_size = 0.05,
         )
-2. 设定卡号,卡数,端口, 修改 train_npu_ddp.sh / train_npu_col_asyncfps.py
+2. 设定卡号,卡数,端口, 修改 train_npu_ddp.sh(train_npu_col.py/train_npu_col_asyncfps.py)
 3. sh train_npu_ddp.sh
 
 #### 推理 benchmark 代码 ####
@@ -65,3 +65,11 @@
 2. 设定卡号, 由于是单卡无需设定卡数和端口, 修改 val_npu.sh
 3. sh val_npu.sh
 
+
+#### 离线fps生成代码 ####
+1. DatasetForScanNetV3: 每个pointcloud每个epoch都有不同的采样,将在线采样流程全部转换为离线;整体下采样下标idx_select,在次基础上的fps采样下标fps_select
+gen_fps_datasetv3.py -> fps_npu.sh 
+由于每个epoch都会生成,硬盘占用高 500epochs:230G
+2. DatasetForScanNetV4: 每个pointcloud固定的fps采样;在线流程仍然做下采样,但fps采样点固定,只生成fps采样点坐标fps_coord和网格化坐标点grid_coord
+gen_fps_datasetv4.py -> fps_npu.sh
+所有epoch使用相同的fps采样点,硬盘占用低 0.46G
