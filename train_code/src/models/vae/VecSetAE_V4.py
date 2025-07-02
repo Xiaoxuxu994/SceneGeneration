@@ -280,7 +280,7 @@ class VecSetAEV4(nn.Module):
             ## directly use the pcd encoder feature
             latent =  pc_embeddings
         else:
-            if input_dict['data_type'] == 2: # 限定了 PointTransformerV3_2 + cls_mode = True
+            if input_dict['data_type'] == 2: # datasetv4, 限定了 PointTransformerV3_2 + cls_mode = True
                 #if self.query_encoder_dict.type == 'VecSet':
                 #   sampled_pc_embeddings =  self.point_embed(sampled_pc) # [1,num_latent,512]
                 # if self.query_encoder_dict.type == 'PointTransformerV3' or 'PointTransformerV3_2':
@@ -298,11 +298,15 @@ class VecSetAEV4(nn.Module):
                 if input_dict['data_type'] == 0:
                     idx, sampled_pc = self.pc_fps_sbms(input_dict['coord'], input_dict['offset'])
 
-                if input_dict['data_type'] == 1:
-                    sampled_pc = input_dict['coord_fps']
+                if input_dict['data_type'] == 1: # dataset v3
+                    sampled_pc = input_dict['fps_coord']
                     idx = input_dict['fps_index']
                     for i in range(input_dict['offset'].shape[0] - 1): # 多序列dataloader载入的idx只拼接是没有offset偏移的
                         idx[((i+1)*self.num_latent):((i+2)*self.num_latent)] += input_dict['offset'][i]
+
+                if input_dict['data_type'] == 3: # datasetv5
+                    idx = input_dict['fps_index']
+                    sampled_pc = input_dict['coord'][idx]
 
                 if self.query_encoder_dict.type == 'VecSet':
                     sampled_pc_embeddings =  self.point_embed(sampled_pc) # [1,num_latent,512]

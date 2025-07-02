@@ -1,6 +1,6 @@
-训练代码
+#### 训练代码 ####
 1. 设置实验条件, 修改 train_code/exp0701_3D_geometry_vae_releaseV1_train.py 相应参数
-    0) 精确复现
+    0) 精确复现开关
         accurate_reproduce = False/True
     1) kl 
         model = dict(
@@ -19,7 +19,7 @@
             Gridsample_mode = 'train',
             grid_size = 0.05,
         )
-        train_dataset = dict(
+        train_dataset = dict( # 离线fps, fps/(pcd x epoch)
             type = 'DatasetForScanNetV3',
             data_root = '/mnt/data1/z00912387/scannetpp_pcd/train',
             fps_root = '/mnt/data1/z00912387/scannetpp_pcd/train_fps_v3',
@@ -29,7 +29,7 @@
             Gridsample_mode = 'train',
             grid_size = 0.05,
         )
-        train_dataset = dict(
+        train_dataset = dict( # 离线fps, fps/pcd
             type = 'DatasetForScanNetV4',
             data_root = '/mnt/data1/z00912387/scannetpp_pcd/train',
             fps_root = '/mnt/data1/z00912387/scannetpp_pcd/train_fps_v4',
@@ -39,10 +39,21 @@
             Gridsample_mode = 'train',
             grid_size = 0.05,
         )
-2. 设定卡号,卡数,端口, 修改 train_npu_ddp.sh
+        # 
+        train_dataset = dict( # 异步fps, 训练脚本对应train_npu_col_asyncfps.py
+            type = 'DatasetForScanNetV5',
+            data_root = '/mnt/data1/z00912387/scannetpp_pcd/train',
+            fps_root = './',
+            data_list_name = 'datacache/scannetpp_trainval/nvs_sem_train.txt',
+            query_sample_rate = 0.1,
+            max_query_number = 100000,
+            Gridsample_mode = 'train',
+            grid_size = 0.05,
+        )
+2. 设定卡号,卡数,端口, 修改 train_npu_ddp.sh / train_npu_col_asyncfps.py
 3. sh train_npu_ddp.sh
 
-推理 benchmark 代码
+#### 推理 benchmark 代码 ####
 1. 设置实验条件, 修改 train_code/exp0701_3D_geometry_vae_releaseV1_val.py 相应参数
     1) 指定模型权重ckpt所在路径和文件名
         root = './test/expr/000-VecSetAEV4/epoch499-global_step103999'
