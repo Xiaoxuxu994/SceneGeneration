@@ -7,6 +7,7 @@ import math
 from src.registry import MODELS, build_module
 from src.models.transformer.transformer_base import PointEmbed,PreNorm,Attention,FeedForward
 from util import sample_farthest_points
+import torch.distributed as dist
 
 from ...registry import MODELS
 @MODELS.register_module()
@@ -274,7 +275,7 @@ class VecSetAEV4CTF(nn.Module):
                 sample_pc_dict["coord"] = input_dict['fps_coord']
                 sample_pc_dict["grid_coord"] = input_dict['fps_grid_coord']
                 sample_pc_dict["feat"] = input_dict['fps_feat']
-                sample_pc_dict['offset'] = torch.tensor([self.num_latent], deivce=pc_embeddings.device)
+                sample_pc_dict['offset'] = torch.tensor([self.num_latent], device=pc_embeddings.device)
                 sample_fea_enc = self.query_encoder(sample_pc_dict)
                 sampled_pc_embeddings = sample_fea_enc['feat'].unsqueeze(0)    
             else:
@@ -474,6 +475,10 @@ class VecSetAEV4CTF(nn.Module):
             label_c = label_64
 
         #- mask for next level
+        # if dist.get_rank() == 0:
+        #     import pdb; pdb.set_trace()
+        # else:
+        #     import time; time.sleep(10000)
         mask = self.get_fine_voxel_mask_from_coarse_labels(
             coarse_label=label_c,
             scale_factor=2,
@@ -492,7 +497,7 @@ class VecSetAEV4CTF(nn.Module):
         # print('query_points_128: ',query_points_128.shape)
         target_128 = input_dict['pc_query_label_128'][mask]
         latent_input = latent_32 + latent_64 if self.use_skip else latent_64
-
+        # print(query_points_128.shape, mask.shape, '********')
         logit_128,latent_128 = self.decoder4(latent_input,query_points_128)
         #- current pred-gt pair
         logit_list.append(logit_128.squeeze(-1).squeeze(0))
@@ -601,6 +606,7 @@ class VecSetAEV4CTF(nn.Module):
         # ------------------------------------------------------------------------
         # ------------------------------------------------------------------------
         ## -- vs128 --
+        # print()
         query_points_128 = input_dict['pc_query_128'][mask].unsqueeze(0)
         # print('query_points_128: ',query_points_128.shape)
         target_128 = input_dict['pc_query_label_128'][mask]

@@ -1,0 +1,120 @@
+# acceleration & misc setting
+dtype = "fp32"  # fp16, bf16, fp32, 
+grad_checkpoint = True
+grad_checkpoint_step = 25
+sp_size = 1
+seed = 42
+plugin = "zero2"
+
+# model setting
+model = dict(
+    type="VecSetAEV4",
+    input_pcd_num = 50000,
+    num_latent = 2048,
+    latent_dim = 512,
+    # kl_latent_dim = 128,
+    enable_kl = False,
+    encoder_dict = dict(
+        type = "PointTransformerV3_2",
+        in_channels = 3, # ['coord]
+        stride=(),
+        enc_depths=(1,),
+        enc_channels=(512,),
+        enc_num_head=(32,),
+        enc_patch_size=(1024,),
+        enable_cpe_block=False,
+        enable_flash=True,
+        enable_ca_flash=False,
+        attn_dtype='bf16',
+        drop_path=0.3,
+        shuffle_orders=True,
+        cls_mode=True, #True for enc only; False for enc-dec backbone
+    ),
+    query_encoder_dict = dict(
+        type = "PointTransformerV3_2",
+        in_channels = 3, # ['coord]
+        stride=(),
+        enc_depths=(1,),
+        enc_channels=(512,),
+        enc_num_head=(32,),
+        enc_patch_size=(1024,),
+        enable_cpe_block=False,
+        enable_ca_flash=False,
+        enable_flash=True,
+        attn_dtype='bf16',
+        shuffle_orders=False,
+        cls_mode=True, #True for enc only; False for enc-dec backbone        
+    ),
+    decoder_dict = dict(
+        type = "VecSetDecoder", #['VecSetDecoder','VecSetKLDecoder']
+        depth = 8, #24,
+        dim = 512,
+        queries_dim = 512,
+        enable_flash = True,
+        enable_ca_flash = True,
+        attn_dtype='bf16',
+        drop_path_rate=0.3,
+        output_dim = 1,
+        # deterministic = True, # ['Auto' or 'KL'] ## TODO
+    ),
+)
+
+# dataset
+train_dataset = dict(
+    type="DatasetForScanNetV4",
+    # data_root='/data/data_root/scannetpp_trainval_v6/',
+    # fps_root='/data/data_root/fps_root_ori/',
+    data_root='/home/ma-user/modelarts/inputs/data-path_0/scannetpp_trainval_v6',
+    fps_root='/home/ma-user/modelarts/inputs/data-path_0/fps_root_ori',
+    data_list_name='datacache/scannetpp_trainval/nvs_sem_train2.txt',
+    query_sample_rate= 0.5,
+    max_query_number= 100000,
+    # vs_res = [16,32,64,128],
+    Gridsample_mode = 'train',
+    grid_size = 0.05,
+)
+val_dataset = dict(
+    type="DatasetForScanNetV4",
+    data_root='/home/ma-user/modelarts/inputs/data-path_0/scannetpp_trainval_v6',
+    fps_root='/home/ma-user/modelarts/inputs/data-path_0/fps_root_ori',
+    data_list_name='datacache/scannetpp_trainval/nvs_sem_val.txt',
+    query_sample_rate=0.5,
+    max_query_number=100000,
+    # vs_res = [16,32,64,128],
+    Gridsample_mode = 'train',
+    grid_size = 0.05,
+)   
+
+
+# dataset settings
+batch_size = 1 # currently only support batchsize = 1
+num_workers = 1
+
+# scheduler settings
+epochs = 100
+log_every = 500
+eval_every = 2000
+ckpt_every = 13900
+resume = None #"./output/expr/003-VecSetAEV4/ckpt-epoch267-global_step55599.pth"
+load = None
+
+lr = 1e-4 
+cos_total_iter = 5000 
+cos_eta_min = 5e-7
+enable_scaler = False
+grad_clip = 1.0
+weight_decay = 0
+
+
+# loss & eval
+# - occ geometry loss
+enable_occ_loss = True
+loss_weight_occ = 50
+loss_weight_kl = 0.05
+# - eval metric
+enable_occ_eval = False
+eval_metric_list = ['precision','recall','f1','iou']
+occ_threshold = 0.0
+
+# Others
+outputs = "/home/ma-user/modelarts/outputs/save-dir_0/exp_result/exp0620_3D_geometry_vae_oriv4_offline_fps/"

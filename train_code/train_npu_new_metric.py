@@ -267,7 +267,8 @@ def main():
     # 5. boost model for distributed training with colossalai
     # =======================================================
     torch.set_default_dtype(dtype)
-    model = DDP(model, device_ids=[device.index], bucket_cap_mb=10, gradient_as_bucket_view=True)
+    # model = DDP(model, device_ids=[device.index], bucket_cap_mb=10, gradient_as_bucket_view=True)
+    model = DDP(model, device_ids=[device.index])
     
     torch.set_default_dtype(torch.float)
     num_steps_per_epoch = len(train_dataloader)
@@ -343,6 +344,20 @@ def main():
                 input_dict = next(traindataloader_iter)
                 input_dict = {k: v[0].to(device) if isinstance(v, torch.Tensor) else v for k, v in input_dict.items()}
                 model.train()
+
+
+                # param_usage = {n: False for n, p in model.named_parameters()}
+
+                # def track_param_usage(param, input, output):
+                #     for name, p in model.named_parameters():
+                #         if p is param:
+                #             param_usage[name] = True
+
+                # # 为所有参数注册前向钩子
+                # for name, param in model.named_parameters():
+                #     param.register_hook(lambda grad, name=name: print(f"Grad for {name}: {grad.norm()}") if grad is not None else None)
+                #     param.register_forward_hook(track_param_usage)
+
                 output_list, target_list = model.forward(input_dict)
 
                 loss = torch.tensor(0).to(device, dtype)
@@ -355,6 +370,11 @@ def main():
                 
                 optimizer.zero_grad()
                 loss.backward()
+                for name, param in model.named_parameters():
+                    if param.grad is None:
+                        print(f"⚠️ Parameter without gradient: {name}")
+
+                # exit(-1)
                 optimizer.step()
                 if lr_scheduler is not None:
                     lr_scheduler.step()    
