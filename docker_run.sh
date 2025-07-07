@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # 原容器ID或名称
-SOURCE_CONTAINER="gaussian-npu-dev_xiaoxu"
+# SOURCE_CONTAINER="gaussian-npu-dev_xiaoxu"
 NEW_CONTAINER="ljr_3dgvae"
 IMAGE="cb2dce5b2be1"
 
 # 重新创建容器
-docker run -dit -u 0 --ipc=host --net=host --privileged --name $NEW_CONTAINER \
+docker run -dit -u 0 --ipc=host --net=host --privileged --entrypoint="/bin/bash" --name $NEW_CONTAINER \
     --device=/dev/davinci0 \
     --device=/dev/davinci1 \
     --device=/dev/davinci2 \
