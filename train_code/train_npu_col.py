@@ -37,9 +37,9 @@ from opensora_local.utils.config_utils import (
 from opensora_local.utils.misc import all_reduce_mean, format_numel_str, get_model_numel, to_torch_dtype
 
 ## src code
-from src.registry import MODELS, build_module
-from src.dataset.dataset_build_scannet_v2 import DatasetForScanNetV2, DatasetForScanNetV4
-from src.utils.misc import save_inout_pc,occ_eval_metric
+from src.registry import MODELS, DATASETS, build_module
+from src.utils.metric import occ_eval_metric
+from src.utils.savepcd import save_inout_pc
 
 import gc
 
@@ -59,11 +59,11 @@ def main():
     torch.manual_seed(cfg.seed)
     torch.npu.manual_seed(cfg.seed)
     torch.npu.manual_seed_all(cfg.seed)
-    
-    exp_name, exp_dir = create_experiment_workspace(cfg)
-    save_training_config(cfg._cfg_dict, exp_dir)
-    os.makedirs(exp_dir, exist_ok=True)
-    
+
+    # 精确复现实验需开启
+    if cfg.accurate_reproduce:
+        torch.use_deterministic_algorithms(True)
+        os.environ['HCCL_DETERMINISTIC'] = 'True'
 
     # ======================================================
     # 2. runtime variables & colossalai launch
@@ -75,10 +75,16 @@ def main():
     colossalai.launch_from_torch(backend='hccl')
     coordinator = DistCoordinator()
     device = get_current_device()
+
     if coordinator.is_master():
+        exp_name, exp_dir = create_experiment_workspace(cfg)
+        save_training_config(cfg._cfg_dict, exp_dir)
+        os.makedirs(exp_dir, exist_ok=True)
         print("====== cfg: ",cfg)
-    else:
         print("====== exp_dir: ", exp_dir)
+    else:
+        exp_dir = None
+        
     dtype = to_torch_dtype(cfg.dtype)
 
     # 2.2. init logger, tensorboard
@@ -119,23 +125,8 @@ def main():
     # 3. build dataset and dataloader
     # ======================================================
     # DatasetForScanNet
-    train_dataset = DatasetForScanNetV2(
-        data_root=cfg.data_root,
-        data_list_name=cfg.train_data_list_name,
-        query_sample_rate=cfg.query_sample_rate,
-        max_query_number=cfg.max_query_number,
-        Gridsample_mode = 'train',
-        grid_size = cfg.grid_size
-    )
-
-    val_dataset = DatasetForScanNetV2(
-        data_root=cfg.data_root,
-        data_list_name=cfg.val_data_list_name,
-        query_sample_rate=cfg.query_sample_rate,
-        max_query_number=cfg.max_query_number,
-        Gridsample_mode = 'train',
-        grid_size = cfg.grid_size
-    )
+    train_dataset = build_module(cfg.train_dataset, DATASETS)
+    val_dataset = build_module(cfg.val_dataset, DATASETS)
 
     train_dataloader = prepare_dataloader(
         train_dataset,
@@ -146,7 +137,7 @@ def main():
         pin_memory=True,
         process_group=get_data_parallel_group(),
     )
-    
+
     val_dataloader = prepare_dataloader(
         val_dataset,
         batch_size=1,#cfg.batch_size,
@@ -157,8 +148,8 @@ def main():
         process_group=get_data_parallel_group(),
     )
 
-    logger.info(f"Train Dataset contains {len(train_dataset)} data: ({cfg.train_data_list_name})")
-    logger.info(f"Val Dataset contains {len(val_dataset)} data: ({cfg.val_data_list_name})")
+    logger.info(f"Train Dataset contains {len(train_dataset)} data: ({cfg.train_dataset.data_list_name})")
+    logger.info(f"Val Dataset contains {len(val_dataset)} data: ({cfg.val_dataset.data_list_name})")
 
     total_batch_size = cfg.batch_size * dist.get_world_size() // cfg.sp_size
     logger.info(f"Total batch size: {total_batch_size}")
@@ -246,8 +237,7 @@ def main():
     # 8. Training loss and Eval metric Define
     # =======================================================
     # 8.1. Training loss related   
-    running_loss ,running_loss_occ = 0.0, 0.0
-    loss_occ = torch.tensor(0).to(device, dtype)
+    running_loss ,running_loss_occ, running_loss_kl = 0.0, 0.0, 0.0
 
     # bceloss
     occ_criterion = torch.nn.BCEWithLogitsLoss()
@@ -282,21 +272,26 @@ def main():
 
                 pc_query_label = input_dict['pc_query_label'].unsqueeze(0)
                 output_logit = outputs['logits']
-                # if dist.get_rank() == 0:
-                    # print(output_logit, input_dict)
-                # exit(-1)
+
                 loss = torch.tensor(0).to(device, dtype)
 
                 loss_occ = cfg.loss_weight_occ * occ_criterion(output_logit, pc_query_label)
                 running_loss_occ += loss_occ.item()
-                if (not torch.isnan(loss_occ)) and (not torch.isinf(loss_occ)):
-                    loss += loss_occ                      
                 
+                # kl loss (may be None)
+                loss_kl = outputs['kl']
+                if loss_kl is not None:
+                    loss_kl = cfg.loss_weight_kl * torch.sum(loss_kl) / loss_kl.shape[0]
+                    running_loss_kl += loss_kl.item()
+                
+                if (not torch.isnan(loss_occ)) and (not torch.isinf(loss_occ)):
+                    loss += loss_occ
+                if (loss_kl is not None) and (not torch.isnan(loss_kl)) and (not torch.isinf(loss_kl)):
+                    loss += loss_kl
                 ## update
                 optimizer.zero_grad()
                 # booster.backward(loss=loss, optimizer=optimizer)
                 loss.backward()
-
                 optimizer.step()
 
                 # update scheduler after each iter
@@ -319,24 +314,27 @@ def main():
                 log_step += 1
 
                 # Log to tensorboard
-                if coordinator.is_master() and (global_step) % cfg.log_every == 0:
+                if coordinator.is_master() and (global_step + 1) % cfg.log_every == 0:
                     avg_loss = running_loss / log_step
                     avg_loss_occ = running_loss_occ / log_step
+                    avg_loss_kl = running_loss_kl / log_step
                     avg_occ_precision = running_precision / log_step
                     avg_occ_recall = running_recall / log_step
                     avg_occ_f1 = running_f1 / log_step
                     avg_occ_iou = running_iou / log_step
 
-                    logger.info(f"\n loss: {avg_loss}, avg_loss_occ: {avg_loss_occ}, avg_occ_precision: {avg_occ_precision}, avg_occ_recall: {avg_occ_recall}, avg_occ_f1: {avg_occ_f1}, avg_occ_iou: {avg_occ_iou}, step: {step}, global_step: {global_step}, lr: {optimizer.param_groups[0]['lr']} \n")
-                    pbar.set_postfix({"loss": avg_loss,"avg_loss_occ": avg_loss_occ, "avg_occ_precision": avg_occ_precision,"avg_occ_recall": avg_occ_recall,"avg_occ_f1": avg_occ_f1,"avg_occ_iou": avg_occ_iou, "step": step, "global_step": global_step, "lr": optimizer.param_groups[0]['lr']})
+                    logger.info(f"\n loss: {avg_loss}, avg_loss_occ: {avg_loss_occ}, avg_loss_kl: {avg_loss_kl}, avg_occ_precision: {avg_occ_precision}, avg_occ_recall: {avg_occ_recall}, avg_occ_f1: {avg_occ_f1}, avg_occ_iou: {avg_occ_iou}, step: {step}, global_step: {global_step}, lr: {optimizer.param_groups[0]['lr']}\n")
+                    pbar.set_postfix({"loss": avg_loss, "avg_loss_occ": avg_loss_occ, "avg_loss_kl": avg_loss_kl, "avg_occ_precision": avg_occ_precision,"avg_occ_recall": avg_occ_recall,"avg_occ_f1": avg_occ_f1,"avg_occ_iou": avg_occ_iou, "step": step, "global_step": global_step, "lr": optimizer.param_groups[0]['lr']})
                     pbar.set_postfix_str('')
 
-                    running_loss,running_loss_occ = 0.0,0.0
+                    running_loss, running_loss_occ, running_loss_kl = 0.0,0.0,0.0
                     running_iou, running_precision, running_recall, running_f1 = 0.0,0.0,0.0,0.0
                     log_step = 0
 
                     writer.add_scalar("loss", loss.item(), global_step)
                     writer.add_scalar("loss_occ", loss_occ.item(), global_step)
+                    if loss_kl is not None:
+                        writer.add_scalar("loss_kl", loss_kl.item(), global_step)
                     writer.add_scalar("train_precision_score", precision_score.mean().item(), global_step)
                     writer.add_scalar("train_recall_score", recall_score.mean().item(), global_step)
                     writer.add_scalar("train_f1_score", f1_score.mean().item(), global_step)
@@ -349,100 +347,110 @@ def main():
                     torch.npu.empty_cache()
 
                 # Save checkpoint
-                if cfg.ckpt_every > 0 and (global_step) % cfg.ckpt_every == 0:
+                if cfg.ckpt_every > 0 and (global_step + 1) % cfg.ckpt_every == 0:
                     save(None, model, optimizer, lr_scheduler, epoch, step, global_step, cfg.batch_size, coordinator, exp_dir)
                     logger.info(f'-------------------------------------------------------------------------------')
                     logger.info(
                         f"Saved checkpoint at epoch {epoch} step {step} global_step {global_step} to {exp_dir}"
                     )
                     logger.info(f'-------------------------------------------------------------------------------')
-                    inout_dir = os.path.join(exp_dir, f"epoch{epoch}-global_step{global_step}", "input_output_results/train")
                     if coordinator.is_master():
+                        inout_dir = os.path.join(exp_dir, f"epoch{epoch}-global_step{global_step}", "input_output_results/train")
                         save_inout_pc(inout_dir, input_dict, output_logit)
 
-                    ### Eval Set
-                    if cfg.enable_occ_eval:
-                        logger.info(f'-------------------------------------------------------------------------------')
-                        logger.info(
-                            f"Evaluating {epoch} step {step} global_step {global_step}......"
-                        )
-                        logger.info(f'-------------------------------------------------------------------------------')
-                        eval_log_step = 0
-                        running_eval_loss, running_eval_loss_occ = 0.0, 0.0
-                        running_eval_precision, running_eval_recall, running_eval_f1, running_eval_iou = 0.0, 0.0, 0.0, 0.0
-                        val_dataloader.sampler.set_epoch(epoch)
-                        valdataloader_iter = iter(val_dataloader)
-                        with tqdm(
-                                range(start_step_eval, num_steps_per_epoch_val),
-                                desc=f"Epoch {epoch}",
-                                disable=not coordinator.is_master(),
-                                total=num_steps_per_epoch_val,
-                                initial=start_step_eval,
-                            ) as pbar_val:
-                            for _ in pbar_val:
-                                input_dict = next(valdataloader_iter)
-                                for key in input_dict.keys():
-                                    if isinstance(input_dict[key], torch.Tensor):
-                                        input_dict[key] = input_dict[key][0].to(device)
+                ### Eval Set
+                if cfg.eval_every > 0 and (global_step + 1) % cfg.eval_every == 0 and cfg.enable_occ_eval:
+                    logger.info(f'-------------------------------------------------------------------------------')
+                    logger.info(
+                        f"Evaluating {epoch} step {step} global_step {global_step}......"
+                    )
+                    logger.info(f'-------------------------------------------------------------------------------')
+                    eval_log_step = 0
+                    running_eval_loss, running_eval_loss_occ, running_eval_loss_kl = 0.0, 0.0, 0.0
+                    running_eval_precision, running_eval_recall, running_eval_f1, running_eval_iou = 0.0, 0.0, 0.0, 0.0
+                    val_dataloader.sampler.set_epoch(epoch)
+                    valdataloader_iter = iter(val_dataloader)
+                    with tqdm(
+                            range(start_step_eval, num_steps_per_epoch_val),
+                            desc=f"Epoch {epoch}",
+                            disable=not coordinator.is_master(),
+                            total=num_steps_per_epoch_val,
+                            initial=start_step_eval,
+                        ) as pbar_val:
+                        for _ in pbar_val:
+                            input_dict = next(valdataloader_iter)
+                            for key in input_dict.keys():
+                                if isinstance(input_dict[key], torch.Tensor):
+                                    input_dict[key] = input_dict[key][0].to(device)
 
-                                model.eval()
-                                with torch.no_grad():
-                                    outputs = model.forward(input_dict)
+                            model.eval()
+                            with torch.no_grad():
+                                outputs = model.forward(input_dict)
 
-                                pc_query_label = input_dict['pc_query_label'].unsqueeze(0)
-                                output_logit = outputs['logits']
+                            pc_query_label = input_dict['pc_query_label'].unsqueeze(0)
+                            output_logit = outputs['logits']
 
-                                eval_loss = torch.tensor(0).to(device, dtype)
-                                # eval loss
-                                eval_loss_occ = cfg.loss_weight_occ * occ_criterion(output_logit.detach(), pc_query_label.detach())
-                                running_eval_loss_occ += eval_loss_occ.item()                 
-                                if (not torch.isnan(eval_loss_occ)) and (not torch.isinf(eval_loss_occ)):
-                                    eval_loss += eval_loss_occ                                 
+                            eval_loss = torch.tensor(0).to(device, dtype)
+                            # eval loss
+                            eval_loss_occ = cfg.loss_weight_occ * occ_criterion(output_logit.detach(), pc_query_label.detach())
+                            running_eval_loss_occ += eval_loss_occ.item()
+                            # kl loss (may be None)
+                            eval_loss_kl = outputs['kl']
+                            if eval_loss_kl is not None:
+                                eval_loss_kl = cfg.loss_weight_kl * torch.sum(eval_loss_kl) / eval_loss_kl.shape[0]
+                                running_eval_loss_kl += eval_loss_kl.item()
+                            if (not torch.isnan(eval_loss_occ)) and (not torch.isinf(eval_loss_occ)):
+                                eval_loss += eval_loss_occ
+                            if (eval_loss_kl is not None) and (not torch.isnan(eval_loss_kl)) and (not torch.isinf(eval_loss_kl)):
+                                eval_loss += eval_loss_kl
 
-                                # Log loss values:
-                                all_reduce_mean(eval_loss)
-                                running_eval_loss += eval_loss.item()
+                            # Log loss values:
+                            all_reduce_mean(eval_loss)
+                            running_eval_loss += eval_loss.item()
 
-                                # eval metric
-                                eval_precision_score, eval_recall_score, eval_f1_score, eval_iou_score = occ_eval_metric(cfg.eval_metric_list,output_logit,pc_query_label,cfg.occ_threshold)
-                                running_eval_precision += (eval_precision_score.mean()).item()
-                                running_eval_recall += (eval_recall_score.mean()).item()
-                                running_eval_f1 += (eval_f1_score.mean()).item()
-                                running_eval_iou += (eval_iou_score.mean()).item()  
+                            # eval metric
+                            eval_precision_score, eval_recall_score, eval_f1_score, eval_iou_score = occ_eval_metric(cfg.eval_metric_list,output_logit,pc_query_label,cfg.occ_threshold)
+                            running_eval_precision += (eval_precision_score.mean()).item()
+                            running_eval_recall += (eval_recall_score.mean()).item()
+                            running_eval_f1 += (eval_f1_score.mean()).item()
+                            running_eval_iou += (eval_iou_score.mean()).item()  
 
-                                eval_log_step += 1
-                            
-                            if coordinator.is_master():
-                                avg_eval_loss = running_eval_loss / eval_log_step
-                                avg_eval_loss_occ = running_eval_loss_occ / eval_log_step
-                                avg_eval_occ_precision = running_eval_precision / eval_log_step
-                                avg_eval_occ_recall = running_eval_recall / eval_log_step
-                                avg_eval_occ_f1 = running_eval_f1 / eval_log_step
-                                avg_eval_occ_iou = running_eval_iou / eval_log_step
-
-                                logger.info(f"\n eval_loss: {avg_eval_loss}, avg_eval_loss_occ: {avg_eval_loss_occ}, avg_eval_occ_precision: {avg_eval_occ_precision}, avg_eval_occ_recall: {avg_eval_occ_recall}, avg_eval_occ_f1: {avg_eval_occ_f1}, avg_eval_occ_iou: {avg_eval_occ_iou}, step: {step}, global_step: {global_step}, lr: {optimizer.param_groups[0]['lr']} \n")
-
-                                writer.add_scalar("eval_loss", eval_loss.item(), global_step)
-                                writer.add_scalar("eval_loss_occ", eval_loss_occ.item(), global_step)
-                                writer.add_scalar("eval_precision_score", eval_precision_score.mean().item(), global_step)
-                                writer.add_scalar("eval_recall_score", eval_recall_score.mean().item(), global_step)
-                                writer.add_scalar("eval_f1_score", eval_f1_score.mean().item(), global_step)
-                                writer.add_scalar("eval_iou_score", eval_iou_score.mean().item(), global_step)
-                                
-                                # del tensor
-                                del eval_loss, eval_loss_occ
-                                del eval_precision_score, eval_recall_score, eval_f1_score, eval_iou_score
-                                torch.npu.empty_cache()
-
-                                inout_dir = os.path.join(exp_dir, f"epoch{epoch}-global_step{global_step}", "input_output_results/val")
-                                save_inout_pc(inout_dir, input_dict, output_logit)
-
-                        val_dataloader.sampler.set_start_index(0)
-                        start_step_eval = 0
-
-                        ## cleanup
+                            eval_log_step += 1
+                        
                         if coordinator.is_master():
-                            cleanup_memory()                        
+                            avg_eval_loss = running_eval_loss / eval_log_step
+                            avg_eval_loss_occ = running_eval_loss_occ / eval_log_step
+                            avg_eval_loss_kl = running_eval_loss_kl / eval_log_step
+                            avg_eval_occ_precision = running_eval_precision / eval_log_step
+                            avg_eval_occ_recall = running_eval_recall / eval_log_step
+                            avg_eval_occ_f1 = running_eval_f1 / eval_log_step
+                            avg_eval_occ_iou = running_eval_iou / eval_log_step
+
+                            logger.info(f"\n eval_loss: {avg_eval_loss}, avg_eval_loss_occ: {avg_eval_loss_occ}, avg_eval_loss_kl: {avg_eval_loss_kl}, avg_eval_occ_precision: {avg_eval_occ_precision}, avg_eval_occ_recall: {avg_eval_occ_recall}, avg_eval_occ_f1: {avg_eval_occ_f1}, avg_eval_occ_iou: {avg_eval_occ_iou}, step: {step}, global_step: {global_step}, lr: {optimizer.param_groups[0]['lr']} \n")
+
+                            writer.add_scalar("eval_loss", eval_loss.item(), global_step)
+                            writer.add_scalar("eval_loss_occ", eval_loss_occ.item(), global_step)
+                            if eval_loss_kl is not None:
+                                writer.add_scalar("eval_loss_kl", eval_loss_kl.item(), global_step)
+                            writer.add_scalar("eval_precision_score", eval_precision_score.mean().item(), global_step)
+                            writer.add_scalar("eval_recall_score", eval_recall_score.mean().item(), global_step)
+                            writer.add_scalar("eval_f1_score", eval_f1_score.mean().item(), global_step)
+                            writer.add_scalar("eval_iou_score", eval_iou_score.mean().item(), global_step)
+                            
+                            # del tensor
+                            del eval_loss, eval_loss_occ
+                            del eval_precision_score, eval_recall_score, eval_f1_score, eval_iou_score
+                            torch.npu.empty_cache()
+
+                            inout_dir = os.path.join(exp_dir, f"epoch{epoch}-global_step{global_step}", "input_output_results/val")
+                            save_inout_pc(inout_dir, input_dict, output_logit)
+
+                    val_dataloader.sampler.set_start_index(0)
+                    start_step_eval = 0
+
+                    ## cleanup
+                    if coordinator.is_master():
+                        cleanup_memory()                        
 
         # the continue epochs are not resumed, so we need to reset the sampler start index and start step
         train_dataloader.sampler.set_start_index(0)

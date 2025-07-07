@@ -1,9 +1,11 @@
-
+import torch
+import torch_npu
 from torch import nn
 from src.models.transformer.transformer_base import PointEmbed,PreNorm,Attention,FeedForward,cache_fn,exists
 from timm.models.layers import DropPath
 
 from ...registry import MODELS
+
 @MODELS.register_module()
 class VecSetDecoder(nn.Module):
     def __init__(
@@ -65,15 +67,15 @@ class VecSetDecoder(nn.Module):
             self.seg_head_drop_path = DropPath(self.seg_head_drop_rate) if self.seg_head_drop_rate > 0. else nn.Identity()
 
 
-    def forward(self, x, queries):
+    def forward(self, x, x_offset, queries, queires_offset):
         
         for self_attn, self_ff in self.layers:
-            x = self_attn(x, enable_flash = self.enable_flash,attn_dtype=self.attn_dtype) + x
+            x = self_attn(x, x_offset, enable_flash = self.enable_flash, attn_dtype=self.attn_dtype) + x
             x = self_ff(x) + x
 
         # cross attend from decoder queries to latents
         queries_embeddings = self.point_embed(queries)
-        latents = self.decoder_cross_attn(queries_embeddings, context = x, enable_flash = self.enable_ca_flash)
+        latents = self.decoder_cross_attn(queries_embeddings, queires_offset, context = x, context_offset = x_offset, enable_flash = self.enable_ca_flash)
 
         # optional decoder feedforward
         if exists(self.decoder_ff):

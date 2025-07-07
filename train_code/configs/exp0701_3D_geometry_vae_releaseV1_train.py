@@ -1,9 +1,10 @@
 # acceleration & misc setting
+accurate_reproduce = False # 精确复现实验需开启
 dtype = "fp32"  # fp16, bf16, fp32, 
 grad_checkpoint = True
 plugin = "zero2"
 sp_size = 1
-seed = 42
+seed = 1234
 
 # model setting
 model = dict(
@@ -11,6 +12,9 @@ model = dict(
     input_pcd_num = 50000,
     num_latent = 2048,
     latent_dim = 512,
+    kl_latent_dim = 64,
+    enable_kl = False,
+    enable_ca_flash = False,
     encoder_dict = dict(
         type = "PointTransformerV3_2",
         in_channels = 3, # ['coord]
@@ -21,8 +25,7 @@ model = dict(
         enc_patch_size=(1024,),
         enable_cpe_block=False,
         enable_flash=True,
-        attn_dtype='bf16',
-        enable_ca_flash=False,
+        attn_dtype='bf16',       
         drop_path=0.3,
         shuffle_orders=True,
         cls_mode=True, #True for enc only; False for enc-dec backbone
@@ -38,7 +41,6 @@ model = dict(
         enable_cpe_block=False,
         enable_flash=True,
         attn_dtype='bf16',
-        enable_ca_flash=False,
         shuffle_orders=False,
         cls_mode=True, #True for enc only; False for enc-dec backbone        
     ),
@@ -54,25 +56,40 @@ model = dict(
         output_dim = 1,
         # deterministic = True, # ['Auto' or 'KL'] ## TODO
     ),
+    use_cpu_fps=True
 )
 
 # dataloader
-batch_size = 1 # currently only support batchsize = 1
+batch_size = 1
 num_workers = 1
-query_sample_rate = 0.1
-max_query_number = 100000
-grid_size = 0.05
 
 # dataset settings
-data_root = '/home/y00391175/project_xiaoxu/dataset/3DGS/scannetpp_trainval_v6/'
-train_data_list_name = './datacache/scannetpp_trainval/nvs_sem_train2.txt'
-val_data_list_name = './datacache/scannetpp_trainval/nvs_sem_val.txt'
+train_dataset = dict(
+    type = 'DatasetForScanNetV2',
+    data_root = '/mnt/data1/z00912387/scannetpp_pcd/train',
+    data_list_name = 'datacache/scannetpp_trainval/nvs_sem_train.txt',
+    query_sample_rate = 0.1,
+    max_query_number = 100000,
+    Gridsample_mode = 'train',
+    grid_size = 0.05,
+)
+val_dataset = dict(
+    type = 'DatasetForScanNetV2',
+    data_root = '/mnt/data1/z00912387/scannetpp_pcd/val',
+    data_list_name = 'datacache/scannetpp_trainval/nvs_sem_val.txt',
+    query_sample_rate = 0.1,
+    max_query_number = 100000,
+    Gridsample_mode = 'train',
+    grid_size = 0.05,
+)
 
 # scheduler settings
-epochs = 500 
-log_every = 500
+epochs = 500
+log_every = 1
 ckpt_every = 500
+eval_every = 500
 resume = None
+# resume = './exp0417_3D_geometry_vae_releaseV1_ddp/024-VecSetAEV4/epoch180-global_step75000/'
 load = None
 
 lr = 1e-4 
@@ -86,10 +103,14 @@ weight_decay = 0
 # - occ geometry loss
 enable_occ_loss = True
 loss_weight_occ = 50
+loss_weight_kl = 0.05
 # - eval metric
-enable_occ_eval = True
+enable_occ_eval = False
 eval_metric_list = ['precision','recall','f1','iou']
 occ_threshold = 0.0
 
 # Others
-outputs = "./exp0417_3D_geometry_vae_releaseV1/"
+outputs = "/mnt/nvme3/ljr/exp0417_3D_geometry_vae_releaseV1_ddp/"
+
+
+
