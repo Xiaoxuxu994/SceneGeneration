@@ -1,11 +1,8 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
-<<<<<<< HEAD
 import numpy as np
 import torch.distributed as dist
-=======
->>>>>>> origin/zt/3dgvae_npu_aligned
 # from torch_cluster import fps
 import math
 from src.registry import MODELS, build_module
@@ -132,11 +129,7 @@ class VecSetAEV4(nn.Module):
                 enable_seg_head=False,
                 seg_dim = 512,
                 seg_class = 100,
-<<<<<<< HEAD
-                enable_kl = False,
-=======
                 enable_ca_flash = False,
->>>>>>> origin/zt/3dgvae_npu_aligned
                 encoder_dict = dict(
                     type = "PointTransformerV3_2",
                     in_channels = 3, # ['coord]
@@ -176,12 +169,7 @@ class VecSetAEV4(nn.Module):
         self.enable_kl = enable_kl
         self.enable_multilevel = enable_multilevel
         self.feafuse_channels = feafuse_channels
-<<<<<<< HEAD
-        self.enable_kl = enable_kl
-
-=======
         self.enable_ca_flash = enable_ca_flash
->>>>>>> origin/zt/3dgvae_npu_aligned
         self.encoder_dict = encoder_dict
         self.query_encoder_dict = query_encoder_dict
         self.decoder_dict = decoder_dict
@@ -495,14 +483,6 @@ class VecSetAEV4(nn.Module):
             cross_attn, cross_ff = self.cross_attend_blocks
             latent = cross_attn(sampled_pc_embeddings, sample_pc_dict['offset'], context = pc_embeddings, context_offset=input_dict['offset'], mask = None, enable_flash = self.enable_ca_flash) + sampled_pc_embeddings
             latent = cross_ff(latent) + latent
-<<<<<<< HEAD
-
-
-        if self.enable_seg_head:
-            return latent,seg_logits
-        else:
-            return latent
-=======
         
         if self.enable_kl:
             mean = self.mean_fc(latent)
@@ -516,7 +496,6 @@ class VecSetAEV4(nn.Module):
         if not self.enable_kl:
             kl = None
         return latent, seg_logits, kl
->>>>>>> origin/zt/3dgvae_npu_aligned
     
     def encode_multilevel(self, input_dict):
         pc_embeddings_list = []
@@ -585,27 +564,9 @@ class VecSetAEV4(nn.Module):
             latent = self.encode_multilevel(input_dict)
             seg_logits, kl = None, None
         else:
-<<<<<<< HEAD
-            latent, seg_logits, kl = self.encode_v2(input_dict)
-        # print('After encode')
-
-        #     print(latent)
-        # pc_query_key = 'pc_query_1.0'
-        # query_points = input_dict[pc_query_key].unsqueeze(0)
-        query_points = input_dict['pc_query'].unsqueeze(0)
-        output = self.decode(latent, query_points)
-        # print('After Decode')
-        output = output.squeeze(-1)   
-        
-        if self.enable_seg_head:
-            return {'logits': output,'seg_logits':seg_logits, 'kl':kl}
-        else:
-            return {'logits': output, 'kl':kl}
-=======
             latent, seg_logits, kl = self.encode(input_dict)
         query_points = input_dict['pc_query'].unsqueeze(0) # [1,sum(s),d]
         latent_offset = torch.tensor([self.num_latent*(i+1) for i in range(input_dict['pc_query_offset'].shape[0])], dtype=torch.long, device=input_dict['pc_query_offset'].device)
         output = self.decode(latent, latent_offset, query_points, input_dict['pc_query_offset'])
         output = output.squeeze(-1)
         return {'logits': output,'seg_logits': seg_logits, 'kl': kl}
->>>>>>> origin/zt/3dgvae_npu_aligned
