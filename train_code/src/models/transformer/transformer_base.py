@@ -4,7 +4,7 @@ import torch
 import torch_npu
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange, repeat
+from einops import rearrange, repeat, einsum
 from timm.models.layers import DropPath
 import torch.distributed as dist
 
@@ -131,8 +131,99 @@ class FeedForward(nn.Module):
 #             out = out.to(q.dtype)
 #         return self.drop_path(linear_manual_nd(out, self.to_out))
 
-
 class Attention(nn.Module):
+    def __init__(self, query_dim, context_dim = None, heads = 8, dim_head = 64, drop_path_rate = 0.0):
+        super().__init__()
+        inner_dim = dim_head * heads
+        context_dim = default(context_dim, query_dim)
+        self.scale = dim_head ** -0.5
+        self.heads = heads
+
+        self.to_q = nn.Linear(query_dim, inner_dim, bias = False)
+        self.to_kv = nn.Linear(context_dim, inner_dim * 2, bias = False)
+        self.to_out = nn.Linear(inner_dim, query_dim)
+        self.drop_path_rate = drop_path_rate
+
+        self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0. else nn.Identity()
+
+    def forward(self, x, context = None, mask = None, enable_flash = False, attn_dtype='fp16'):
+        h = self.heads
+        
+        # q = self.to_q(x)
+        
+        q = linear_manual_nd(x, self.to_q)
+        context = default(context, x)
+        # k, v = self.to_kv(context).chunk(2, dim = -1)
+        k, v = linear_manual_nd(context, self.to_kv).chunk(2, dim=-1)
+
+        if not enable_flash:
+            q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h = h), (q, k, v))
+            sim = einsum('b i d, b j d -> b i j', q, k) * self.scale
+            if exists(mask):
+                mask = rearrange(mask, 'b ... -> b (...)')
+                max_neg_value = -torch.finfo(sim.dtype).max
+                mask = repeat(mask, 'b j -> (b h) () j', h = h)
+                sim.masked_fill_(~mask, max_neg_value)
+
+            # attention, what we cannot get enough of
+            attn = sim.softmax(dim = -1)
+
+            out = einsum('b i j, b j d -> b i d', attn, v)
+            out = rearrange(out, '(b h) n d -> b n (h d)', h = h)
+        
+        else:
+            import torch_npu
+            if attn_dtype == 'fp16':
+                # out = torch_npu.npu_prompt_flash_attention(
+                #     q.half(),
+                #     k.half(),
+                #     v.half(),
+                #     num_heads = h,
+                #     scale_value = self.scale,
+                #     input_layout = "BSH",
+                # )
+
+                out = torch_npu.npu_fusion_attention(
+                    q.half(),
+                    k.half(),
+                    v.half(),
+                    head_num=h,
+                    scale=self.scale,
+                    input_layout="BSH"
+                )[0]
+            if attn_dtype == 'bf16':
+                # out = torch_npu.npu_prompt_flash_attention(
+                #     q.bfloat16(),
+                #     k.bfloat16(),
+                #     v.bfloat16(),
+                #     num_heads = h,
+                #     scale_value = self.scale,
+                #     input_layout = "BSH",
+                # )
+                
+                out = torch_npu.npu_fusion_attention(
+                    q.bfloat16(),
+                    k.bfloat16(),
+                    v.bfloat16(),
+                    head_num=h,
+                    scale=self.scale,
+                    input_layout="BSH"
+                )[0]
+                # print(out.requires_grad)
+            # q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b n h d', h = h), (q, k, v))
+            # ## enable flash_attn
+            # if attn_dtype == 'fp16':
+            #     out = flash_attn.flash_attn_func(q.half(), k.half(), v.half(), dropout_p= self.drop_path_rate, softmax_scale=self.scale, causal=False,
+            #             window_size=(-1, -1), alibi_slopes=None, deterministic=False)  
+            # if attn_dtype == 'bf16':
+            #     out = flash_attn.flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), dropout_p= self.drop_path_rate, softmax_scale=self.scale, causal=False,
+            #             window_size=(-1, -1), alibi_slopes=None, deterministic=False)  
+            # out = rearrange(out, 'b n h d -> b n (h d)', h = h)
+            out = out.to(q.dtype)
+        return self.drop_path(linear_manual_nd(out, self.to_out))
+
+
+class Attention_SBMS(nn.Module):
     def __init__(self, query_dim, context_dim = None, heads = 8, dim_head = 64, drop_path_rate = 0.0):
         super().__init__()
         inner_dim = dim_head * heads

@@ -539,6 +539,7 @@ class DatasetForScanNetV6(Dataset):
         ## gridsample for input
         input_dict = self.T_GridSample(input_dict)
         input_dict = self.T_ToTensor(input_dict)
+        input_fps_dict = self.T_ToTensor(input_fps_dict)
 
         # input pcd
         coord = input_dict["coord"]
