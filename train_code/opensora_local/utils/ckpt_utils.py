@@ -262,7 +262,7 @@ def load_checkpoint(model, ckpt_path, save_as_pt=True,strict=True): ##TODO ckpt 
 
 def load_checkpoint_ckpt(model, path: str, device: str): # 用ddp保存的state_dict初始化非ddp下的模型, ddp保存的是module.xxx.yyy， 而非ddp的是xxx.yyy
     checkpoint = torch.load(path, map_location=device)
-    state_dict_ddp = checkpoint["model"]
+    state_dict_ddp = checkpoint["model"] if "model" in checkpoint.keys() else checkpoint
     state_dict = {}
     for k, v in state_dict_ddp.items():
         if k.startswith("module."):
