@@ -1,4 +1,5 @@
 import torch
+import torch_npu
 import torch.nn.functional as F
 from torch import nn
 # from torch_cluster import fps
@@ -10,6 +11,16 @@ from util import sample_farthest_points
 import torch.distributed as dist
 
 from ...registry import MODELS
+def log_memory_usage(info=''):
+    print(f"当前显存占用: {torch_npu.npu.memory_allocated()/1024**2:.2f}MB / {torch_npu.npu.max_memory_allocated()/1024**2:.2f}MB, {info}, {dist.get_rank()}")
+
+def isin(elements, test_elements):
+    # 需要先对 test_elements 排序
+    test_elements_sorted, _ = torch.sort(test_elements.unique())
+    idx = torch.searchsorted(test_elements_sorted, elements)
+    idx[idx == len(test_elements_sorted)] = 0
+    return test_elements_sorted[idx] == elements
+
 @MODELS.register_module()
 class VecSetAEV4CTF(nn.Module):
     def __init__(self, 
@@ -237,7 +248,7 @@ class VecSetAEV4CTF(nn.Module):
 
         fine_hash_all = self.hash_coords(fine_grid, resolution_fine)
         fine_candidate_hash = self.hash_coords(fine_candidates, resolution_fine)
-        return torch.isin(fine_hash_all, fine_candidate_hash)
+        return isin(fine_hash_all, fine_candidate_hash)
 
     def logit2label(self, logit, threshold=0.5):
         """
@@ -397,8 +408,9 @@ class VecSetAEV4CTF(nn.Module):
 
     def forward(self, input_dict,return_mask=False):
         # encoder
+        # log_memory_usage('Before encode')
         latent = self.encode(input_dict)
-
+        # log_memory_usage('After encode')
         ### Coarse to fine decoder
         logit_list,targets_list,mask_list= [],[],[None,]
         # ------------------------------------------------------------------------
@@ -407,8 +419,9 @@ class VecSetAEV4CTF(nn.Module):
         # print('query_points_16: ',query_points_16.shape)
         target_16 = input_dict['pc_query_label_fine_prop_16']
         grid_16 = input_dict['pc_query_grid_16']
-
+        # log_memory_usage('Before decode1')
         logit_16,latent_16 = self.decoder1(latent,query_points_16)
+        # log_memory_usage('After decode1')
         label_16 = self.logit2label(logit_16,0.5)
         if self.training:
             label_c = target_16.bool() | label_16
@@ -423,6 +436,7 @@ class VecSetAEV4CTF(nn.Module):
             coarse_grid=grid_16,
             fine_grid=input_dict['pc_query_grid_32']
         )
+        # log_memory_usage('After mask generation 1')
         #- current pred-gt pair
         logit_list.append(logit_16.squeeze(-1).squeeze(0))
         targets_list.append(target_16)
@@ -436,8 +450,9 @@ class VecSetAEV4CTF(nn.Module):
 
         # 控制 skip connection 的输入
         latent_input = latent + latent_16 if self.use_skip else latent_16
-        
+        # log_memory_usage('Before decode2')
         logit_32,latent_32 = self.decoder2(latent_input,query_points_32)
+        # log_memory_usage('After decode2')
         label_32 = self.logit2label(logit_32,0.5)
         if self.training:
             label_c = target_32.bool() | label_32
@@ -452,6 +467,7 @@ class VecSetAEV4CTF(nn.Module):
             coarse_grid=grid_32,
             fine_grid=input_dict['pc_query_grid_64']
         )
+        # log_memory_usage('After mask generation 2')
         #- current pred-gt pair
         logit_list.append(logit_32.squeeze(-1).squeeze(0))
         targets_list.append(target_32)
@@ -466,7 +482,9 @@ class VecSetAEV4CTF(nn.Module):
         grid_64 = input_dict['pc_query_grid_64'][mask]
 
         latent_input = latent_16 + latent_32 if self.use_skip else latent_32
+        # log_memory_usage('Before decode3')
         logit_64,latent_64 = self.decoder3(latent_input,query_points_64)
+        # log_memory_usage('After decode3')
         label_64 = self.logit2label(logit_64,0.5)
         
         if self.training:
@@ -487,6 +505,7 @@ class VecSetAEV4CTF(nn.Module):
             fine_grid=input_dict['pc_query_grid_128']
         )
         #- current pred-gt pair
+        # log_memory_usage('After mask generation 3')
         logit_list.append(logit_64.squeeze(-1).squeeze(0))
         targets_list.append(target_64)
         mask_list.append(mask)
@@ -497,8 +516,10 @@ class VecSetAEV4CTF(nn.Module):
         # print('query_points_128: ',query_points_128.shape)
         target_128 = input_dict['pc_query_label_128'][mask]
         latent_input = latent_32 + latent_64 if self.use_skip else latent_64
-        # print(query_points_128.shape, mask.shape, '********')
+        # print(query_points_128.shape, mask.shape, '********', torch.cuda.max_memory_allocated(), torch.cuda.max_memory_reserved(), torch.cuda.max_memory_cached())
+        # log_memory_usage('Before decode4')
         logit_128,latent_128 = self.decoder4(latent_input,query_points_128)
+        # log_memory_usage('After decode4')
         #- current pred-gt pair
         logit_list.append(logit_128.squeeze(-1).squeeze(0))
         targets_list.append(target_128)

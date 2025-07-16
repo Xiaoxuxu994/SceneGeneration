@@ -69,6 +69,7 @@ def occ_eval_metric_all(output_logit, label, occ_threshold=0.5):
     prob = torch.sigmoid(output_logit)
     pred = (prob >= occ_threshold).int()
     label = label.int()
+    
 
     # Flatten to numpy arrays
     pred_np = pred.cpu().numpy().flatten()

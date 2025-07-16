@@ -2,8 +2,12 @@
 import os
 import numpy as np
 import random
+import time
 import torch
 import torch_npu
+import torch.multiprocessing as mp
+# mp.set_start_method('spawn') 
+from torch.multiprocessing import Process
 from torch_npu.contrib import transfer_to_npu
 torch._C._jit_set_profiling_mode(False)
 import torch.distributed as dist
@@ -19,7 +23,9 @@ from colossalai.utils import get_current_device
 
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
+import queue
 import math
+import functools
 from src.registry import DATASETS
 
 ## opensora 
@@ -48,6 +54,8 @@ from src.utils.metric import occ_eval_metric_all,init_running_metrics
 import gc
 # print(os.environ['MASTER_PORT'])
 
+TMP_DIR = '/mnt/nvme3/ljr/tmp'
+
 def cosine_warmup_schedule(warmup_steps, total_steps, min_lr_ratio=0.01):
     def lr_lambda(current_step):
         if current_step < warmup_steps:
@@ -61,8 +69,8 @@ def cleanup_memory():
     torch_npu.npu.empty_cache()
     gc.collect() 
 
-def log_memory_usage():
-    print(f"当前显存占用: {torch_npu.npu.memory_allocated()/1024**2:.2f}MB / {torch_npu.npu.max_memory_allocated()/1024**2:.2f}MB")
+def log_memory_usage(info=''):
+    print(f"当前显存占用: {torch_npu.npu.memory_allocated()/1024**2:.2f}MB / {torch_npu.npu.max_memory_allocated()/1024**2:.2f}MB, {info}, {dist.get_rank()}")
 
 
 def log_metrics(writer, logger, metrics, step_count, global_step, optimizer, step, mode='train'):
@@ -125,16 +133,58 @@ def reduce_metrics(metrics_dict, device):
             metrics_dict[k] = all_reduce_mean(t)
     return metrics_dict
 
+def validation_worker(shared_queue, stop_event):
+    try:
+        while True:
+            try:
+                msg, output_list, target_list, occ_threshold, running_metrics, scale_level, step, epoch, rank = shared_queue.get(timeout=0.5)
+                if msg == "outputs":
+                    for idx,(logit, target) in enumerate(zip(output_list,target_list)):
+                        scale = scale_level[idx]
+                        metrics = occ_eval_metric_all(logit, target, occ_threshold=occ_threshold)
+                        for name, score in metrics:
+                            running_metrics[f'{name}_s{scale}'] += score
+                        running_metrics[f'logit_mean_s{scale}'] += logit.mean().item()
+                        running_metrics[f'logit_max_s{scale}'] += logit.max().item()
+                        running_metrics[f'logit_min_s{scale}'] += logit.min().item()
+                    if (step+1) % 500 == 0:
+                        torch.save(running_metrics, os.path.join(TMP_DIR, f'res_{epoch}_{step}_{rank}.pth'))
+                elif msg == "finished":
+                    print('validation process finished')
+                    break
+            except queue.Empty:
+                continue
+            
+    except Exception as e:
+        print(f"Subprocess collapsed: {e}")
+    finally:
+        print("Subprocess Exit")
+        stop_event.set()
+
+
 def main():
     # ======================================================
     # 1. args & cfg
     # ======================================================
+    
     cfg = parse_configs(training=True)
     random.seed(cfg.seed)
     np.random.seed(cfg.seed)
     torch.manual_seed(cfg.seed)
     torch.npu.manual_seed(cfg.seed)
     torch.npu.manual_seed_all(cfg.seed)
+    if cfg.async_valid:
+        manager = mp.Manager()
+        shared_queue = manager.Queue()
+        stop_event = mp.Event()
+        cpu_proc = Process(
+            target=validation_worker,
+            args=(shared_queue, stop_event),
+            daemon=True
+        )
+        cpu_proc.start()
+
+    os.makedirs(TMP_DIR, exist_ok=True)
     
     exp_name, exp_dir = create_experiment_workspace(cfg)
     save_training_config(cfg._cfg_dict, exp_dir)
@@ -323,6 +373,26 @@ def main():
     else:
         occ_criterion = torch.nn.BCEWithLogitsLoss()
 
+    profiling = False
+
+    if profiling:
+        # time_fwd, time_bwd = [], []
+        import torch_npu
+        experimental_config = torch_npu.profiler._ExperimentalConfig(
+                        profiler_level=torch_npu.profiler.ProfilerLevel.Level1,
+                        aic_metrics=torch_npu.profiler.AiCMetrics.PipeUtilization)
+        prof = torch_npu.profiler.profile(
+                        activities=[torch_npu.profiler.ProfilerActivity.NPU,
+                                    torch_npu.profiler.ProfilerActivity.CPU],
+                        with_stack=True,
+                        record_shapes=False,
+                        profile_memory=True,
+                        schedule=torch_npu.profiler.schedule(wait=0, warmup=1, active=1, repeat=0,
+                                                                skip_first=0),
+                        experimental_config=experimental_config,
+                        on_trace_ready=torch_npu.profiler.tensorboard_trace_handler('./profiling/train_encode_c2f_async/'))
+        # prof.start()
+
 
     # =======================================================
     # 9. Training Loop
@@ -341,25 +411,18 @@ def main():
         with tqdm(range(start_step, num_steps_per_epoch),desc=f"Epoch {epoch}",
             disable=not coordinator.is_master(), total=num_steps_per_epoch, initial=start_step,) as pbar:
             for step in pbar:
+                # log_memory_usage('before forward')
                 input_dict = next(traindataloader_iter)
                 input_dict = {k: v[0].to(device) if isinstance(v, torch.Tensor) else v for k, v in input_dict.items()}
                 model.train()
 
+                if profiling:
+                    if step == 140:
+                        prof.start()
 
-                # param_usage = {n: False for n, p in model.named_parameters()}
-
-                # def track_param_usage(param, input, output):
-                #     for name, p in model.named_parameters():
-                #         if p is param:
-                #             param_usage[name] = True
-
-                # # 为所有参数注册前向钩子
-                # for name, param in model.named_parameters():
-                #     param.register_hook(lambda grad, name=name: print(f"Grad for {name}: {grad.norm()}") if grad is not None else None)
-                #     param.register_forward_hook(track_param_usage)
-
+                # log_memory_usage('before forward 2')
                 output_list, target_list = model.forward(input_dict)
-
+                # log_memory_usage(f'after forward, step {step}')
                 loss = torch.tensor(0).to(device, dtype)
                 for idx,(logit, target) in enumerate(zip(output_list,target_list)):
                     scale = scale_level[idx]
@@ -376,26 +439,74 @@ def main():
 
                 # exit(-1)
                 optimizer.step()
+                # log_memory_usage('After backward')
                 if lr_scheduler is not None:
-                    lr_scheduler.step()    
+                    lr_scheduler.step()
+                if profiling:
+                    if step >= 140:
+                        prof.step()
+                        if step > 145:
+                            prof.stop()
+                            print('End profiling...')
+                            exit(-1)
 
                 ## evaluation
                 running_metrics['loss'] += loss.item()
-                for idx,(logit, target) in enumerate(zip(output_list,target_list)):
-                    scale = scale_level[idx]
-                    metrics = occ_eval_metric_all(logit, target, occ_threshold=cfg.occ_threshold)
-                    for name, score in metrics:
-                        running_metrics[f'{name}_s{scale}'] += score
-                    running_metrics[f'logit_mean_s{scale}'] += logit.mean().item()
-                    running_metrics[f'logit_max_s{scale}'] += logit.max().item()
-                    running_metrics[f'logit_min_s{scale}'] += logit.min().item()
-
-                ## all reduce mean
-                running_metrics = reduce_metrics(running_metrics,device)                
+                # import time
+                # torch.npu.synchronize()
+                # a = time.time()
                 log_step += 1
                 global_step = epoch * num_steps_per_epoch + step
+                if not cfg.async_valid:
+                    if (global_step) % cfg.log_every == 0:
+                        for idx,(logit, target) in enumerate(zip(output_list,target_list)):
+                            scale = scale_level[idx]
+                            metrics = occ_eval_metric_all(logit, target, occ_threshold=cfg.occ_threshold)
+                            for name, score in metrics:
+                                running_metrics[f'{name}_s{scale}'] += score
+                            running_metrics[f'logit_mean_s{scale}'] += logit.mean().item()
+                            running_metrics[f'logit_max_s{scale}'] += logit.max().item()
+                            running_metrics[f'logit_min_s{scale}'] += logit.min().item()
+                        # torch.npu.synchronize()
+                        # b = time.time()
+                        # print(f'*****Rank {dist.get_rank()}, Time = {b - a:.4f} s')
+                        ## all reduce mean
+                        # print('*****')
+                        running_metrics = reduce_metrics(running_metrics,device)
+
+                else:
+                    with torch.no_grad():
+                        shared_queue.put(("outputs", [x.detach().cpu() for x in output_list], [x.detach().cpu() for x in target_list], cfg.occ_threshold, running_metrics, scale_level, step+epoch*num_steps_per_epoch, epoch, dist.get_rank()))
+                
 
                 ## Log to tensorboard
+                if cfg.async_valid:
+                    # gather validation result at the next step
+                    if global_step == 0:
+                        i = 0
+                        while not os.path.exists(os.path.join(TMP_DIR, 'res_0_0_0.pth')):
+                            print('Waiting for first evaluation' + '.' * i, flush=True)
+                            time.sleep(0.1)
+                        load_dir = f'{TMP_DIR}/res_0_0_'
+                    else:
+                        load_dir = f'{TMP_DIR}/res_{epoch}_{global_step-1}_'
+                    world_size = coordinator.world_size
+                    # Reduce Results
+                    if coordinator.is_master() and (global_step) % cfg.log_every == 0:
+                        while not os.path.exists(load_dir+'0.pth'):
+                            time.sleep(0.1)
+                        keys = torch.load(load_dir+'0.pth', map_location='cpu').keys()
+                        running_metrics = {k:0 for k in keys}
+                        for i in range(world_size):
+                            load_path = load_dir + f'{i}.pth'
+                            this_metrics = torch.load(load_path, map_location='cpu')
+                            running_metrics = {
+                                k: running_metrics[k]+v
+                                for k,v in this_metrics.items()
+                            }
+                        running_metrics = {k:v/world_size for k,v in running_metrics.items()}
+
+
                 if coordinator.is_master() and (global_step) % cfg.log_every == 0:
                     log_metrics(writer, logger, running_metrics, log_step, global_step, optimizer, step,mode='train')
                     running_metrics = {k: 0.0 for k in running_metrics}
@@ -468,6 +579,13 @@ def main():
         train_dataloader.sampler.set_start_index(0)
         start_step = 0
         torch.cuda.empty_cache()
+        exit(-1)
+
+    if cfg.async_valid:
+        shared_queue.put(("finish", None, None, None, None, None, None, None, None))
+        stop_event.wait()
+        print('Validation Process finished')
+        cpu_proc.join()
 
 
 if __name__ == "__main__":

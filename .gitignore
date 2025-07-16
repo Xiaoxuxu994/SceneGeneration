@@ -13,3 +13,6 @@ data-dump
 .ipynb_checkpoints
 train_code/exp_result/
 train.log
+train*.log
+kernel_meta
+profiling

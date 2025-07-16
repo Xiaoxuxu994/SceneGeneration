@@ -49,6 +49,35 @@ def all_reduce_mean(tensor: torch.Tensor) -> torch.Tensor:
     tensor.div_(dist.get_world_size())
     return tensor
 
+def async_reduce_metrics(metrics):
+    rank, world_size =dist.get_rank(), dist.get_world_size()
+    reduce_rank = 1
+    if rank == reduce_rank:
+        # Rank 0 收集所有结果
+        results = [metrics]
+        for src in range(world_size):
+            if src != reduce_rank:
+                data = torch.zeros_like(metrics)
+                torch.distributed.recv(data, src=src)
+                results.append(data)
+        return torch.stack(results).mean(dim=0)  # 聚合逻辑
+    else:
+        # 其他 Rank 异步发送
+        torch.distributed.send(metrics, dst=reduce_rank)
+        return None  # 非 Rank 0 不等待结果
+    
+# from threading import Thread, Queue
+
+# def validation_worker(metrics_queue):
+#     while True:
+#         metrics = metrics_queue.get()
+#         torch.distributed.all_reduce(metrics)  # 后台同步
+
+# metrics_queue = Queue()
+# Thread(target=validation_worker, args=(metrics_queue,)).start()
+
+# # 主线程投递指标
+# metrics_queue.put(validation_metrics)
 
 def get_model_numel(model: torch.nn.Module) -> (int, int):
     num_params = 0

@@ -123,7 +123,7 @@ val_dataset = dict(
 
 # dataset settings
 batch_size = 1 # currently only support batchsize = 1
-num_workers = 1
+num_workers = 8
 # data_root = "/mnt/nvme3/z00533370/dataset/scannetpp_norm_v6/"
 # train_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_train2.txt'
 # val_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_val.txt'
@@ -136,7 +136,8 @@ data_args = dict(
 epochs = 500 #10000
 log_every = 500
 ckpt_every = 500
-resume = None #"/mnt/nvme3/z00533370/exp_result/exp0618_VecSetAE_PTV3_NetArc_V6-2_4gpu_datav2_latent2048_scannetpp_normv6_ctf_4level_coswarmup_nolossweight_gt_pretrain/003-VecSetAEV4CTF/epoch33-global_step7000/"
+resume = None
+# resume = "/home/ljr/SceneGeneration/train_code/exp_result/exp0620_3D_geometry_vae_normv6_ctf_4level_debug/066-VecSetAEV4CTF/epoch81-global_step17000/"
 load = None
 
 lr = 5e-4 
@@ -144,6 +145,7 @@ min_lr_ratio=0.05
 warmup_ratio=0.1
 grad_clip = 1.0
 weight_decay = 0 #0.1
+async_valid = True
 
 
 # loss & eval
@@ -153,4 +155,4 @@ loss_weight_occ = [1.0,1.0,1.0,1.0]
 occ_threshold = 0.5 # eval metric loss after sigmoid
 
 # Others
-outputs = "./exp_result/exp0620_3D_geometry_vae_normv6_ctf_4level_debug/"
+outputs = "/mnt/nvme3/ljr/exp_result/exp0620_3D_geometry_vae_normv6_ctf_4level_debug4/"
