@@ -576,6 +576,8 @@ def main():
                     start_step_eval = 0                       
             
         # the continue epochs are not resumed, so we need to reset the sampler start index and start step
+        # res = {'memory': model.module.memory, 'shape': model.module.query_shapes}
+        # torch.save(res, f'memory_res_{dist.get_rank()}.pth')
         train_dataloader.sampler.set_start_index(0)
         start_step = 0
         torch.cuda.empty_cache()

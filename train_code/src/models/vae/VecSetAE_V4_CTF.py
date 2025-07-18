@@ -135,6 +135,9 @@ class VecSetAEV4CTF(nn.Module):
         self.decoder2 = build_module(self.decoder_dict2, MODELS)
         self.decoder3 = build_module(self.decoder_dict3, MODELS)
         self.decoder4 = build_module(self.decoder_dict3, MODELS)
+        # Test
+        self.query_shapes = []
+        self.memory = []
 
     # def pc_fps(self,pc):
     #     # input point cloud: B x N x 3
@@ -235,6 +238,7 @@ class VecSetAEV4CTF(nn.Module):
     def get_fine_voxel_mask_from_coarse_labels(
         self, coarse_label, scale_factor, resolution_fine, coarse_grid, fine_grid
     ):
+        
         device = coarse_label.device
         active_coarse = coarse_grid[coarse_label.bool()]
         if active_coarse.shape[0] == 0:
@@ -248,6 +252,7 @@ class VecSetAEV4CTF(nn.Module):
 
         fine_hash_all = self.hash_coords(fine_grid, resolution_fine)
         fine_candidate_hash = self.hash_coords(fine_candidates, resolution_fine)
+        # print(fine_hash_all.shape, fine_candidate_hash.shape, isin(fine_hash_all, fine_candidate_hash).shape)
         return isin(fine_hash_all, fine_candidate_hash)
 
     def logit2label(self, logit, threshold=0.5):
@@ -518,7 +523,17 @@ class VecSetAEV4CTF(nn.Module):
         latent_input = latent_32 + latent_64 if self.use_skip else latent_64
         # print(query_points_128.shape, mask.shape, '********', torch.cuda.max_memory_allocated(), torch.cuda.max_memory_reserved(), torch.cuda.max_memory_cached())
         # log_memory_usage('Before decode4')
+        if query_points_128.size(1) > 1500000:
+            # 暂时下采样两倍
+            query_points_128 = query_points_128[:, ::2]
+            # print(target_128.shape)
+            target_128 = target_128[::2]
+        
         logit_128,latent_128 = self.decoder4(latent_input,query_points_128)
+        # if self.training:
+        #     memeory = torch_npu.npu.memory_allocated() / 1024 / 1024
+        #     self.memory.append(memeory)
+        #     self.query_shapes.append(s)
         # log_memory_usage('After decode4')
         #- current pred-gt pair
         logit_list.append(logit_128.squeeze(-1).squeeze(0))

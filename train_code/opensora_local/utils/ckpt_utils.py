@@ -150,44 +150,43 @@ def save(
     coordinator=None,
     save_dir='',
 ):
-    if save_dir is not None:
-        save_dir = os.path.join(save_dir, f"epoch{epoch}-global_step{global_step}")
-        os.makedirs(os.path.join(save_dir, "model"), exist_ok=True)
-        running_states = {
-            "epoch": epoch,
-            "step": step,
-            "global_step": global_step,
-            "sample_start_index": step * batch_size,
-        }
-        if booster is None:
-            # import pdb; pdb.set_trace()
-            if is_initialized():
-                rank = dist.get_rank()
-                if rank == 0:
-                    torch.save({
-                        "model": model.module.state_dict(),
-                        "optimizer": optimizer.state_dict()
-                    }, os.path.join(save_dir, f'ckpt{epoch}.pth'))
-            else:
+
+    save_dir = os.path.join(save_dir, f"epoch{epoch}-global_step{global_step}")
+    os.makedirs(os.path.join(save_dir, "model"), exist_ok=True)
+    running_states = {
+        "epoch": epoch,
+        "step": step,
+        "global_step": global_step,
+        "sample_start_index": step * batch_size,
+    }
+    if booster is None:
+        # import pdb; pdb.set_trace()
+        if is_initialized():
+            rank = dist.get_rank()
+            if rank == 0:
                 torch.save({
-                    "model": model.state_dict(),
+                    "model": model.module.state_dict(),
                     "optimizer": optimizer.state_dict(),
+                    "lr_scheduler": lr_scheduler.state_dict() if lr_scheduler is not None else None,
                 }, os.path.join(save_dir, f'ckpt{epoch}.pth'))
         else:
-            booster.save_model(model, os.path.join(save_dir, "model"), shard=True)
-            # ema is not boosted, so we don't need to use booster.save_model
-
-            booster.save_optimizer(optimizer, os.path.join(save_dir, "optimizer"), shard=True, size_per_shard=4096)
-            if lr_scheduler is not None:
-                booster.save_lr_scheduler(lr_scheduler, os.path.join(save_dir, "lr_scheduler"))
-        
-        if coordinator is None or coordinator.is_master():
-            save_json(running_states, os.path.join(save_dir, "running_states.json"))
-        if coordinator is not None:
-            dist.barrier()
+            torch.save({
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "lr_scheduler": lr_scheduler.state_dict() if lr_scheduler is not None else None,
+            }, os.path.join(save_dir, f'ckpt{epoch}.pth'))
     else:
-        if coordinator is not None:
-            dist.barrier()
+        booster.save_model(model, os.path.join(save_dir, "model"), shard=True)
+        # ema is not boosted, so we don't need to use booster.save_model
+
+        booster.save_optimizer(optimizer, os.path.join(save_dir, "optimizer"), shard=True, size_per_shard=4096)
+        if lr_scheduler is not None:
+            booster.save_lr_scheduler(lr_scheduler, os.path.join(save_dir, "lr_scheduler"))
+    
+    if coordinator is None or coordinator.is_master():
+        save_json(running_states, os.path.join(save_dir, "running_states.json"))
+    if coordinator is not None:
+        dist.barrier()
 
 
 def load(
@@ -200,13 +199,19 @@ def load(
             rank = dist.get_rank(get_data_parallel_group())
             map_location = {'npu:%d'% 0: "npu:%d" % rank}
             pts = torch.load(os.path.join(load_dir, f'ckpt{epoch}.pth'), map_location=map_location)
+            # pts = torch.load(os.path.join(load_dir, 'model_ckpt.pt'), map_location=map_location)
 
             model.module.load_state_dict(pts["model"])
             optimizer.load_state_dict(pts["optimizer"])
+            if lr_scheduler is not None and "lr_scheduler" in pts:
+                lr_scheduler.load_state_dict(pts["lr_scheduler"])
         else:
             pts = torch.load(os.path.join(load_dir, f'ckpt{epoch}.pth'), map_location='cpu')
+            # pts = torch.load(os.path.join(load_dir, 'model_ckpt.pt'), map_location='cpu')
             model.load_state_dict(pts["model"])
             optimizer.load_state_dict(pts["optimizer"])
+            if lr_scheduler is not None and "lr_scheduler" in pts:
+                lr_scheduler.load_state_dict(pts["lr_scheduler"])
     else:
         booster.load_model(model, os.path.join(load_dir, "model"))
         booster.load_optimizer(optimizer, os.path.join(load_dir, "optimizer"))
@@ -214,7 +219,7 @@ def load(
             booster.load_lr_scheduler(lr_scheduler, os.path.join(load_dir, "lr_scheduler"))
         
         dist.barrier()
-    return running_states["epoch"], running_states["step"] + 1, running_states["sample_start_index"] + 1
+    return running_states["epoch"], running_states["step"], running_states["sample_start_index"]
 
 
 def create_logger(logging_dir):
@@ -237,7 +242,7 @@ def create_logger(logging_dir):
 
 def load_checkpoint(model, ckpt_path, save_as_pt=True,strict=True): ##TODO ckpt load strict
     if ckpt_path.endswith(".pt") or ckpt_path.endswith(".pth"):
-        state_dict = find_model(ckpt_path)
+        state_dict = find_model(ckpt_path)['model']
         if 'module' in list(model.state_dict().items())[0][0]:
             contains_module_prefix = any(key.startswith('module.') for key in state_dict.keys())
             if not contains_module_prefix:
@@ -259,15 +264,3 @@ def load_checkpoint(model, ckpt_path, save_as_pt=True,strict=True): ##TODO ckpt 
             print(f"Model checkpoint saved to {save_path}")
     else:
         raise ValueError(f"Invalid checkpoint path: {ckpt_path}")
-
-def load_checkpoint_ckpt(model, path: str, device: str): # 用ddp保存的state_dict初始化非ddp下的模型, ddp保存的是module.xxx.yyy， 而非ddp的是xxx.yyy
-    checkpoint = torch.load(path, map_location=device)
-    state_dict_ddp = checkpoint["model"]
-    state_dict = {}
-    for k, v in state_dict_ddp.items():
-        if k.startswith("module."):
-            new_k = k[7:]
-        else:
-            new_k = k
-        state_dict[new_k] = v
-    model.load_state_dict(state_dict)
