@@ -1,0 +1,1 @@
+/usr/local/bin/c++  -std=c++11 -rdynamic CMakeFiles/example1.dir/example1.cpp.o -o example1  -Wl,-rpath,/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/build libcnpy.so -lz 

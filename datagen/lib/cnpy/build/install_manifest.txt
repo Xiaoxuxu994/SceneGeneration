@@ -1,0 +1,6 @@
+/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/lib/libcnpy.so
+/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/lib/libcnpy.a
+/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/include/cnpy.h
+/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/bin/mat2npz
+/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/bin/npy2mat
+/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/bin/npz2mat
