@@ -16,7 +16,7 @@ parser.add_argument("--voxel_res", type=int, default=128)
 parser.add_argument("--mode", type=str, choices=["sdf", "occ"])
 parser.add_argument("--boxmin", type=float, default=-1)
 parser.add_argument("--boxmax", type=float, default=1)
-parser.add_argument("--alpha", type=float, default=0.5)
+parser.add_argument("--alpha", type=float, default=1)
 parser.add_argument("--num_workers", type=int, default=1)
 parser.add_argument("--force", action="store_true", help="generate mesh even if target exists.")
 args = parser.parse_args()
@@ -54,8 +54,12 @@ def grid_to_mesh(grid_path: str, mesh_path: str):
         level=voxel_size*alpha, 
         spacing=(voxel_size, voxel_size, voxel_size)
     )
-    shifts = (verts.max(axis=0) + verts.min(axis=0)) / 2
-    verts -= shifts
+    
+    # move the min bound back to [-1, -1, -1]
+    # shifts = (verts.max(axis=0) + verts.min(axis=0)) / 2
+    # verts -= shifts
+    verts -= 1
+    
     mesh = o3d.geometry.TriangleMesh()
     mesh.vertices = o3d.utility.Vector3dVector(verts)
     mesh.triangles = o3d.utility.Vector3iVector(faces)
