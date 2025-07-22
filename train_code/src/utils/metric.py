@@ -61,6 +61,9 @@ def init_running_metrics(levels: list[int] = None,
 
     metrics = {
         'loss': 0.0,
+        'loss_occ': 0.0,
+        'loss_kl': 0.0,
+        'grad_norm':0.0,
     }
 
     # # 总体评估指标（不分层）

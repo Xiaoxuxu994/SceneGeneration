@@ -2,6 +2,7 @@
 from torch import nn
 from src.models.transformer.transformer_base import PointEmbed,PreNorm,Attention,FeedForward,cache_fn,exists
 from timm.models.layers import DropPath
+import torch
 
 from ...registry import MODELS
 @MODELS.register_module()
@@ -66,51 +67,29 @@ class VecSetDecoderV2(nn.Module):
 
 
 
-    def forward(self, x, queries):
-        
+    def forward(self, x, queries, chunk_size: int = None):
         for self_attn, self_ff in self.layers:
-            x = self_attn(x, enable_flash = self.enable_flash,attn_dtype=self.attn_dtype) + x
+            x = self_attn(x, enable_flash=self.enable_flash, attn_dtype=self.attn_dtype) + x
             x = self_ff(x) + x
 
-        # cross attend from decoder queries to latents
-        queries_embeddings = self.point_embed(queries)
-        latents = self.decoder_cross_attn(queries_embeddings, context = x, enable_flash = self.enable_ca_flash)
+        queries_embeddings = self.point_embed(queries)  # [B, N, C]
+        B, N, C = queries_embeddings.shape
 
-        # optional decoder feedforward
+        if chunk_size is not None and N > chunk_size:
+            # chunked cross-attention
+            latents_chunks = []
+            for i in range(0, N, chunk_size):
+                qe_chunk = queries_embeddings[:, i:i+chunk_size, :]  # [B, chunk_size, C]
+                latents_chunk = self.decoder_cross_attn(qe_chunk, context=x, enable_flash=self.enable_ca_flash)
+                if exists(self.decoder_ff):
+                    latents_chunk = latents_chunk + self.decoder_ff(latents_chunk)
+                latents_chunks.append(latents_chunk)
+            latents = torch.cat(latents_chunks, dim=1)
+        else:
+            # full cross-attention
+            latents = self.decoder_cross_attn(queries_embeddings, context=x, enable_flash=self.enable_ca_flash)
+        
         if exists(self.decoder_ff):
             latents = latents + self.decoder_ff(latents)
-        
-        return self.to_outputs(latents),x
 
-
-    # def forward(self, x, input_dict):
-    #     queries_0p1, queries_grid_0p1 = input_dict['']
-    #     queries_0p05, queries_grid_0p05 = input_dict['']
-
-    #     ## first level latent for query 0.1
-    #     for self_attn, self_ff in self.layers[:12]:
-    #         x = self_attn(x, enable_flash = self.enable_flash,attn_dtype=self.attn_dtype) + x
-    #         x = self_ff(x) + x
-
-    #     queries_embeddings = self.point_embed(queries_0p1)
-    #     latents = self.decoder_cross_attn0p1(queries_embeddings, context = x, enable_flash = self.enable_ca_flash)
-    #     out_0p1 = self.to_outputs0p1(latents)
-        
-    #     ## second level latent for query 0.05
-    #     # based on previous level to select 0.05 voxel for this level - check the memory or use for loop
-    #     queries_grid_0p05_to_0p1 = queries_grid_0p05 // self.scale
-    #     mask = (queries_grid_0p05_to_0p1[:, None, :] == queries_grid_0p1[None, :, :]).all(dim=2)
-    #     matching_indices = mask.any(dim=1)
-    #     queries_0p05 = queries_0p05[matching_indices] 
-        
-
-    #     for self_attn, self_ff in self.layers[12:]:
-    #         x = self_attn(x, enable_flash = self.enable_flash,attn_dtype=self.attn_dtype) + x
-    #         x = self_ff(x) + x
-    #     queries_embeddings = self.point_embed(queries_0p05)
-    #     latents = self.decoder_cross_attn0p05(queries_embeddings, context = x, enable_flash = self.enable_ca_flash)
-    #     out_0p05 = self.to_outputs0p05(latents)
-        
-    #     # update input_dict
-        
-    #     return out_0p1, out_0p05
+        return self.to_outputs(latents), x

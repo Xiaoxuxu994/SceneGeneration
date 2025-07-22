@@ -190,3 +190,140 @@ class DatasetForScanNetV6(Dataset):
 
     def __len__(self):
         return len(self.samples)
+    
+
+class DatasetForScanNetV6DEBUGAUG(Dataset):
+    def __init__(self, data_root: str, data_list_name: str, **kwargs):
+        """
+        Args:
+            data_root: Path to root directory containing .pt data
+            data_list_name: File containing list of sample paths (relative or absolute)
+            kwargs:
+
+        """
+
+        self.data_root = data_root
+        with open(data_list_name, 'r') as f:
+            self.samples = [os.path.join(self.data_root, p.strip()) for p in f.readlines()]
+        
+        self.vs_res = kwargs.get("vs_res",[128])
+        aug_cfg = kwargs.get("transform",{})
+        self.transforms = []
+        # initialize data aug 
+        if aug_cfg:
+            # random dropout
+            if aug_cfg.get('RandomDropout', {}).get('enabled', False):
+                self.transforms.append(RandomDropout(
+                    dropout_ratio = aug_cfg['RandomDropout'].get('dropout_ratio',0.2),
+                    dropout_application_ratio = aug_cfg['RandomDropout'].get('dropout_application_ratio',0.2)
+                ))
+
+            # random scale
+            if aug_cfg.get('RandomScale', {}).get('enabled', False):
+                self.transforms.append(RandomScale(
+                    scale = aug_cfg['RandomScale'].get('scale',None),
+                    vs_list = aug_cfg['RandomScale'].get('vs_list',[128])
+                ))
+
+            # random flip
+            if aug_cfg.get('RandomFlip', {}).get('enabled', False):
+                self.transforms.append(RandomFlip(
+                    p = aug_cfg['RandomFlip'].get('p',None),
+                    vs_list = aug_cfg['RandomFlip'].get('vs_list',[128])
+                ))
+
+            # GridSample
+            if aug_cfg.get('GridSample', {}).get('enabled', False):
+                self.transforms.append(GridSample(
+                    grid_size = aug_cfg['GridSample'].get('grid_size',0.05),
+                    hash_type = aug_cfg['GridSample'].get('hash_type', 'fnv'),
+                    mode = aug_cfg['GridSample'].get('mode','train'),
+                    keys = aug_cfg['GridSample'].get('keys', ("coord",)),
+                    return_grid_coord = aug_cfg['GridSample'].get('return_grid_coord', False),
+                    return_min_coord = aug_cfg['GridSample'].get('return_min_coord', False),
+                ))
+
+            # UniformDownSample
+            if aug_cfg.get('UniformDownSample', {}).get('enabled', False):
+                self.transforms.append(UniformDownSample(
+                    point_max = aug_cfg['UniformDownSample'].get('point_max',50000),
+                    sample_rate = aug_cfg['UniformDownSample'].get('sample_rate', None),
+                    random = aug_cfg['UniformDownSample'].get('random',True)
+                ))
+
+            # ShufflePoint
+            if aug_cfg.get('ShufflePoint', {}).get('enabled', False):
+                self.transforms.append(ShufflePoint())
+
+            # Decoderquery sample
+            if aug_cfg.get('DecodeQuerySample', {}).get('enabled', False):
+                self.transforms.append(DecodeQuerySample(
+                    sample_rate = aug_cfg['DecodeQuerySample'].get('sample_rate',0.1),
+                    max_number = aug_cfg['DecodeQuerySample'].get('max_number', 200000),
+                    vs_list = aug_cfg['DecodeQuerySample'].get('vs_list',[128]),
+                ))
+
+            # To tensor
+            if aug_cfg.get('ToTensor', {}).get('enabled', False):
+                self.transforms.append(ToTensor())
+
+            # collect_fn
+            if aug_cfg.get('Collect', {}).get('enabled', False):
+                self.transforms.append(Collect(
+                    keys=aug_cfg['Collect'].get('keys'),
+                    feat_keys=aug_cfg['Collect'].get('feat_keys'),
+                ))
+
+
+        ##  cache input query center and grid
+        self.grid_index_dict = {}
+        self.grid_center_dict = {}
+        vs_list = self.vs_res if isinstance(self.vs_res, list) else [self.vs_res]
+        for vs in vs_list:
+            grid_idx, center = self._generate_dense_grid_index_and_center(vs)
+            self.grid_index_dict[vs] = grid_idx
+            self.grid_center_dict[vs] = center
+
+    @staticmethod
+    def _generate_dense_grid_index_and_center(resolution):
+        """
+        Args:
+            resolution: int, number of divisions along one axis (e.g. 128)
+        Returns:
+            grid_idx: (N, 3), torch.LongTensor
+            center_coords: (N, 3), torch.FloatTensor
+        """
+        vs_size = 2.0 / resolution
+        num_voxels = resolution + 1  # extend half voxel
+        origin = np.array([-1.0 - vs_size / 2] * 3, dtype=np.float32)
+
+        grid_x, grid_y, grid_z = np.meshgrid(
+            np.arange(num_voxels),
+            np.arange(num_voxels),
+            np.arange(num_voxels),
+            indexing='ij'
+        )
+        grid_idx = np.stack([grid_x, grid_y, grid_z], axis=-1).reshape(-1, 3).astype(np.int32)
+        center_coords = origin + (grid_idx + 0.5) * vs_size
+
+        return grid_idx, center_coords.astype(np.float32)
+        
+    def prepare_train_data(self, input_dict):
+        
+        ## get query center and grid idx online
+        if isinstance(self.vs_res,list):
+            for vs in self.vs_res:
+                input_dict[f'pc_query_grid_{vs}'] = self.grid_index_dict[vs]
+                input_dict[f'pc_query_{vs}'] = self.grid_center_dict[vs]
+        
+        for transform in self.transforms:
+            input_dict = transform(input_dict)
+        return input_dict
+    
+    def __getitem__(self, index):
+        input_dict = torch.load(self.samples[index], map_location='cpu')
+        result_dict = self.prepare_train_data(input_dict)
+        return result_dict
+
+    def __len__(self):
+        return len(self.samples)
