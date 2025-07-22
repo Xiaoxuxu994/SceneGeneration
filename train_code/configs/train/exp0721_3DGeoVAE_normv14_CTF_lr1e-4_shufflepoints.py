@@ -91,7 +91,7 @@ train_data_args = dict(
         'return_grid_coord': False
     },
     'ShufflePoint': {
-        'enabled': True,
+        'enabled': False,
         'vs_list': vs_res}, # shuffle both input point cloud and multi-level query
     'ToTensor': {'enabled': True}
     }
