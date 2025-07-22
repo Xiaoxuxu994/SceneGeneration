@@ -135,4 +135,4 @@ loss_weight_KL = 1e-3
 occ_threshold = 0.5 # eval metric loss after sigmoid
 
 # Others
-outputs = "/mnt/nvme3/z00533370/exp_result/exp0721_3DGeoVAE_normv14_CTF_lr1e-4_shufflepoints/"
+outputs = "/mnt/nvme3/z00533370/exp_result/exp0721_3DGeoVAE_normv14_CTF_lr1e-4/"
