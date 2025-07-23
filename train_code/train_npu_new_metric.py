@@ -166,6 +166,7 @@ def main():
     # ======================================================
     # 1. args & cfg
     # ======================================================
+    torch_npu.npu.set_per_process_memory_fraction(0.95)
     
     cfg = parse_configs(training=True)
     random.seed(cfg.seed)
@@ -581,7 +582,6 @@ def main():
         train_dataloader.sampler.set_start_index(0)
         start_step = 0
         torch.cuda.empty_cache()
-        exit(-1)
 
     if cfg.async_valid:
         shared_queue.put(("finish", None, None, None, None, None, None, None, None))
