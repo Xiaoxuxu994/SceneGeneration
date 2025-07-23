@@ -13,78 +13,121 @@ def save_pc(x,output_path,color=None):
 
 def save_inout_pc(inout_dir,input_dict,output):
         
-        os.makedirs(inout_dir, exist_ok=True)
-        x = input_dict['coord'].detach().cpu().numpy()
-        pc_query = input_dict['pc_query'].detach().cpu().numpy()
-        pc_query_label = input_dict['pc_query_label'].detach().cpu().numpy()
+    os.makedirs(inout_dir, exist_ok=True)
+    x = input_dict['coord'].detach().cpu().numpy()
+    pc_query = input_dict['pc_query'].detach().cpu().numpy()
+    pc_query_label = input_dict['pc_query_label'].detach().cpu().numpy()
 
-        # x = x[0,...].detach().cpu().numpy()
-        # pc_query = pc_query[0,...].detach().cpu().numpy()
-        # pc_query_label = pc_query_label[0,...].detach().cpu().numpy()
+    # x = x[0,...].detach().cpu().numpy()
+    # pc_query = pc_query[0,...].detach().cpu().numpy()
+    # pc_query_label = pc_query_label[0,...].detach().cpu().numpy()
 
-        sigmoid = torch.nn.Sigmoid()
-        probabilities = sigmoid(output[0,...]).detach().cpu().numpy()
-        predictions = probabilities >= 0.5
+    sigmoid = torch.nn.Sigmoid()
+    probabilities = sigmoid(output[0,...]).detach().cpu().numpy()
+    predictions = probabilities >= 0.5
 
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(x)
-        o3d.io.write_point_cloud(os.path.join(inout_dir,"pointcloud.ply"), pcd)
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(x)
+    o3d.io.write_point_cloud(os.path.join(inout_dir,"pointcloud.ply"), pcd)
 
-        pcd_query = o3d.geometry.PointCloud()
-        pcd_query.points = o3d.utility.Vector3dVector(pc_query)
-        o3d.io.write_point_cloud(os.path.join(inout_dir,"pointcloud_query.ply"), pcd_query)
+    pcd_query = o3d.geometry.PointCloud()
+    pcd_query.points = o3d.utility.Vector3dVector(pc_query)
+    o3d.io.write_point_cloud(os.path.join(inout_dir,"pointcloud_query.ply"), pcd_query)
 
-        
-        pc_query_on = pc_query[pc_query_label==1]
-        pcd_query_on = o3d.geometry.PointCloud()
-        pcd_query_on.points = o3d.utility.Vector3dVector(pc_query_on)
-        colors_on = np.tile([0,1,0],(pc_query_on.shape[0],1)) ## green 
-        pcd_query_on.colors = o3d.utility.Vector3dVector(colors_on)
-        o3d.io.write_point_cloud(os.path.join(inout_dir,"pointcloud_query_on_gt.ply"), pcd_query_on)
-        
-        pc_query_on = pc_query[predictions==1]
-        pcd_query_on = o3d.geometry.PointCloud()
-        pcd_query_on.points = o3d.utility.Vector3dVector(pc_query_on)
-        colors_on = np.tile([1,0,0],(pc_query_on.shape[0],1)) ## red
-        pcd_query_on.colors = o3d.utility.Vector3dVector(colors_on)
-        o3d.io.write_point_cloud(os.path.join(inout_dir,"pointcloud_query_on_pre.ply"), pcd_query_on)
+    
+    pc_query_on = pc_query[pc_query_label==1]
+    pcd_query_on = o3d.geometry.PointCloud()
+    pcd_query_on.points = o3d.utility.Vector3dVector(pc_query_on)
+    colors_on = np.tile([0,1,0],(pc_query_on.shape[0],1)) ## green 
+    pcd_query_on.colors = o3d.utility.Vector3dVector(colors_on)
+    o3d.io.write_point_cloud(os.path.join(inout_dir,"pointcloud_query_on_gt.ply"), pcd_query_on)
+    
+    pc_query_on = pc_query[predictions==1]
+    pcd_query_on = o3d.geometry.PointCloud()
+    pcd_query_on.points = o3d.utility.Vector3dVector(pc_query_on)
+    colors_on = np.tile([1,0,0],(pc_query_on.shape[0],1)) ## red
+    pcd_query_on.colors = o3d.utility.Vector3dVector(colors_on)
+    o3d.io.write_point_cloud(os.path.join(inout_dir,"pointcloud_query_on_pre.ply"), pcd_query_on)
 
 def save_inout_pc_v2(inout_dir,input_dict,output,pc_query_in=None,pc_query_label_in=None,prefix='0.05'):
         
-        os.makedirs(inout_dir, exist_ok=True)
-        x = input_dict['coord'].detach().cpu().numpy()
-        pc_query = input_dict[f'pc_query_{prefix}'].detach().cpu().numpy()
-        pc_query_label = input_dict[f'pc_query_label_{prefix}'].detach().cpu().numpy()
+    os.makedirs(inout_dir, exist_ok=True)
+    x = input_dict['coord'].detach().cpu().numpy()
+    pc_query = input_dict[f'pc_query_{prefix}'].detach().cpu().numpy()
+    pc_query_label = input_dict[f'pc_query_label_{prefix}'].detach().cpu().numpy()
 
-        if pc_query_in is not None:
-            pc_query_in = pc_query_in.detach().cpu().numpy()
-            save_pc(pc_query_in,os.path.join(inout_dir,f"pointcloud_query_in_{prefix}.ply"),color=None)
+    if pc_query_in is not None:
+        pc_query_in = pc_query_in.detach().cpu().numpy()
+        save_pc(pc_query_in,os.path.join(inout_dir,f"pointcloud_query_in_{prefix}.ply"),color=None)
 
-            pc_query_label_in = pc_query_label_in.detach().cpu().numpy()
-            pc_query_in_on = pc_query_in[pc_query_label_in==1]
-            colors_on = np.tile([0,1,0],(pc_query_in_on.shape[0],1)) ## green 
-            save_pc(pc_query_in,os.path.join(inout_dir,f"pointcloud_query_in_{prefix}.ply"),color=colors_on)
+        pc_query_label_in = pc_query_label_in.detach().cpu().numpy()
+        pc_query_in_on = pc_query_in[pc_query_label_in==1]
+        colors_on = np.tile([0,1,0],(pc_query_in_on.shape[0],1)) ## green 
+        save_pc(pc_query_in,os.path.join(inout_dir,f"pointcloud_query_in_{prefix}.ply"),color=colors_on)
 
-        sigmoid = torch.nn.Sigmoid()
-        probabilities = sigmoid(output[0,...]).detach().cpu().numpy()
-        predictions = probabilities >= 0.5
+    sigmoid = torch.nn.Sigmoid()
+    probabilities = sigmoid(output[0,...]).detach().cpu().numpy()
+    predictions = probabilities >= 0.5
 
-        # save org input
-        save_pc(x,os.path.join(inout_dir,"pointcloud.ply"),color=None)
-        save_pc(pc_query,os.path.join(inout_dir,f"pointcloud_query_{prefix}.ply"),color=None)
+    # save org input
+    save_pc(x,os.path.join(inout_dir,"pointcloud.ply"),color=None)
+    save_pc(pc_query,os.path.join(inout_dir,f"pointcloud_query_{prefix}.ply"),color=None)
+    
+    pc_query_on = pc_query[pc_query_label==1]
+    colors_on = np.tile([0,1,0],(pc_query_on.shape[0],1)) ## green 
+    save_pc(pc_query_on,os.path.join(inout_dir,f"pointcloud_query_on_gt_{prefix}.ply"),color=colors_on)
+    
+    if pc_query_in is not None:
+        pc_query_on = pc_query_in[predictions==1]
+        colors_on = np.tile([1,0,0],(pc_query_on.shape[0],1)) ## red
+        save_pc(pc_query_on,os.path.join(inout_dir,f"pointcloud_query_on_pre_{prefix}.ply"),color=colors_on)             
+    else:
+        pc_query_on = pc_query[predictions==1]
+        colors_on = np.tile([1,0,0],(pc_query_on.shape[0],1)) ## red
+        save_pc(pc_query_on,os.path.join(inout_dir,f"pointcloud_query_on_pre_{prefix}.ply"),color=colors_on)
+
+def save_inout_pc_input(inout_dir, input_dict):
+    os.makedirs(inout_dir, exist_ok=True)
+    x = input_dict['coord'].detach().cpu().numpy()
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(x)
+    o3d.io.write_point_cloud(os.path.join(inout_dir,"pointcloud.ply"), pcd)
+
+def save_inout_pc_ctf(inout_dir, input_dict, logit, mask, scale, occ_threshold=0.5):
         
-        pc_query_on = pc_query[pc_query_label==1]
-        colors_on = np.tile([0,1,0],(pc_query_on.shape[0],1)) ## green 
-        save_pc(pc_query_on,os.path.join(inout_dir,f"pointcloud_query_on_gt_{prefix}.ply"),color=colors_on)
-        
-        if pc_query_in is not None:
-            pc_query_on = pc_query_in[predictions==1]
-            colors_on = np.tile([1,0,0],(pc_query_on.shape[0],1)) ## red
-            save_pc(pc_query_on,os.path.join(inout_dir,f"pointcloud_query_on_pre_{prefix}.ply"),color=colors_on)             
-        else:
-            pc_query_on = pc_query[predictions==1]
-            colors_on = np.tile([1,0,0],(pc_query_on.shape[0],1)) ## red
-            save_pc(pc_query_on,os.path.join(inout_dir,f"pointcloud_query_on_pre_{prefix}.ply"),color=colors_on)
+    os.makedirs(inout_dir, exist_ok=True)
+
+    pc_query = input_dict[f'pc_query_{scale}'].detach().cpu().numpy()
+
+    if scale == 128:
+        pc_query_label = input_dict[f'pc_query_label_{scale}'].detach().cpu().numpy()
+    else:
+        pc_query_label = input_dict[f'pc_query_label_fine_prop_{scale}'].detach().cpu().numpy()
+
+    sigmoid = torch.nn.Sigmoid()
+    probabilities = sigmoid(logit).detach().cpu().numpy()
+    predictions = probabilities >= occ_threshold
+
+    pcd_query = o3d.geometry.PointCloud()
+    if mask is not None:
+        pcd_query.points = o3d.utility.Vector3dVector(pc_query[mask.detach().cpu().numpy()])
+    else:
+        pcd_query.points = o3d.utility.Vector3dVector(pc_query)
+    o3d.io.write_point_cloud(os.path.join(inout_dir,f"pointcloud_query_{scale}.ply"), pcd_query)
+
+    pc_query_on = pc_query[pc_query_label==1]
+    pcd_query_on = o3d.geometry.PointCloud()
+    pcd_query_on.points = o3d.utility.Vector3dVector(pc_query_on)
+    colors_on = np.tile([0,1,0],(pc_query_on.shape[0],1)) ## green 
+    pcd_query_on.colors = o3d.utility.Vector3dVector(colors_on)
+    o3d.io.write_point_cloud(os.path.join(inout_dir,f"pointcloud_query_on_gt_{scale}.ply"), pcd_query_on)
+    
+    pc_query_on = pc_query[predictions==1]
+    pcd_query_on = o3d.geometry.PointCloud()
+    pcd_query_on.points = o3d.utility.Vector3dVector(pc_query_on)
+    colors_on = np.tile([1,0,0],(pc_query_on.shape[0],1)) ## red
+    pcd_query_on.colors = o3d.utility.Vector3dVector(colors_on)
+    o3d.io.write_point_cloud(os.path.join(inout_dir,f"pointcloud_query_on_pre_{scale}.ply"), pcd_query_on)
 
 
 def occ_eval_metric(metric_list,output_logit,label,occ_threshold):
