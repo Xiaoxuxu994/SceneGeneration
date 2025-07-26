@@ -4,6 +4,9 @@ import numpy as np
 import random
 import torch
 import torch_npu
+import time
+import torch.multiprocessing as mp
+from torch.multiprocessing import Process
 from torch_npu.contrib import transfer_to_npu
 torch._C._jit_set_profiling_mode(False)
 import torch.distributed as dist
@@ -11,6 +14,9 @@ from tqdm import tqdm
 from torch.nn.parallel import DistributedDataParallel as DDP
 ## colossalai
 import colossalai
+import queue
+import math
+import functools
 # from colossalai.booster import Booster
 # from colossalai.booster.plugin import LowLevelZeroPlugin
 from colossalai.cluster import DistCoordinator
@@ -46,6 +52,8 @@ from src.utils.metric import occ_eval_metric_all,init_running_metrics
 
 import gc
 # print(os.environ['MASTER_PORT'])
+
+TMP_DIR = './valid_res/'
 
 class GradNormHook:
     def __init__(self, global_step_fn=None):
@@ -166,6 +174,34 @@ def reduce_metrics(metrics_dict, device):
             metrics_dict[k] = all_reduce_mean(t)
     return metrics_dict
 
+def validation_worker(shared_queue, stop_event):
+    try:
+        while True:
+            try:
+                msg, output_list, target_list, occ_threshold, running_metrics, scale_level, step, epoch, rank = shared_queue.get(timeout=0.5)
+                if msg == "outputs":
+                    for idx,(logit, target) in enumerate(zip(output_list,target_list)):
+                        scale = scale_level[idx]
+                        metrics = occ_eval_metric_all(logit, target, occ_threshold=occ_threshold)
+                        for name, score in metrics:
+                            running_metrics[f'{name}_s{scale}'] += score
+                        running_metrics[f'logit_mean_s{scale}'] += logit.mean().item()
+                        running_metrics[f'logit_max_s{scale}'] += logit.max().item()
+                        running_metrics[f'logit_min_s{scale}'] += logit.min().item()
+                    if step == 0 or (step+1) % 500 == 0:
+                        torch.save(running_metrics, os.path.join(TMP_DIR, f'res_{epoch}_{step}_{rank}.pth'))
+                elif msg == "finished":
+                    print('validation process finished')
+                    break
+            except queue.Empty:
+                continue
+            
+    except Exception as e:
+        print(f"Subprocess collapsed: {e}")
+    finally:
+        print("Subprocess Exit")
+        stop_event.set()
+
 def main():
     # ======================================================
     # 1. args & cfg
@@ -176,6 +212,19 @@ def main():
     torch.manual_seed(cfg.seed)
     torch.npu.manual_seed(cfg.seed)
     torch.npu.manual_seed_all(cfg.seed)
+
+    if cfg.async_valid:
+        print('Using asynchronized validation...')
+        manager = mp.Manager()
+        shared_queue = manager.Queue()
+        stop_event = mp.Event()
+        cpu_proc = Process(
+            target=validation_worker,
+            args=(shared_queue, stop_event),
+            daemon=True
+        )
+        cpu_proc.start()
+        os.makedirs(TMP_DIR, exist_ok=True)
     
     exp_name, exp_dir = create_experiment_workspace(cfg)
     save_training_config(cfg._cfg_dict, exp_dir)
@@ -238,12 +287,12 @@ def main():
     # DatasetForScanNet
     scale_level = cfg.vs_res
     train_dataset = DatasetForScanNetV6DEBUGAUG(
-        data_root=cfg.data_root,
+        data_root=os.path.join(cfg.data_root, 'train'),
         data_list_name=cfg.train_data_list_name,
         **build_dataset_kwargs(cfg.train_data_args)
     )
     val_dataset = DatasetForScanNetV6DEBUGAUG(
-        data_root=cfg.data_root,
+        data_root=os.path.join(cfg.data_root, 'val'),
         data_list_name=cfg.val_data_list_name,
         **build_dataset_kwargs(cfg.val_data_args)
     )
@@ -431,19 +480,76 @@ def main():
 
                 ## evaluation
                 running_metrics['loss'] += loss.item()
-                for idx,(logit, target) in enumerate(zip(output_list,target_list)):
-                    scale = scale_level[idx]
-                    metrics = occ_eval_metric_all(logit, target, occ_threshold=cfg.occ_threshold)
-                    for name, score in metrics:
-                        running_metrics[f'{name}_s{scale}'] += score
-                    running_metrics[f'logit_mean_s{scale}'] += logit.mean().item()
-                    running_metrics[f'logit_max_s{scale}'] += logit.max().item()
-                    running_metrics[f'logit_min_s{scale}'] += logit.min().item()
+                # for idx,(logit, target) in enumerate(zip(output_list,target_list)):
+                #     scale = scale_level[idx]
+                #     metrics = occ_eval_metric_all(logit, target, occ_threshold=cfg.occ_threshold)
+                #     for name, score in metrics:
+                #         running_metrics[f'{name}_s{scale}'] += score
+                #     running_metrics[f'logit_mean_s{scale}'] += logit.mean().item()
+                #     running_metrics[f'logit_max_s{scale}'] += logit.max().item()
+                #     running_metrics[f'logit_min_s{scale}'] += logit.min().item()
 
                 ## all reduce mean
-                running_metrics = reduce_metrics(running_metrics,device)                
+                # running_metrics = reduce_metrics(running_metrics,device)                
                 log_step += 1
                 global_step = epoch * num_steps_per_epoch + step
+                global_step = epoch * num_steps_per_epoch + step
+
+                if not cfg.async_valid:
+                    if (global_step) % cfg.log_every == 0:
+                        for idx,(logit, target) in enumerate(zip(output_list,target_list)):
+                            scale = scale_level[idx]
+                            metrics = occ_eval_metric_all(logit, target, occ_threshold=cfg.occ_threshold)
+                            for name, score in metrics:
+                                running_metrics[f'{name}_s{scale}'] += score
+                            running_metrics[f'logit_mean_s{scale}'] += logit.mean().item()
+                            running_metrics[f'logit_max_s{scale}'] += logit.max().item()
+                            running_metrics[f'logit_min_s{scale}'] += logit.min().item()
+                        # torch.npu.synchronize()
+                        # b = time.time()
+                        # print(f'*****Rank {dist.get_rank()}, Time = {b - a:.4f} s')
+                        ## all reduce mean
+                        # print('*****')
+                        running_metrics = reduce_metrics(running_metrics,device)
+
+                else:
+                    with torch.no_grad():
+                        # print(("outputs", [x.detach().cpu() for x in output_list], [x.detach().cpu() for x in target_list], cfg.occ_threshold, running_metrics, scale_level, step+epoch*num_steps_per_epoch, epoch, dist.get_rank()))
+                        shared_queue.put(("outputs", [x.detach().cpu() for x in output_list], [x.detach().cpu() for x in target_list], cfg.occ_threshold, running_metrics, scale_level, step+epoch*num_steps_per_epoch, epoch, dist.get_rank()))
+                
+                ## Log to tensorboard
+                if cfg.async_valid:
+                    # gather validation result at the next step
+                    if global_step == 0:
+                        i = 0
+                        while not os.path.exists(os.path.join(TMP_DIR, 'res_0_0_0.pth')):
+                            print('Waiting for first evaluation' + '.' * i, flush=True)
+                            time.sleep(0.1)
+                        load_dir = f'{TMP_DIR}/res_0_0_'
+                    else:
+                        load_dir = f'{TMP_DIR}/res_{epoch}_{global_step-1}_'
+                    world_size = coordinator.world_size
+                    # Reduce Results
+                    if coordinator.is_master() and (global_step) % cfg.log_every == 0:
+                        
+                        flag = True
+                        for i in range(world_size):
+                            flag = flag and os.path.exists(load_dir+f'{i}.pth')
+                        while not flag:
+                            time.sleep(0.1)
+                            flag = True
+                            for i in range(world_size):
+                                flag = flag and os.path.exists(load_dir+f'{i}.pth')
+                        keys = torch.load(load_dir+'0.pth', map_location='cpu').keys()
+                        running_metrics = {k:0 for k in keys}
+                        for i in range(world_size):
+                            load_path = load_dir + f'{i}.pth'
+                            this_metrics = torch.load(load_path, map_location='cpu')
+                            running_metrics = {
+                                k: running_metrics[k]+v
+                                for k,v in this_metrics.items()
+                            }
+                        running_metrics = {k:v/world_size for k,v in running_metrics.items()}
 
                 ## Log to tensorboard
                 if coordinator.is_master() and (global_step) % cfg.log_every == 0:
@@ -529,6 +635,12 @@ def main():
         train_dataloader.sampler.set_start_index(0)
         start_step = 0
         torch.cuda.empty_cache()
+    
+    if cfg.async_valid:
+        shared_queue.put(("finish", None, None, None, None, None, None, None, None))
+        stop_event.wait()
+        print('Validation Process finished')
+        cpu_proc.join()
 
 
 if __name__ == "__main__":

@@ -105,3 +105,4 @@ dataset: `/mnt/nvme3/z00533370/dataset/scannetpp_trainval_v6`
 **Dump latent 数据路径**
     - releaseV1：`/home/data/proj_xiaoxu/scannetpp_latent_2048_512/`
     - releaseV2：`/home/data/proj_xiaoxu/scannetpp_latent_2048_512_v2/`
+

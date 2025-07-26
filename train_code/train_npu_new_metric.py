@@ -494,8 +494,15 @@ def main():
                     world_size = coordinator.world_size
                     # Reduce Results
                     if coordinator.is_master() and (global_step) % cfg.log_every == 0:
-                        while not os.path.exists(load_dir+'0.pth'):
+                        ws = dist.get_world_size()
+                        flag = True
+                        for i in range(ws):
+                            flag = flag and os.path.exists(load_dir+f'{i}.pth')
+                        while not flag:
                             time.sleep(0.1)
+                            flag = True
+                            for i in range(ws):
+                                flag = flag and os.path.exists(load_dir+f'{i}.pth')
                         keys = torch.load(load_dir+'0.pth', map_location='cpu').keys()
                         running_metrics = {k:0 for k in keys}
                         for i in range(world_size):
