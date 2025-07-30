@@ -176,7 +176,114 @@ class DecodeQuerySample(object):
             data_dict[f'pc_query_label_{vs}'] = labels_comb
                    
         return data_dict
-                    
+
+@TRANSFORMS.register_module()
+class DecodeQuerySampleSDF(object):
+    def __init__(
+        self,
+        sample_rate=0.1,
+        max_number = 100000,
+        vs_list=[128,],
+        near_thresh=0.05,
+        near_ratio=0.8,
+    ):
+        '''
+            currently only support single voxel size input
+        '''
+        self.sample_rate = sample_rate
+        self.vs_list = vs_list # for voxel size prefix
+        self.max_number = max_number
+        self.near_thresh = near_thresh
+        self.near_ratio = near_ratio
+
+    def sample_points(self, points, labels, segment=None, mask=None):
+        """
+            Helper function to sample points and labels for both classes
+        """
+
+        # Split points and labels with threshold
+        near_mask = labels <= self.near_thresh
+        far_mask = labels > self.near_thresh
+
+        points_near = points[near_mask]
+        points_far = points[far_mask]
+        labels_near = labels[near_mask]
+        labels_far = labels[far_mask]
+
+        # Handle segment data if it exists
+        segment_near, segment_far = None, None
+        mask_near, mask_far = None, None
+
+        if segment is not None:
+            segment_near = segment[near_mask]
+            segment_far = segment[far_mask]
+
+        if mask is not None:
+            mask_near = mask[near_mask]
+            mask_far = mask[far_mask]
+
+        total_target = min(self.max_number, int(len(points) * self.sample_rate))
+        near_target = int(total_target * self.near_ratio)
+        far_target = total_target - near_target
+
+        near_idx = torch.randperm(len(points_near))[:min(near_target, len(points_near))]
+        far_idx = torch.randperm(len(points_far))[:min(far_target, len(points_far))]
+
+        sampled_points = np.concatenate([points_near[near_idx], points_far[far_idx]], axis=0)
+        sampled_label = np.concatenate([labels_near[near_idx], labels_far[far_idx]], axis=0)
+
+        if segment is not None:
+            sampled_segment = np.concatenate([segment_near[near_idx], segment_far[far_idx]], axis=0)
+        else:
+            sampled_segment = None
+
+        if mask is not None:
+            sampled_mask = np.concatenate([mask_near[near_idx], mask_far[far_idx]], axis=0)
+        else:
+            sampled_mask = None
+
+        perm = torch.randperm(len(sampled_points))
+        sampled_points = sampled_points[perm]
+        sampled_label = sampled_label[perm]
+        if sampled_segment is not None:
+            sampled_segment = sampled_segment[perm]
+        if sampled_mask is not None:
+            sampled_mask = sampled_mask[perm]
+
+        return sampled_points, sampled_label, sampled_segment, sampled_mask
+    
+        
+    def __call__(self, data_dict):
+
+        # Extract the point cloud, labels, and optionally segments
+        for vs in self.vs_list:
+            points = data_dict[f'pc_query_{vs}']
+            labels = data_dict[f'pc_query_sdf_{vs}']
+            mask = data_dict.get(f'mask_gt_{vs}', None)
+            segment = data_dict.get(f'pc_query_segment_{vs}', None)
+            # If sample_rate is 1.0, return data_dict as is
+            if self.sample_rate == 1.0:
+                data_dict[f'pc_query_{vs}'] = points
+                data_dict[f'pc_query_sdf_{vs}'] = labels
+                if segment is not None:
+                    data_dict[f'pc_query_segment_{vs}'] = segment
+                if mask is not None:
+                    data_dict[f'mask_gt_{vs}'] = mask
+                return data_dict
+
+            sampled_points, sampled_label, sampled_segment, sampled_mask = self.sample_points(points, labels, segment, mask)
+
+            if sampled_segment is not None:
+                data_dict[f'pc_query_segment_{vs}'] = sampled_segment
+            if sampled_mask is not None:
+                data_dict[f'mask_gt_{vs}'] = sampled_mask
+
+            # Update the data_dict with the sampled and shuffled points and labels
+            data_dict[f'pc_query_{vs}'] = sampled_points
+            data_dict[f'pc_query_sdf_{vs}'] = sampled_label
+                   
+        return data_dict
+                        
 @TRANSFORMS.register_module()
 class GridSample(object):
     def __init__(

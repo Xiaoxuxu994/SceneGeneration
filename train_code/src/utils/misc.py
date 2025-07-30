@@ -130,6 +130,21 @@ def save_inout_pc_ctf(inout_dir, input_dict, logit, mask, scale, occ_threshold=0
     o3d.io.write_point_cloud(os.path.join(inout_dir,f"pointcloud_query_on_pre_{scale}.ply"), pcd_query_on)
 
 
+def save_surface_as_mesh(filepath, verts, faces):
+    """
+    将提取到的表面网格保存为 .ply 文件
+    Args:
+        filepath: str, 例如 "mesh.ply"
+        verts: (N, 3) numpy array
+        faces: (M, 3) numpy array of triangle indices
+    """
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(verts)
+    mesh.triangles = o3d.utility.Vector3iVector(faces)
+    mesh.compute_vertex_normals()
+    mesh.paint_uniform_color([0.75, 0.75, 0.75])
+    o3d.io.write_triangle_mesh(filepath, mesh, write_ascii=True)
+    
 def occ_eval_metric(metric_list,output_logit,label,occ_threshold):
     pred = torch.zeros_like(output_logit).cpu().detach()
     pred[output_logit>=occ_threshold] = 1
