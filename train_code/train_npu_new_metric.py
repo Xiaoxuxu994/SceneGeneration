@@ -438,7 +438,6 @@ def main():
                     if param.grad is None:
                         print(f"⚠️ Parameter without gradient: {name}")
 
-                # exit(-1)
                 optimizer.step()
                 # log_memory_usage('After backward')
                 if lr_scheduler is not None:

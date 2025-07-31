@@ -125,6 +125,7 @@ min_lr_ratio=0.05
 warmup_ratio=0.1
 grad_clip = 1.0
 weight_decay = 0 #0.1
+async_valid = False
 
 
 # loss & eval

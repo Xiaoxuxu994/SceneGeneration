@@ -58,9 +58,6 @@ if __name__ == "__main__":
             else:
                 # idx = self.fps_fallback(pos, batch, ratio=ratio, random_start=True)
                 index, fps = farthest_point_sampling_npu(pcd, device, args.fps_num)
-
-            # print(len(index), fps.shape, index)
-            # exit(-1)
             grid = grid_coord[index]
             sample = {'fps_coord': fps, 'grid_coord':grid}
             torch.save(sample, os.path.join(args.outpath, fn))

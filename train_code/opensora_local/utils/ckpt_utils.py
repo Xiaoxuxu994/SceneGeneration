@@ -185,8 +185,8 @@ def save(
     
     if coordinator is None or coordinator.is_master():
         save_json(running_states, os.path.join(save_dir, "running_states.json"))
-    if coordinator is not None:
-        dist.barrier()
+    # if is_initialized():
+    #     dist.barrier()
 
 
 def load(

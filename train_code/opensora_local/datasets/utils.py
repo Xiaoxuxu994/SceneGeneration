@@ -110,7 +110,10 @@ def prepare_dataloader(
         merge = {}
         for key in batch[0].keys():
             if isinstance(batch[0][key], torch.Tensor):
-                merge[key] = torch.cat([data[key] for data in batch], dim = 0).unsqueeze(0)  # [1,sum(s),d] / [1,sum(s)]
+                if key == 'scale':
+                    merge[key] = torch.cat([data[key].unsqueeze(0) for data in batch], dim = 0).unsqueeze(0)
+                else:
+                    merge[key] = torch.cat([data[key] for data in batch], dim = 0).unsqueeze(0)  # [1,sum(s),d] / [1,sum(s)]
             else:
                 merge[key] = batch[0][key]
         if 'offset' in merge.keys():
