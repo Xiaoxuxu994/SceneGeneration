@@ -137,7 +137,7 @@ def main():
                     metrics = sdf_eval_metric_all(logit, input_dict[f'pc_query_sdf_{scale}'], 
                                                 sdf_threshold=cfg.sdf_threshold,mask=None,
                                                 truncatedist = cfg.truncatedist,
-                                                compute_surface_metrics=True, spacing=1.0,
+                                                compute_surface_metrics=True, mc_alpha=cfg.mc_alpha,
                                                 voxel_res = scale,
                                                 inout_dir=inout_dir,prefix=f'{scale}')
                 else:

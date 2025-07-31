@@ -340,9 +340,14 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
         """
 
         self.data_root = data_root
+        self.datatype = kwargs.get("datatype",'pth')
         with open(data_list_name, 'r') as f:
-            self.samples = [os.path.join(self.data_root, p.strip()) for p in f.readlines()] ## pth
-            # self.samples = [os.path.join(self.data_root, p.strip().replace('.pth','.npz')) for p in f.readlines()] ## npz
+            if self.datatype == 'pth':
+                self.samples = [os.path.join(self.data_root, p.strip()) for p in f.readlines()] ## pth
+            elif self.datatype == 'npz':
+                self.samples = [os.path.join(self.data_root, p.strip().replace('.pth','.npz')) for p in f.readlines()] ## npz
+            else:
+                raise ValueError(f"[ERROR] Unrecognized datatype: {self.datatype}. Supported types are ['pth', 'npz'].")
         
         self.vs_res = kwargs.get("vs_res",[128])
         aug_cfg = kwargs.get("transform",{})
@@ -472,12 +477,13 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
         return input_dict
     
     def __getitem__(self, index):
-        ## deal with pth
-        input_dict = torch.load(self.samples[index], map_location='cpu')
-
-        ## deal with npz
-        # input_dict = dict(np.load(self.samples[index]))
-        # input_dict['scene_id'] = input_dict['scene_id'].item()
+        if self.datatype == 'pth':
+            # deal with pth
+            input_dict = torch.load(self.samples[index], map_location='cpu')
+        elif self.datatype == 'npz':
+            ## deal with npz
+            input_dict = dict(np.load(self.samples[index]))
+            input_dict['scene_id'] = input_dict['scene_id'].item()
 
         result_dict = self.prepare_train_data(input_dict)
         return result_dict

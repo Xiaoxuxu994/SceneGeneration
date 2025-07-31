@@ -1,6 +1,6 @@
 import torch
 from typing import Optional, Union, List, Tuple
-
+import math
 import fps_cpu
 
 def sample_farthest_points(

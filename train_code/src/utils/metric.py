@@ -182,7 +182,7 @@ def udf_l1_l2_metric(output_logit, label, mask=None,truncatedist=None):
 
 def sdf_eval_metric_all(output_logit, label, sdf_threshold=0.5, mask=None,
                         truncatedist=None,
-                        compute_surface_metrics=False, spacing=1.0,
+                        compute_surface_metrics=False, mc_alpha=1.0,
                         voxel_res = 128,
                         inout_dir=None,prefix=None):
     
@@ -238,8 +238,8 @@ def sdf_eval_metric_all(output_logit, label, sdf_threshold=0.5, mask=None,
         try:
             pred_np_field = output_logit.view(*grid_size).detach().cpu().numpy()
             label_np_field = label.view(*grid_size).detach().cpu().numpy()
-            verts_pred, faces_pred = extract_surface_points(pred_np_field, voxel_size=2.0/voxel_res, alpha = 1.0)
-            verts_label, faces_label = extract_surface_points(label_np_field, voxel_size=2.0/voxel_res, alpha = 1.0)
+            verts_pred, faces_pred = extract_surface_points(pred_np_field, voxel_size=2.0/voxel_res, alpha = mc_alpha)
+            verts_label, faces_label = extract_surface_points(label_np_field, voxel_size=2.0/voxel_res, alpha = mc_alpha)
             # if len(verts_pred) > 0 and len(verts_label) > 0:
                 # cd = compute_chamfer(verts_pred, verts_label)
                 # emd = compute_emd(verts_pred, verts_label)

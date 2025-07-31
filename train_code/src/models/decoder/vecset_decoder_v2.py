@@ -68,28 +68,31 @@ class VecSetDecoderV2(nn.Module):
 
 
     def forward(self, x, queries, chunk_size: int = None):
+        
         for self_attn, self_ff in self.layers:
             x = self_attn(x, enable_flash=self.enable_flash, attn_dtype=self.attn_dtype) + x
             x = self_ff(x) + x
 
-        queries_embeddings = self.point_embed(queries)  # [B, N, C]
-        B, N, C = queries_embeddings.shape
+        B, N, _ = queries.shape
+        output_chunks = []
 
         if chunk_size is not None and N > chunk_size:
-            # chunked cross-attention
-            latents_chunks = []
+            # === chunk-wise processing from point_embed to output ===
             for i in range(0, N, chunk_size):
-                qe_chunk = queries_embeddings[:, i:i+chunk_size, :]  # [B, chunk_size, C]
+                query_chunk = queries[:, i:i+chunk_size, :]                         # [B, chunk, 3]
+                qe_chunk = self.point_embed(query_chunk)                            # [B, chunk, C]
                 latents_chunk = self.decoder_cross_attn(qe_chunk, context=x, enable_flash=self.enable_ca_flash)
                 if exists(self.decoder_ff):
                     latents_chunk = latents_chunk + self.decoder_ff(latents_chunk)
-                latents_chunks.append(latents_chunk)
-            latents = torch.cat(latents_chunks, dim=1)
+                output_chunk = self.to_outputs(latents_chunk)                       # [B, chunk, output_dim]
+                output_chunks.append(output_chunk)
+            outputs = torch.cat(output_chunks, dim=1)                               # [B, N, output_dim]
         else:
-            # full cross-attention
+            # === Full processing ===
+            queries_embeddings = self.point_embed(queries)                          # [B, N, C]
             latents = self.decoder_cross_attn(queries_embeddings, context=x, enable_flash=self.enable_ca_flash)
-        
-        if exists(self.decoder_ff):
-            latents = latents + self.decoder_ff(latents)
+            if exists(self.decoder_ff):
+                latents = latents + self.decoder_ff(latents)
+            outputs = self.to_outputs(latents)                                      # [B, N, output_dim]
 
-        return self.to_outputs(latents), x
+        return outputs, x
