@@ -68,7 +68,7 @@ def main():
     # ======================================================
     # DatasetForScanNet    
     val_dataset = DatasetForScanNetV6DEBUGAUG(
-        data_root=cfg.data_root,
+        data_root=(cfg.data_root, 'val'),
         data_list_name=cfg.val_data_list_name,
         **build_dataset_kwargs(cfg.val_data_args)
     )
