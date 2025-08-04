@@ -3,67 +3,78 @@ import sys
 import argparse
 
 import numpy as np
+import open3d as o3d
 import multiprocessing as mp
-from skimage import measure
 
+from skimage import measure
 from pathlib import Path
 
+import sys
+sys.path.append(os.path.dirname(__file__))
+from lib.utils.hash import decode_coords
+
+OCTREE_FILE = "vs{}_to_vs{}_th{}.npy"
+
 parser = argparse.ArgumentParser()
-parser.add_argument("--in_path", type=str, required=True)
-parser.add_argument("--voxel_res", type=int, default=128)
+parser.add_argument("--in_dir", type=str, required=True)
+parser.add_argument("--out_dir", type=str, required=True)
+parser.add_argument("--src_size", type=int, required=True)
+parser.add_argument("--tar_size", type=int, required=True)
+parser.add_argument("--thres", type=int, required=True)
+parser.add_argument("--mc_alpha", type=float, default=1.5)
 parser.add_argument("--boxmin", type=float, default=-1)
 parser.add_argument("--boxmax", type=float, default=1)
-parser.add_argument("--alpha", type=float, default=1)
+parser.add_argument("--alpha", type=float, default=3)
+parser.add_argument("--num_workers", type=int, default=1)
+parser.add_argument("--force", action="store_true", help="generate octree even if target exists.")
 args = parser.parse_args()
 
-def worker_job(src_path):
-    src_path_name = src_path.name
-    src_dir_name = src_path.parent.name
-    tar_dir = out_dir / src_dir_name
-    tar_dir.mkdir(exist_ok=True, parents=True)
-    tar_path = (tar_dir / src_path_name).with_suffix(".obj")
-    if not tar_path.exists() or args.force:
-        print("processing {}".format(str(src_path)))
-        try:
-            grid_to_mesh(str(src_path), str(tar_path))
-            print("process complete. saved to {}".format(str(tar_path)))
-        except ValueError:
-            print("value error. skip {}".format(str(src_path)))
+in_dir = Path(args.in_dir)
+out_dir = Path(args.out_dir)
 
-def grid_to_mesh(grid_path: str, mesh_path: str):
-    grid = np.load(grid_path)
+thres = ((args.boxmax - args.boxmin) / args.src_size) * args.thres
+voxel_size = (args.boxmax - args.boxmin) / args.tar_size
+
+def worker_job(input_dir):
+    input_dir_name = input_dir.name
+    output_dir = out_dir / input_dir_name
+    output_dir.mkdir(exist_ok=True, parents=True)
+    octree_name = OCTREE_FILE.format(args.src_size, args.tar_size, args.thres)
+    input_path = input_dir / octree_name
+    output_path = (output_dir / octree_name).with_suffix(".obj")
     
-    if args.mode == "occ":
-        print(grid.max(), grid.min(), np.sum(grid))
-        exit()
-        
-    verts, faces, _, _ = measure.marching_cubes(grid, 
-        level=voxel_size*alpha, 
-        spacing=(voxel_size, voxel_size, voxel_size)
-    )
-    
-    # move the min bound back to [-1, -1, -1]
-    # shifts = (verts.max(axis=0) + verts.min(axis=0)) / 2
-    # verts -= shifts
-    verts -= 1
-    
-    mesh = o3d.geometry.TriangleMesh()
-    mesh.vertices = o3d.utility.Vector3dVector(verts)
-    mesh.triangles = o3d.utility.Vector3iVector(faces)
-    mesh.paint_uniform_color([0.75, 0.75, 0.75])
-    o3d.io.write_triangle_mesh(mesh_path, mesh)
+    if not output_path.exists() or args.force:
+        print("processing {}".format(str(input_path)))
+        octree = np.load(input_path)
+        volume = np.full(shape=(args.tar_size, args.tar_size, args.tar_size), fill_value=thres)
+        for row in range(octree.shape[0]):
+            _, coords, value = octree[row]
+            i, j, k = decode_coords(int(coords))
+            volume[i, j, k] = value
+            
+        # create a mesh
+        verts, faces, _, _ = measure.marching_cubes(volume, 
+            level=voxel_size*args.mc_alpha, 
+            spacing=(voxel_size, voxel_size, voxel_size)
+        )
+        verts -= abs(args.boxmin)
+        mesh = o3d.geometry.TriangleMesh()
+        mesh.vertices = o3d.utility.Vector3dVector(verts)
+        mesh.triangles = o3d.utility.Vector3iVector(faces)
+        mesh.paint_uniform_color([0.8, 0.8, 0.8])
+        o3d.io.write_triangle_mesh(str(output_path), mesh)
 
 def main():
-    src_npy_list = list(map(lambda x: x / volume_filename, sorted(list(in_dir.iterdir()))))
-    assert len(src_npy_list) > 0, "empty input data list"
+    oct_dir_list = list(sorted(list(in_dir.iterdir())))
+    assert len(oct_dir_list) > 0, "empty input data list"
     
     if args.num_workers > 1:
         pool = mp.Pool(processes=args.num_workers)
-        pool.map(worker_job, src_npy_list)
+        pool.map(worker_job, oct_dir_list)
     else:
-        for src_path in src_npy_list:
+        for oct_dir in oct_dir_list:
             # for debugging
-            worker_job(src_path)
+            worker_job(oct_dir)
             exit()
         
 main()

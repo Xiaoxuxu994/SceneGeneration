@@ -24,5 +24,5 @@ python python/compress_cube.py \
     --src_size 256 \
     --tar_size 512 \
     --thres 5 \
-    --num_workers 32 \
+    --num_workers 1 \
     --stats

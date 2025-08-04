@@ -3,9 +3,11 @@ import shutil
 import argparse
 
 import numpy as np
+import open3d as o3d
 import multiprocessing as mp
 
 from pathlib import Path
+from skimage import measure
 
 import sys
 sys.path.append(os.path.dirname(__file__))
@@ -18,6 +20,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--in_dir", type=str, required=True)
 parser.add_argument("--out_dir", type=str, required=True)
 parser.add_argument("--out_dir_sec", type=str, default="", help="secondary output directory.")
+parser.add_argument("--mc_dir", type=str, default="", help="marching cubes output directory.")
+parser.add_argument("--mc_alpha", type=float, default=1.5)
 parser.add_argument("--src_size", type=int, required=True)
 parser.add_argument("--tar_size", type=int, required=True)
 parser.add_argument("--thres", type=int, required=True)
@@ -49,6 +53,8 @@ def worker_job(input_dir):
     output_dir.mkdir(exist_ok=True, parents=True)
     output_path = output_dir / OCTREE_FILE.format(args.src_size, args.tar_size, args.thres)
     
+    thres = (2 / args.src_size) * args.thres
+    
     if output_path.exists() and not args.force:
         print("found existing octree file {}, skipping...".format(str(output_path)))
     else:
@@ -57,7 +63,7 @@ def worker_job(input_dir):
         src_vol = np.load(src_path)
         tar_vol = np.load(tar_path)
         
-        src_ids = np.where(src_vol <= (2 / args.src_size) * args.thres)
+        src_ids = np.where(src_vol <= thres)
         num_src_ids = src_ids[0].shape[0]
         
         rate = args.tar_size // args.src_size
@@ -92,7 +98,8 @@ def worker_job(input_dir):
         compressed = np.array(compressed)
         np.save(output_path, compressed)
         print("save to {}".format(str(output_path)))
-        
+
+    # copy to a separate secondary output directory
     if len(args.out_dir_sec) > 0:
         out_dir_sec = Path(args.out_dir_sec)
         output_dir_sec = out_dir_sec / input_dir.name
@@ -101,6 +108,32 @@ def worker_job(input_dir):
         if not output_path_sec.exists():
             print("copy to secondary output directory {}".format(args.out_dir_sec))
             shutil.copy(output_path, output_path_sec)
+
+    # convert a octree to a volume and run marching cubes
+    if len(args.mc_dir) > 0:
+        mc_dir = Path(args.mc_dir)
+        mc_dir = mc_dir / input_dir.name
+        mc_dir.mkdir(exist_ok=True, parents=True)
+        mc_path = mc_dir / output_path.stem.with_suffix(".obj")
+
+        # recover volumes
+        octree = np.load(output_path)
+        volume = np.full(shape=(args.tar_size, args.tar_size, args.tar_size), fill_value=thres)
+        for row in range(octree.shape[0]):
+            _, coords, value = octree[row]
+            i, j, k = decode_coords(int(coords))
+            volume[i, j, k] = value
+            
+        # create a mesh
+        verts, faces, _, _ = measure.marching_cubes(volume, 
+            level=args.tar_size*args.mc_alpha, 
+            spacing=(args.tar_size, args.tar_size, args.tar_size)
+        )
+        mesh = o3d.geometry.TriangleMesh()
+        mesh.vertices = o3d.utility.Vector3dVector(verts)
+        mesh.triangles = o3d.utility.Vector3iVector(faces)
+        mesh.paint_uniform_color([0.75, 0.75, 0.75])
+        o3d.io.write_triangle_mesh(mc_path, mesh)
 
 if __name__ == "__main__":
     in_dir_list = list(in_dir.iterdir())
@@ -114,7 +147,7 @@ if __name__ == "__main__":
             # for debugging
             # in_dir = Path("data/nvme2/scannetpp_volume_norm_-1_1_0.95/sdf/836363121f")
             worker_job(in_dir)
-            # exit()
+            exit()
             
     if args.stats:
         sizes = []
