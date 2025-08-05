@@ -99,8 +99,10 @@ export NUMEXPR_MAX_THREADS=4
 
 # export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3
 export PATH="/home/ma-user/anaconda3/envs/PyTorch-2.1.0/bin/":$PATH
+# 以下三行表示在脚本中解压数据，可根据实际情况决定是否需要。如不需要请注释
 cd /home/ma-user/modelarts/inputs/data-path_0
 tar -xvzf scannetpp_norm_v14.tar.gz
 cd $MA_JOB_DIR/train_code
 # 暂时绝对路径跑torchrun以防报找不到torchrun错误
-/home/ma-user/anaconda3/envs/PyTorch-2.1.0/bin/torchrun --nproc_per_node=$NGPUS_PER_NODE  --nnodes=$NNODES  --master-port 29503 --master-addr $MASTER_ADDR --node_rank=$NODE_RANK train_npu_col_ctf_new_metric_KL.py --config configs/exp0721_3DGeoVAE_normv14_CTF_lr1e-4.py
+bash ~/.bashrc
+torchrun --nproc_per_node=$NGPUS_PER_NODE  --nnodes=$NNODES  --master-port 29503 --master-addr $MASTER_ADDR --node_rank=$NODE_RANK train_npu_col_ctf_new_metric_KL.py --config configs/exp0721_3DGeoVAE_normv14_CTF_lr1e-4.py
