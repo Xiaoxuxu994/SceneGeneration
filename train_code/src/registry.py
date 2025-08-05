@@ -15,6 +15,8 @@ def build_dataset_kwargs(cfg):
         kwargs["query_class_balance_sample"] = True
         kwargs["pos_neg_ratio"] = getattr(cfg, "pos_neg_ratio", 0.5)
         kwargs["max_pos_keep"] = getattr(cfg, "max_pos_keep", 100000)
+    if hasattr(cfg, "datatype"):
+        kwargs["datatype"] = cfg.datatype
     if getattr(cfg, "transform", False):
         kwargs["transform"] = cfg.transform
     return kwargs
