@@ -8,23 +8,26 @@ import multiprocessing as mp
 
 from pathlib import Path
 from skimage import measure
+from copy import deepcopy
 
 import sys
 sys.path.append(os.path.dirname(__file__))
-from lib.utils.hash import encode_coords, decode_coords
+from lib.utils.hash import encode_coords, decode_coords, encode_coords_np, decode_coords_np
 
 VOLUME_FILE = "vs_{}.npy"
-OCTREE_FILE = "vs{}_to_vs{}_th{}.npy"
+OCTREE_FILE = "vs{}_to_vs{}_th{}.npz"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--in_dir", type=str, required=True)
 parser.add_argument("--out_dir", type=str, required=True)
 parser.add_argument("--out_dir_sec", type=str, default="", help="secondary output directory.")
 parser.add_argument("--mc_dir", type=str, default="", help="marching cubes output directory.")
-parser.add_argument("--mc_alpha", type=float, default=1.5)
+parser.add_argument("--mc_alpha", type=float, default=1)
 parser.add_argument("--src_size", type=int, required=True)
 parser.add_argument("--tar_size", type=int, required=True)
-parser.add_argument("--thres", type=int, required=True)
+parser.add_argument("--boxmin", type=float, default=-1)
+parser.add_argument("--boxmax", type=float, default=1)
+parser.add_argument("--thres", type=int, required=True, help="number of voxel in the finest resolution.")
 parser.add_argument("--check", action="store_true", help="check octree.")
 parser.add_argument("--stats", action="store_true", help="check compression stats.")
 parser.add_argument("--force", action="store_true", help="generate octree even if target exists.")
@@ -53,8 +56,6 @@ def worker_job(input_dir):
     output_dir.mkdir(exist_ok=True, parents=True)
     output_path = output_dir / OCTREE_FILE.format(args.src_size, args.tar_size, args.thres)
     
-    thres = (2 / args.src_size) * args.thres
-    
     if output_path.exists() and not args.force:
         print("found existing octree file {}, skipping...".format(str(output_path)))
     else:
@@ -63,41 +64,53 @@ def worker_job(input_dir):
         src_vol = np.load(src_path)
         tar_vol = np.load(tar_path)
         
-        src_ids = np.where(src_vol <= thres)
-        num_src_ids = src_ids[0].shape[0]
+        '''
+            Follow the fine-to-coarse-to-fine strategy, i.e.
+            1. go to the finest resolution and select the valid voxel with a threshold;
+            2. merge the fine voxels to form the coarse voxels;
+            3. divide the coarse voxels again to fine voxels.
+            This strategy makes sure that all valid voxels are covered.
+        '''
+        
+        # fine-to-coarse
+        thres = (args.boxmax - args.boxmin) / args.tar_size * args.thres
+        tar_ids_1 = np.stack(np.where(tar_vol <= thres), axis=1) # Nf x 3
         
         rate = args.tar_size // args.src_size
-        offsets = np.meshgrid(np.arange(rate), np.arange(rate), np.arange(rate))
-        num_offsets = offsets[0].shape[0]
+        src_ids_expanded = tar_ids_1 // rate
+        src_ids_masks = tar_ids_1 % rate == 0 # Nf x 3
+        src_ids_masks = np.sum(src_ids_masks, axis=1) == 3 # all true row should sum up to 3
+        src_ids = src_ids_expanded[src_ids_masks]
         
-        # lazy implementation
-        compressed = []
-        for row in range(num_src_ids):
-            origin_i, origin_j, origin_k = src_ids[0][row], src_ids[1][row], src_ids[2][row]
-            i_expanded = offsets[0].reshape(-1) + origin_i * rate
-            j_expanded = offsets[1].reshape(-1) + origin_j * rate
-            k_expanded = offsets[2].reshape(-1) + origin_k * rate
-            for p in range(num_offsets):
-                src_coords = encode_coords(origin_i, origin_j, origin_k) # coordinates in low-res volume
-                tar_coords = encode_coords(i_expanded[p], j_expanded[p], k_expanded[p]) # coordinates in high-res volume
-                tar_value = tar_vol[i_expanded[p], j_expanded[p], k_expanded[p]] # value in high-res volume
-                
-                compressed.append([src_coords, tar_coords, tar_value])
-                
-                if args.check:
-                    _, coords, value = compressed[-1]
-                    i, j, k = decode_coords(int(coords))
-                    original_value = tar_vol[i, j, k]
-                    
-                    if original_value != value:
-                        print("the original value {} and the compressed value {} doesn't match at {}, {}, {}".format(
-                            original_value, value, i, j, k
-                        ))
-                        break
-                
-        compressed = np.array(compressed)
-        np.save(output_path, compressed)
+        # coarse-to-fine
+        offsets = np.meshgrid(np.arange(rate), np.arange(rate), np.arange(rate), indexing="ij")
+        offsets = np.stack([a.reshape(-1) for a in offsets], axis=1)
+        num_offsets = offsets.shape[0]
+        
+        origins = src_ids.copy()
+        num_origins = origins.shape[0]
+        
+        offsets = np.repeat(offsets[None, :, :], num_origins, axis=0)
+        origins = np.repeat(origins[:, None ,:], num_offsets, axis=1)
+        coords = origins * rate + offsets
+        
+        src_i, src_j, src_k = origins.reshape((-1, 3)).T
+        tar_i, tar_j, tar_k = coords.reshape((-1, 3)).T
+        
+        src_coords = np.stack([src_i, src_j, src_k], axis=1).astype(int)
+        tar_coords = np.stack([tar_i, tar_j, tar_k], axis=1).astype(int)
+        tar_values = tar_vol[tar_i, tar_j, tar_k].astype(float)
+        
         print("save to {}".format(str(output_path)))
+        np.savez_compressed(output_path, src_coords=src_coords, tar_coords=tar_coords, tar_values=tar_values)
+        
+        if args.check:
+            X, Y, Z = tar_coords.T
+            original_values = tar_vol[X, Y, Z]
+            compressed_values = tar_values
+            
+            if not np.array_equal(original_values, compressed_values):
+                raise ValueError("compressed volume are not consistent with the original volume.")
 
     # copy to a separate secondary output directory
     if len(args.out_dir_sec) > 0:
@@ -114,29 +127,45 @@ def worker_job(input_dir):
         mc_dir = Path(args.mc_dir)
         mc_dir = mc_dir / input_dir.name
         mc_dir.mkdir(exist_ok=True, parents=True)
-        mc_path = mc_dir / output_path.stem.with_suffix(".obj")
-
+        mc_path = (mc_dir / output_path.name).with_suffix(".obj")
+        
         # recover volumes
         octree = np.load(output_path)
-        volume = np.full(shape=(args.tar_size, args.tar_size, args.tar_size), fill_value=thres)
-        for row in range(octree.shape[0]):
-            _, coords, value = octree[row]
-            i, j, k = decode_coords(int(coords))
-            volume[i, j, k] = value
-            
-        # create a mesh
+        voxel_size = (args.boxmax - args.boxmin) / args.tar_size
+        volume = np.full(shape=(args.tar_size, args.tar_size, args.tar_size), fill_value=octree["tar_values"].max())
+        
+        X, Y, Z = octree["tar_coords"].T
+        volume[X, Y, Z] = octree["tar_values"]
+        
+        level = voxel_size*args.mc_alpha
+        
+        print("exporting mesh data to {}".format(str(mc_path)))
         verts, faces, _, _ = measure.marching_cubes(volume, 
-            level=args.tar_size*args.mc_alpha, 
-            spacing=(args.tar_size, args.tar_size, args.tar_size)
+            level=level, 
+            spacing=(voxel_size, voxel_size, voxel_size)
         )
+        verts -= abs(args.boxmin)
         mesh = o3d.geometry.TriangleMesh()
         mesh.vertices = o3d.utility.Vector3dVector(verts)
         mesh.triangles = o3d.utility.Vector3iVector(faces)
-        mesh.paint_uniform_color([0.75, 0.75, 0.75])
-        o3d.io.write_triangle_mesh(mc_path, mesh)
+        mesh.paint_uniform_color([0.8, 0.8, 0.8])
+        o3d.io.write_triangle_mesh(str(mc_path), mesh)
+        
+        output_path = str(mc_dir / output_path.stem) + "_reference.obj"
+        print("exporting mesh data to {}".format(str(output_path)))
+        verts, faces, _, _ = measure.marching_cubes(tar_vol, 
+            level=level, 
+            spacing=(voxel_size, voxel_size, voxel_size)
+        )
+        verts -= abs(args.boxmin)
+        mesh = o3d.geometry.TriangleMesh()
+        mesh.vertices = o3d.utility.Vector3dVector(verts)
+        mesh.triangles = o3d.utility.Vector3iVector(faces)
+        mesh.paint_uniform_color([0.8, 0.8, 0.8])
+        o3d.io.write_triangle_mesh(str(output_path), mesh)
 
 if __name__ == "__main__":
-    in_dir_list = list(in_dir.iterdir())
+    in_dir_list = list(sorted(in_dir.iterdir()))
     assert len(in_dir_list) > 0, "empty input data list"
     
     if args.num_workers > 1:
@@ -161,7 +190,7 @@ if __name__ == "__main__":
             sizes.append([original_size, compressed_size])
             
         sizes = np.array(sizes) / (1024*1024) # convert to MB
-        rates = (sizes[:, 0] - sizes[:, 1]) / sizes[:, 0]
+        rates = (sizes[:, 0] - sizes[:, 1]) / sizes[:, 0] * 100
         
         print("\nstats:")
         print("original size: min -> {:.2f} MB, max -> {:.2f} MB, avg -> {:.2f} MB".format(sizes[:, 0].min(), sizes[:, 0].max(), sizes[:, 0].mean()))
