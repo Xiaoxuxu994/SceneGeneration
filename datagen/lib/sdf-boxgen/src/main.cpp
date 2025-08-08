@@ -186,17 +186,18 @@ int main(int argc, char* argv[]) {
   std::cout << "Writing df results to: " << outname << "\n";
   std::vector<float> phi_vector(phi_grid.a.size());
   for (size_t i = 0; i < phi_grid.a.size(); i++) {
-    phi_vector[i] = fabs(phi_grid.a[i]);
+    // phi_vector[i] = phi_grid.a[i];
+    phi_vector[i] = fabs(phi_grid.a[i];)
   }
   cnpy::npy_save(outname, &phi_vector[0], {(size_t)phi_grid.nk, (size_t)phi_grid.nj, (size_t)phi_grid.ni}, "w");
 
-  outname = output_path + std::string("_if.npy");
-  std::cout << "Writing if results to: " << outname << "\n";
-  std::vector<float> theta_vector(theta_grid.a.size());
-  for (size_t i = 0; i < theta_grid.a.size(); i++) {
-    theta_vector[i] = theta_grid.a[i];
-  }
-  cnpy::npy_save(outname, &theta_vector[0], {(size_t)theta_grid.nk, (size_t)theta_grid.nj, (size_t)theta_grid.ni}, "w");
+  // outname = output_path + std::string("_if.npy");
+  // std::cout << "Writing if results to: " << outname << "\n";
+  // std::vector<float> theta_vector(theta_grid.a.size());
+  // for (size_t i = 0; i < theta_grid.a.size(); i++) {
+  //   theta_vector[i] = theta_grid.a[i];
+  // }
+  // cnpy::npy_save(outname, &theta_vector[0], {(size_t)theta_grid.nk, (size_t)theta_grid.nj, (size_t)theta_grid.ni}, "w");
 
 #endif
 

@@ -22,6 +22,7 @@ parser.add_argument("--boxmin", type=float, default=-1)
 parser.add_argument("--boxmax", type=float, default=1)
 parser.add_argument("--boxscale", type=float, default=0.95)
 parser.add_argument("--num_workers", type=int, default=1)
+parser.add_argument("--is_norm", action="store_true", help="all input mesh data are normalized.")
 parser.add_argument("--force_norm", action="store_true", help="generate cached normalized data even if targets exist.")
 parser.add_argument("--force", action="store_true", help="generate volume even if target exists.")
 args = parser.parse_args()
@@ -55,7 +56,10 @@ def export_norm_mesh(input_path, output_dir):
 
 def worker_job(path):
     if args.dataset == "scannetpp":
-        src_name = path.parent.parent.name
+        if args.is_norm:
+            src_name = path.parent.name
+        else:
+            src_name = path.parent.parent.name
     elif args.dataset == "arkitscenes":
         src_name = path.parent.name
         
@@ -84,7 +88,10 @@ def worker_job(path):
 
 def main():
     if args.dataset == "scannetpp":
-        src_ply_list = list(map(lambda x: x / "scans/mesh_aligned_0.05.ply", sorted(list(in_dir.iterdir()))))
+        if args.is_norm:
+            src_ply_list = list(map(lambda x: x / "normalized.ply", sorted(list(norm_dir.iterdir()))))
+        else:
+            src_ply_list = list(map(lambda x: x / "scans/mesh_aligned_0.05.ply", sorted(list(in_dir.iterdir()))))
     elif args.dataset == "arkitscenes":
         src_ply_list = list(map(lambda x: x / "{}_3dod_mesh.ply".format(str(x.name)), sorted(list(in_dir.iterdir()))))
         

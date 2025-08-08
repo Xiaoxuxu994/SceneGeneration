@@ -15,6 +15,7 @@ parser.add_argument("--out_dir", type=str, required=True)
 parser.add_argument("--voxel_size", type=float, default=0.05)
 parser.add_argument("--alpha", type=float, default=0.5)
 parser.add_argument("--num_workers", type=int, default=1)
+parser.add_argument("--mode", type=str, choices=["sdf", "udf"])
 parser.add_argument("--force", action="store_true", help="generate mesh even if target exists.")
 args = parser.parse_args()
 
