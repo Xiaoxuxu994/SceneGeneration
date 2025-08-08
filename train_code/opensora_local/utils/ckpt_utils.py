@@ -5,12 +5,14 @@ import operator
 import os
 from typing import Tuple, Optional
 
-try:
-    import colossalai
-except ImportError:
-    colossalai = None
+# try:
+#     import colossalai
+# except ImportError:
+#     colossalai = None
 import torch
-import torch.distributed as dist
+import deepspeed
+import deepspeed.comm as dist
+# import torch.distributed as dist
 import torch.nn as nn
 from torch.distributed import is_initialized
 from opensora_local.acceleration.parallel_states import (
@@ -137,6 +139,25 @@ def record_model_param_shape(model: torch.nn.Module) -> dict:
         param_shape[name] = param.shape
     return param_shape
 
+def deepspeed_save(model, epoch, step, batch_size, global_step, save_dir=''):
+    model.save_checkpoint(
+        save_dir=save_dir,
+        client_state={
+            "epoch": epoch,
+            "step": step,
+            "start_idx": step*batch_size,
+            "global_step": global_step
+        }    
+    )
+
+def deepspeed_load(model, load_dir=''):
+    load_path, client_state = model.load_checkpoint(load_dir=load_dir)
+    if load_path:
+        epoch, step, idx = client_state["epoch"], client_state["step"], client_state["start_idx"]
+    else:
+        print('[WARNING] not find checkpoint, start training from beginning')
+        epoch = step = idx = 0
+    return epoch, step, idx
 
 def save(
     booster,
@@ -147,7 +168,6 @@ def save(
     step: int,
     global_step: int,
     batch_size: int,
-    coordinator=None,
     save_dir='',
 ):
 
@@ -183,7 +203,7 @@ def save(
         if lr_scheduler is not None:
             booster.save_lr_scheduler(lr_scheduler, os.path.join(save_dir, "lr_scheduler"))
     
-    if coordinator is None or coordinator.is_master():
+    if dist.get_rank() == 0:
         save_json(running_states, os.path.join(save_dir, "running_states.json"))
     # if is_initialized():
     #     dist.barrier()
@@ -226,7 +246,7 @@ def create_logger(logging_dir):
     """
     Create a logger that writes to a log file and stdout.
     """
-    if colossalai is None or (is_initialized() and dist.get_rank() == 0):  # real logger
+    if (is_initialized() and dist.get_rank() == 0):  # real logger
         logging.basicConfig(
             level=logging.INFO,
             format="[\033[34m%(asctime)s\033[0m] %(message)s",

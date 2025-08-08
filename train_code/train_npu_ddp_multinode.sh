@@ -101,7 +101,7 @@ export NUMEXPR_MAX_THREADS=4
 export PATH="/home/ma-user/anaconda3/envs/PyTorch-2.1.0/bin/":$PATH
 # 以下三行表示在脚本中解压数据，可根据实际情况决定是否需要。如不需要请注释
 cd /home/ma-user/modelarts/inputs/data-path_0
-tar -xvzf scannetpp_norm_v14.tar.gz
+tar -xvzf scannetpp_norm_v3_02_vs16_256.tar.gz
 cd $MA_JOB_DIR/train_code
 # 暂时绝对路径跑torchrun以防报找不到torchrun错误
 bash ~/.bashrc

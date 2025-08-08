@@ -28,28 +28,6 @@ inline float distance_squared_3d(const float* a, const float* b) {
     return dx*dx + dy*dy + dz*dz;
 }
 
-// 使用AVX优化的3D距离计算（虽然3D不能完全利用AVX，但比标量计算快）
-#ifdef __AVX2__
-inline float avx_distance_squared_3d(const float* a, const float* b) {
-    // 加载3个元素，第4个元素设为0
-    __m128 va = _mm_loadu_ps(a);
-    __m128 vb = _mm_loadu_ps(b);
-    __m128 diff = _mm_sub_ps(va, vb);
-    __m128 sq = _mm_mul_ps(diff, diff);
-    
-    // 水平相加：x+y+z+0
-    __m128 shuf = _mm_movehdup_ps(sq);        // y, y, w, w
-    __m128 sums = _mm_add_ps(sq, shuf);      // x+y, y+y, z+w, w+w
-    shuf = _mm_movehl_ps(shuf, sums);        // z+w, w+w, x+y, y+y
-    sums = _mm_add_ss(sums, shuf);           // x+y+z+w, ...
-    
-    return _mm_cvtss_f32(sums);
-}
-#else
-inline float avx_distance_squared_3d(const float* a, const float* b) {
-    return distance_squared_3d(a, b); // 回退到普通实现
-}
-#endif
 
 
 torch::Tensor farthest_point_sampling_cpu_optimized(

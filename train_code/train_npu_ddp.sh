@@ -13,6 +13,9 @@
 
 # ASCEND_RT_VISIBLE_DEVICES=2,3 torchrun --nproc_per_node=2 --master-port 29503 train_npu_col_ctf_new_metric_KL.py \
 #     --config configs/train/exp0721_3DGeoVAE_normv14_CTF_lr1e-4.py
-
-ASCEND_RT_VISIBLE_DEVICES=2,3 torchrun --nproc_per_node=2 --master-port 29503 train_npu_ctf_new_metric_KL_sdf_singlevs.py \
-    --config configs/train/exp0725_4en_8de_KL64_norm_sdf_baseline_1e-4_w10000_tsdf.py
+# DDP
+# ASCEND_RT_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 --master-port 29503 train_npu_ctf_new_metric_KL_sdf_singlevs.py \
+#     --config configs/train/exp0725_4en_8de_KL64_norm_sdf_baseline_1e-4_w10000_tsdf.py
+# DeepSpeed
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3
+deepspeed --num_gpus=4 train_npu_ctf_new_metric_KL_sdf_singlevs.py --config ./configs/train/exp0725_4en_8de_KL64_norm_sdf_baseline_1e-4_w10000_tsdf.py

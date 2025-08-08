@@ -43,12 +43,12 @@ model = dict(
 
 # dataset settings
 batch_size = 1 # currently only support batchsize = 1
-num_workers = 1
+num_workers = 8
 data_root = "/mnt/nvme1/share/datasets/scannetpp_norm_v3_02_vs16_256/"
-train_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_train2.txt'
+train_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_train.txt'
 val_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_val.txt'
-vs_res = [128]
-vs_res_gd = 128
+vs_res = [256]
+vs_res_gd =256
 truncatedist = 5 * 2.0 / vs_res[-1]
 train_data_args = dict(
     datatype = 'npz',
@@ -132,4 +132,4 @@ occ_threshold = 0.5 # eval metric loss after sigmoid
 sdf_threshold = 2.0 / vs_res[-1]
 
 # Others
-outputs = "/mnt/nvme3/z00533370/exp_result/exp0725_4en_8de_KL64_norm_sdf_baseline_1e-4_w10000_tsdf/"
+outputs = "/mnt/nvme3/ljr/exp_result/exp0725_4en_8de_KL64_norm_sdf_baseline_1e-4_w10000_tsdf/"

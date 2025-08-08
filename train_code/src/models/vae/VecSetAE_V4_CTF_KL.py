@@ -167,7 +167,7 @@ class VecSetAEV4CTFKL(nn.Module):
         ratio = 1.0 * self.num_latent / N
 
         # 120000为经验数值。最终版本应不添加此限制。
-        if self.use_cpu_fps and N <= 120000:
+        if self.use_cpu_fps and N <= 300000:
             idx = sample_farthest_points(pc.cpu(), lengths=torch.tensor([N], dtype=torch.long), K=self.num_latent, random_start_point=True).view(-1).to(pc.device)
         else:
             idx = fps_fallback(pos, batch, ratio=ratio, random_start=True)
@@ -385,7 +385,7 @@ class VecSetAEV4SINGLEKL(nn.Module):
         ratio = 1.0 * self.num_latent / N
 
         # 120000为经验数值。最终版本应不添加此限制。
-        if self.use_cpu_fps and N <= 120000:
+        if self.use_cpu_fps and N <= 300000:
             idx = sample_farthest_points(pc.cpu(), lengths=torch.tensor([N], dtype=torch.long), K=self.num_latent, random_start_point=True).view(-1).to(pc.device)
         else:
             idx = fps_fallback(pos, batch, ratio=ratio, random_start=True)

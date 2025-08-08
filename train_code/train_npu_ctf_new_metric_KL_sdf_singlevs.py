@@ -6,14 +6,16 @@ import torch
 import torch_npu
 from torch_npu.contrib import transfer_to_npu
 torch._C._jit_set_profiling_mode(False)
-import torch.distributed as dist
+# import torch.distributed as dist
 from tqdm import tqdm
 from torch.nn.parallel import DistributedDataParallel as DDP
+import deepspeed
+import deepspeed.comm as dist
 ## colossalai
-import colossalai
+# import colossalai
 # from colossalai.booster import Booster
 # from colossalai.booster.plugin import LowLevelZeroPlugin
-from colossalai.cluster import DistCoordinator
+# from colossalai.cluster import DistCoordinator
 # from colossalai.nn.optimizer import HybridAdam
 # from colossalai.utils import get_current_device
 
@@ -30,7 +32,7 @@ from opensora_local.acceleration.parallel_states import (
 )
 
 from opensora_local.datasets import prepare_dataloader
-from opensora_local.utils.ckpt_utils import create_logger, load, save, load_checkpoint
+from opensora_local.utils.ckpt_utils import create_logger, deepspeed_load, deepspeed_save, load_checkpoint
 from opensora_local.utils.config_utils import (
     create_experiment_workspace,
     create_tensorboard_writer,
@@ -190,17 +192,19 @@ def main():
     assert cfg.dtype in ["fp32", "fp16", "bf16"], f"Unknown mixed precision {cfg.dtype}"
     
     # 2.1. colossalai init distributed training
-    colossalai.launch_from_torch(backend='hccl')
-    coordinator = DistCoordinator()
-    device = get_current_device()
-    if coordinator.is_master():
+    deepspeed.init_distributed(dist_backend='hccl')
+    # colossalai.launch_from_torch(backend='hccl')
+    # coordinator = DistCoordinator()
+    # deepspeed.initialize()
+    device = torch.device(f'npu:{dist.get_rank()}')
+    if dist.get_rank() == 0:
         print("====== cfg: ",cfg)
     else:
         print("====== exp_dir: ", exp_dir)
     dtype = to_torch_dtype(cfg.dtype)
 
     # 2.2. init logger, tensorboard
-    if not coordinator.is_master():
+    if not dist.get_rank() == 0:
         logger = create_logger(None)
     else:
         logger = create_logger(exp_dir)
@@ -210,27 +214,27 @@ def main():
     logger.info(f"Train cfg: {cfg}")
     
     # 2.3. initialize ColossalAI booster
-    if cfg.plugin == "zero2":
-        # plugin = LowLevelZeroPlugin(
-        #     stage=2,
-        #     precision=cfg.dtype,
-        #     initial_scale=2**16,
-        #     max_norm=cfg.grad_clip,
-        # )
-        set_data_parallel_group(dist.group.WORLD)
-    elif cfg.plugin == "zero2-seq":
-        from opensora_local.acceleration.plugin import ZeroSeqParallelPlugin
-        plugin = ZeroSeqParallelPlugin(
-            sp_size=cfg.sp_size,
-            stage=2,
-            precision=cfg.dtype,
-            initial_scale=2**16,
-            max_norm=cfg.grad_clip,
-        )
-        set_sequence_parallel_group(plugin.sp_group)
-        set_data_parallel_group(plugin.dp_group)
-    else:
-        raise ValueError(f"Unknown plugin {cfg.plugin}")
+    # if cfg.plugin == "zero2":
+    #     # plugin = LowLevelZeroPlugin(
+    #     #     stage=2,
+    #     #     precision=cfg.dtype,
+    #     #     initial_scale=2**16,
+    #     #     max_norm=cfg.grad_clip,
+    #     # )
+    #     set_data_parallel_group(dist.group.WORLD)
+    # elif cfg.plugin == "zero2-seq":
+    #     from opensora_local.acceleration.plugin import ZeroSeqParallelPlugin
+    #     plugin = ZeroSeqParallelPlugin(
+    #         sp_size=cfg.sp_size,
+    #         stage=2,
+    #         precision=cfg.dtype,
+    #         initial_scale=2**16,
+    #         max_norm=cfg.grad_clip,
+    #     )
+    #     set_sequence_parallel_group(plugin.sp_group)
+    #     set_data_parallel_group(plugin.dp_group)
+    # else:
+    #     raise ValueError(f"Unknown plugin {cfg.plugin}")
     # booster = Booster(plugin=plugin)
     
     # ======================================================
@@ -239,12 +243,12 @@ def main():
     # DatasetForScanNet
     scale_level = cfg.vs_res
     train_dataset = DatasetForScanNetV6DEBUGAUGSDF(
-        data_root=cfg.data_root,
+        data_root=os.path.join(cfg.data_root, 'train'),
         data_list_name=cfg.train_data_list_name,
         **build_dataset_kwargs(cfg.train_data_args)
     )
     val_dataset = DatasetForScanNetV6DEBUGAUGSDF(
-        data_root=cfg.data_root,
+        data_root=os.path.join(cfg.data_root, 'val'),
         data_list_name=cfg.val_data_list_name,
         **build_dataset_kwargs(cfg.val_data_args)
     )
@@ -287,25 +291,78 @@ def main():
     # 4.3. load pretrain model 
     if cfg.load is not None:
         logger.info("Loading checkpoint......")
-        load_checkpoint(model, cfg.load, save_as_pt=False, strict=False)  
-
-    # 4.4. setup optimizer & lr_scheduler
-    optimizer = AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr, weight_decay=cfg.weight_decay
-    )
-
-    # cosinLR+warmup
+        load_checkpoint(model, cfg.load, save_as_pt=False, strict=False)
     total_steps = cfg.epochs * len(train_dataloader)
     # print('len(train_dataloader): ',len(train_dataloader))
     warmup_steps = int(cfg.warmup_ratio * total_steps)
-    lr_scheduler = LambdaLR(
-        optimizer,
-        lr_lambda=cosine_warmup_schedule(
-            warmup_steps=warmup_steps,
-            total_steps=total_steps,
-            min_lr_ratio=cfg.min_lr_ratio
-        )
+    # Test DeepSpeed
+    deepspeed_config = {
+        "train_batch_size": cfg.batch_size * dist.get_world_size(),
+        "gradient_accumulation_steps": 1,
+        "optimizer": {
+            "type": "AdamW",
+            "params": {
+                "lr": cfg.lr,
+                "weight_decay": cfg.weight_decay,
+                "torch_adam": True
+            }
+        },
+        "scheduler": {
+            "type": "WarmupDecayLR",
+            "params": {
+                "warmup_min_lr": cfg.lr*cfg.min_lr_ratio,  
+                "warmup_max_lr": cfg.lr,  
+                "warmup_num_steps": warmup_steps,  
+                "total_num_steps": total_steps,  
+                "warmup_type": "linear",   
+                "last_batch_iteration": -1
+            }
+        },
+        "gradient_clipping": 1.0,
+        "zero_optimization": {
+            "stage": 2,  
+            "allgather_partitions": True,
+            "allgather_bucket_size": 2e8,
+            "overlap_comm": True,
+            "reduce_scatter": True,
+            "reduce_bucket_size": 2e8
+        },
+        "activation_checkpointing": {
+            "partition_activations": True,
+            "contiguous_memory_optimization": False
+        },
+        "checkpoint": {
+            "use_node_local_storage": False, 
+        },
+        "steps_per_print": cfg.log_every,
+        "wall_clock_breakdown": False
+
+    }
+    if dist.get_rank() == 0:
+        print(deepspeed_config)
+    parameters = filter(lambda p: p.requires_grad, model.parameters())
+    # print(device, '***********************')
+    model, optimizer, _, _ = deepspeed.initialize(
+        model=model,
+        model_parameters=parameters,
+        config_params=deepspeed_config
     )
+
+    # 4.4. setup optimizer & lr_scheduler
+    # optimizer = AdamW(
+        # filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr, weight_decay=cfg.weight_decay
+    # )
+
+    # cosinLR+warmup
+    
+    # lr_scheduler = LambdaLR(
+    #     optimizer,
+    #     lr_lambda=cosine_warmup_schedule(
+    #         warmup_steps=warmup_steps,
+    #         total_steps=total_steps,
+    #         min_lr_ratio=cfg.min_lr_ratio
+    #     )
+    # )
     # 4.5. prepare for training
     if cfg.grad_checkpoint:
         set_grad_checkpoint(model)
@@ -316,8 +373,8 @@ def main():
     # =======================================================
     # 5. boost model for distributed training with colossalai
     # =======================================================
-    torch.set_default_dtype(dtype)
-    model = DDP(model, device_ids=[device.index])
+    # torch.set_default_dtype(dtype)
+    # model = DDP(model, device_ids=[device.index])
     
     torch.set_default_dtype(torch.float)
     num_steps_per_epoch = len(train_dataloader)
@@ -332,7 +389,8 @@ def main():
     # 6.1. resume training
     if cfg.resume is not None:
         logger.info("Resuming checkpoint......")
-        start_epoch, start_step, sampler_start_idx = load(None, model, optimizer, lr_scheduler, cfg.resume)
+        start_epoch, start_step, sampler_start_idx = deepspeed_load(model, cfg.resume)
+        # start_epoch, start_step, sampler_start_idx = load(None, model, optimizer, lr_scheduler, cfg.resume)
         logger.info(f"Loaded checkpoint {cfg.load} at epoch {start_epoch} step {start_step}")
     logger.info(f"Training for {cfg.epochs} epochs with {num_steps_per_epoch} steps per epoch")
     logger.info(f"Evaluating every {cfg.ckpt_every} interval with {num_steps_per_epoch_val} steps per epoch")
@@ -380,6 +438,25 @@ def main():
             sdf_criterion = torch.nn.MSELoss()
         else:
             raise ValueError(f"Unknown sdf_loss_type: {cfg.sdf_loss_type}")
+        
+    profiling = False
+
+    if profiling:
+        # time_fwd, time_bwd = [], []
+        import torch_npu
+        experimental_config = torch_npu.profiler._ExperimentalConfig(
+                        profiler_level=torch_npu.profiler.ProfilerLevel.Level1,
+                        aic_metrics=torch_npu.profiler.AiCMetrics.PipeUtilization)
+        prof = torch_npu.profiler.profile(
+                        activities=[torch_npu.profiler.ProfilerActivity.NPU,
+                                    torch_npu.profiler.ProfilerActivity.CPU],
+                        with_stack=True,
+                        record_shapes=False,
+                        profile_memory=True,
+                        schedule=torch_npu.profiler.schedule(wait=0, warmup=1, active=1, repeat=0,
+                                                                skip_first=0),
+                        experimental_config=experimental_config,
+                        on_trace_ready=torch_npu.profiler.tensorboard_trace_handler('./profiling/train_sdf_256/'))
 
     # =======================================================
     # 9. Training Loop
@@ -401,7 +478,7 @@ def main():
         log_step = 0
 
         with tqdm(range(start_step, num_steps_per_epoch),desc=f"Epoch {epoch}",
-            disable=not coordinator.is_master(), total=num_steps_per_epoch, initial=start_step,) as pbar:
+            disable=not dist.get_rank() == 0, total=num_steps_per_epoch, initial=start_step,) as pbar:
             for step in pbar:
                 input_dict = next(traindataloader_iter)
                 input_dict = {k: v[0].to(device) if isinstance(v, torch.Tensor) else v for k, v in input_dict.items()}
@@ -412,7 +489,12 @@ def main():
                 #     core_model.set_mode('gt')
                 # else:
                 #     core_model.set_mode('coarse_to_fine')
+                if profiling:
+                    if step == 140:
+                        prof.start()
+
                 loss_kl, output_list, target_list = model(input_dict,vs=scale_level[-1])
+                print('**********', input_dict["coord"].shape, f'Rank {dist.get_rank()}')
 
                 loss = torch.tensor(0).to(device, dtype)
                 for idx,(logit, target) in enumerate(zip(output_list,target_list)):
@@ -445,15 +527,24 @@ def main():
                     loss += cfg.loss_weight_KL * loss_kl 
                     running_metrics['loss_kl'] += loss_kl.item()   
 
-                optimizer.zero_grad()
-                loss.backward()
+                # optimizer.zero_grad()
+                # loss.backward()
+                model.backward(loss)
+                model.step()
 
                 # log gradnorm
                 running_metrics['grad_norm']  += grad_hook.compute()
 
-                optimizer.step()
-                if lr_scheduler is not None:
-                    lr_scheduler.step()    
+                # optimizer.step()
+                # if lr_scheduler is not None:
+                    # lr_scheduler.step()
+                if profiling:
+                    if step >= 140:
+                        prof.step()
+                        if step > 145:
+                            prof.stop()
+                            print('End profiling...')
+                            exit(-1)  
 
                 ## evaluation
                 running_metrics['loss'] += loss.item()
@@ -474,7 +565,7 @@ def main():
                 global_step = epoch * num_steps_per_epoch + step
 
                 ## Log to tensorboard
-                if coordinator.is_master() and (global_step) % cfg.log_every == 0:
+                if dist.get_rank() == 0 and (global_step) % cfg.log_every == 0:
                     log_metrics(writer, logger, running_metrics, log_step, global_step, optimizer, step,mode='train')
                     running_metrics = {k: 0.0 for k in running_metrics}
                     log_step = 0
@@ -486,7 +577,8 @@ def main():
 
                 # Save checkpoint
                 if cfg.ckpt_every > 0 and (global_step) % cfg.ckpt_every == 0:
-                    save(None, model, optimizer, lr_scheduler, epoch, step, global_step, cfg.batch_size, coordinator, exp_dir)
+                    # save(None, model, optimizer, lr_scheduler, epoch, step, global_step, cfg.batch_size, exp_dir)
+                    deepspeed_save(model, epoch, step, cfg.batch_size, global_step, exp_dir)
                     logger.info(f"Saved checkpoint at epoch {epoch} step {step} global_step {global_step} to {exp_dir}")
 
                     ### Eval Set
@@ -500,7 +592,7 @@ def main():
                     val_dataloader.sampler.set_epoch(epoch)
                     valdataloader_iter = iter(val_dataloader)
                     with tqdm(range(start_step_eval, num_steps_per_epoch_val),desc=f"Epoch {epoch}",
-                            disable=not coordinator.is_master(),total=num_steps_per_epoch_val,initial=start_step_eval,) as pbar_val:
+                            disable=not dist.get_rank() == 0,total=num_steps_per_epoch_val,initial=start_step_eval,) as pbar_val:
                         for _ in pbar_val:
                             input_dict = next(valdataloader_iter)
                             input_dict = {k: v[0].to(device) if isinstance(v, torch.Tensor) else v for k, v in input_dict.items()}
@@ -566,7 +658,7 @@ def main():
 
                     # all readuce mean         
                     running_eval_metrics = reduce_metrics(running_eval_metrics, device)    
-                    if coordinator.is_master():
+                    if dist.get_rank() == 0:
                         log_metrics(writer, logger, running_eval_metrics, eval_log_step, global_step, optimizer, step, mode='eval')
                         log_memory_usage()
                         cleanup_memory() 
@@ -578,6 +670,7 @@ def main():
         train_dataloader.sampler.set_start_index(0)
         start_step = 0
         torch.cuda.empty_cache()
+        exit(-1)
 
 
 if __name__ == "__main__":
