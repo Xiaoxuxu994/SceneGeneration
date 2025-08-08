@@ -16,7 +16,7 @@
 # Multi Node
 echo "-> aigc 3DGeoVAE on D910B"
 
-sleep 2s
+sleep 2m
 echo "-> sleep 2 minutes"
 export DEVICE_TYPE=ascend
 # Prevent tokenizer parallelism issues
