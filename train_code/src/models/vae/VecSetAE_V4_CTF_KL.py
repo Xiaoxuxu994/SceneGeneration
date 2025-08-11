@@ -284,6 +284,8 @@ class VecSetAEV4CTFKL(nn.Module):
             return self.forward_ctf(input_dict,return_mask=return_mask)
         else:
             raise ValueError(f"Unknown mode: {self.mode}")
+        
+
 
 @MODELS.register_module()
 class VecSetAEV4SINGLEKL(nn.Module):
@@ -442,3 +444,16 @@ class VecSetAEV4SINGLEKL(nn.Module):
         logit_list.append(logit.squeeze(-1).squeeze(0))
         targets_list.append(target)
         return kl, logit_list, targets_list
+    
+    def forward_test(self, input_dict,vs):
+        ## simple pe encoder + cross attention
+        kl, latent = self.encode(input_dict)
+
+        # decoder vs128 train with
+        logit_list = []
+        # # ## sdf label
+        query_pts = input_dict[f'pc_query_{vs}'].unsqueeze(0)
+        logit,_ = self.decode(latent, query_pts,chunk_size=self.chunk_size)
+        logit_list.append(logit.squeeze(-1).squeeze(0))
+
+        return logit_list
