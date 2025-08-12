@@ -1,9 +1,10 @@
 python python/cube_to_mesh.py \
-    --mode sdf \
+    --mode udf \
+    --engine dualmeshudf \
     --in_dir data/datasets/scannetpp_volume_norm_-1_1_0.95 \
     --voxel_res 256 \
     --num_workers 1 \
-    --alpha 0.5 \
+    --level 0.005 \
     --force
 
 # python python/cube_to_mesh.py \
