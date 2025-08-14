@@ -9,8 +9,11 @@ torch._C._jit_set_profiling_mode(False)
 # import torch.distributed as dist
 from tqdm import tqdm
 from torch.nn.parallel import DistributedDataParallel as DDP
-import deepspeed
-import deepspeed.comm as dist
+import torch.distributed as dist
+# import deepspeed
+# import deepspeed.comm as dist
+from accelerate import Accelerator
+from accelerate.utils import DistributedDataParallelKwargs, ProjectConfiguration, InitProcessGroupKwargs
 ## colossalai
 # import colossalai
 # from colossalai.booster import Booster
@@ -32,7 +35,7 @@ from opensora_local.acceleration.parallel_states import (
 )
 
 from opensora_local.datasets import prepare_dataloader
-from opensora_local.utils.ckpt_utils import create_logger, deepspeed_load, deepspeed_save, load_checkpoint
+from opensora_local.utils.ckpt_utils import create_logger, deepspeed_load, deepspeed_save, load_checkpoint, save, load
 from opensora_local.utils.config_utils import (
     create_experiment_workspace,
     create_tensorboard_writer,
@@ -192,7 +195,21 @@ def main():
     assert cfg.dtype in ["fp32", "fp16", "bf16"], f"Unknown mixed precision {cfg.dtype}"
     
     # 2.1. colossalai init distributed training
-    deepspeed.init_distributed(dist_backend='hccl')
+    # deepspeed.init_distributed(dist_backend='hccl')
+    project_config = ProjectConfiguration(project_dir=exp_dir, logging_dir=os.path.join(exp_dir, 'log'))
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+    init_process_group_kwargs = InitProcessGroupKwargs(
+        backend="hccl"
+    )
+    # mixed_precision = "no" if torch.backends.mps.is_available() else self.args.mixed_precision
+    
+
+    accelerator = Accelerator(
+        project_config=project_config,
+        log_with='tensorboard',
+        kwargs_handlers=[ddp_kwargs, init_process_group_kwargs],
+        # kwargs_handlers=[ddp_kwargs],
+    )
     # colossalai.launch_from_torch(backend='hccl')
     # coordinator = DistCoordinator()
     # deepspeed.initialize()
@@ -214,28 +231,7 @@ def main():
     logger.info(f"Train cfg: {cfg}")
     
     # 2.3. initialize ColossalAI booster
-    # if cfg.plugin == "zero2":
-    #     # plugin = LowLevelZeroPlugin(
-    #     #     stage=2,
-    #     #     precision=cfg.dtype,
-    #     #     initial_scale=2**16,
-    #     #     max_norm=cfg.grad_clip,
-    #     # )
-    #     set_data_parallel_group(dist.group.WORLD)
-    # elif cfg.plugin == "zero2-seq":
-    #     from opensora_local.acceleration.plugin import ZeroSeqParallelPlugin
-    #     plugin = ZeroSeqParallelPlugin(
-    #         sp_size=cfg.sp_size,
-    #         stage=2,
-    #         precision=cfg.dtype,
-    #         initial_scale=2**16,
-    #         max_norm=cfg.grad_clip,
-    #     )
-    #     set_sequence_parallel_group(plugin.sp_group)
-    #     set_data_parallel_group(plugin.dp_group)
-    # else:
-    #     raise ValueError(f"Unknown plugin {cfg.plugin}")
-    # booster = Booster(plugin=plugin)
+
     
     # ======================================================
     # 3. build dataset and dataloader
@@ -252,7 +248,6 @@ def main():
         data_list_name=cfg.val_data_list_name,
         **build_dataset_kwargs(cfg.val_data_args)
     )
-
     train_dataloader = prepare_dataloader(
         train_dataset,
         batch_size=cfg.batch_size,
@@ -296,79 +291,43 @@ def main():
     # print('len(train_dataloader): ',len(train_dataloader))
     warmup_steps = int(cfg.warmup_ratio * total_steps)
     # Test DeepSpeed
-    deepspeed_config = {
-        "train_batch_size": cfg.batch_size * dist.get_world_size(),
-        "gradient_accumulation_steps": 1,
-        "optimizer": {
-            "type": "AdamW",
-            "params": {
-                "lr": cfg.lr,
-                "weight_decay": cfg.weight_decay,
-                "torch_adam": True
-            }
-        },
-        "scheduler": {
-            "type": "WarmupDecayLR",
-            "params": {
-                "warmup_min_lr": cfg.lr*cfg.min_lr_ratio,  
-                "warmup_max_lr": cfg.lr,  
-                "warmup_num_steps": warmup_steps,  
-                "total_num_steps": total_steps,  
-                "warmup_type": "linear",   
-                "last_batch_iteration": -1
-            }
-        },
-        "gradient_clipping": 1.0,
-        "zero_optimization": {
-            "stage": 2,  
-            "allgather_partitions": True,
-            "allgather_bucket_size": 2e8,
-            "overlap_comm": True,
-            "reduce_scatter": True,
-            "reduce_bucket_size": 2e8
-        },
-        "activation_checkpointing": {
-            "partition_activations": True,
-            "contiguous_memory_optimization": False
-        },
-        "checkpoint": {
-            "use_node_local_storage": False, 
-        },
-        "steps_per_print": cfg.log_every,
-        "wall_clock_breakdown": False
 
-    }
-    if dist.get_rank() == 0:
-        print(deepspeed_config)
-    parameters = filter(lambda p: p.requires_grad, model.parameters())
+    # parameters = filter(lambda p: p.requires_grad, model.parameters())
     # print(device, '***********************')
-    model, optimizer, _, _ = deepspeed.initialize(
-        model=model,
-        model_parameters=parameters,
-        config_params=deepspeed_config
-    )
+    # model, optimizer, _, _ = deepspeed.initialize(
+    #     model=model,
+    #     model_parameters=parameters,
+    #     config_params=deepspeed_config
+    # )
 
     # 4.4. setup optimizer & lr_scheduler
-    # optimizer = AdamW(
-        # filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr, weight_decay=cfg.weight_decay
-    # )
+    optimizer = AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr, weight_decay=cfg.weight_decay
+    )
 
     # cosinLR+warmup
     
-    # lr_scheduler = LambdaLR(
-    #     optimizer,
-    #     lr_lambda=cosine_warmup_schedule(
-    #         warmup_steps=warmup_steps,
-    #         total_steps=total_steps,
-    #         min_lr_ratio=cfg.min_lr_ratio
-    #     )
-    # )
+    lr_scheduler = LambdaLR(
+        optimizer,
+        lr_lambda=cosine_warmup_schedule(
+            warmup_steps=warmup_steps,
+            total_steps=total_steps,
+            min_lr_ratio=cfg.min_lr_ratio
+        )
+    )
     # 4.5. prepare for training
     if cfg.grad_checkpoint:
         set_grad_checkpoint(model)
 
     # 4.6. set training mode
     model.train()
+    # print(train_dataloader.sampler, '************Before')
+    model, optimizer, train_dataloader, val_dataloader, lr_scheduler = accelerator.prepare(model, optimizer, train_dataloader, val_dataloader, lr_scheduler)
+    print(train_dataloader.sampler, len(train_dataloader), '*************AFter')
+
+    # exit(-1)
+    
+    
 
     # =======================================================
     # 5. boost model for distributed training with colossalai
@@ -384,6 +343,7 @@ def main():
     # =======================================================
     # 6. training loop
     # =======================================================
+    
     start_epoch = start_step = log_step = sampler_start_idx = start_step_eval = 0
 
     # 6.1. resume training
@@ -395,8 +355,8 @@ def main():
     logger.info(f"Training for {cfg.epochs} epochs with {num_steps_per_epoch} steps per epoch")
     logger.info(f"Evaluating every {cfg.ckpt_every} interval with {num_steps_per_epoch_val} steps per epoch")
   
-    train_dataloader.sampler.set_start_index(sampler_start_idx)
-    val_dataloader.sampler.set_start_index(0)
+    # train_dataloader.sampler.set_start_index(sampler_start_idx)
+    # val_dataloader.sampler.set_start_index(0)
     
 
     # =======================================================
@@ -464,7 +424,7 @@ def main():
     grad_hook = GradNormHook(global_step_fn=lambda: global_step)
     grad_hook.register_hooks(model)  # 注册 hook 到模型参数
     for epoch in range(start_epoch, cfg.epochs):
-        train_dataloader.sampler.set_epoch(epoch)
+        # train_dataloader.sampler.set_epoch(epoch)
         traindataloader_iter = iter(train_dataloader)
         logger.info(f"Beginning epoch {epoch}...")
 
@@ -494,7 +454,7 @@ def main():
                         prof.start()
 
                 loss_kl, output_list, target_list = model(input_dict,vs=scale_level[-1])
-                print('**********', input_dict["coord"].shape, f'Rank {dist.get_rank()}')
+                # print('**********', input_dict["coord"].shape, f'Rank {dist.get_rank()}')
 
                 loss = torch.tensor(0).to(device, dtype)
                 for idx,(logit, target) in enumerate(zip(output_list,target_list)):
@@ -527,17 +487,19 @@ def main():
                     loss += cfg.loss_weight_KL * loss_kl 
                     running_metrics['loss_kl'] += loss_kl.item()   
 
-                # optimizer.zero_grad()
+                optimizer.zero_grad()
                 # loss.backward()
-                model.backward(loss)
-                model.step()
+
+                # model.backward(loss)
+                accelerator.backward(loss)
+                # model.step()
 
                 # log gradnorm
                 running_metrics['grad_norm']  += grad_hook.compute()
 
-                # optimizer.step()
-                # if lr_scheduler is not None:
-                    # lr_scheduler.step()
+                optimizer.step()
+                if lr_scheduler is not None:
+                    lr_scheduler.step()
                 if profiling:
                     if step >= 140:
                         prof.step()
@@ -589,7 +551,7 @@ def main():
                                                base_metrics=['Precision','Recall','F1','IoU'],
                                                include_per_level=True)
                     eval_log_step = 0
-                    val_dataloader.sampler.set_epoch(epoch)
+                    # val_dataloader.sampler.set_epoch(epoch)
                     valdataloader_iter = iter(val_dataloader)
                     with tqdm(range(start_step_eval, num_steps_per_epoch_val),desc=f"Epoch {epoch}",
                             disable=not dist.get_rank() == 0,total=num_steps_per_epoch_val,initial=start_step_eval,) as pbar_val:
@@ -663,14 +625,14 @@ def main():
                         log_memory_usage()
                         cleanup_memory() 
 
-                    val_dataloader.sampler.set_start_index(0)
+                    # val_dataloader.sampler.set_start_index(0)
                     start_step_eval = 0                       
             
         # the continue epochs are not resumed, so we need to reset the sampler start index and start step
-        train_dataloader.sampler.set_start_index(0)
+        # train_dataloader.sampler.set_start_index(0)
         start_step = 0
         torch.cuda.empty_cache()
-        exit(-1)
+        # exit(-1)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@
 # Multi Node
 echo "-> aigc 3DGeoVAE on D910B"
 
-sleep 2m
+sleep 2s
 echo "-> sleep 2 minutes"
 export DEVICE_TYPE=ascend
 # Prevent tokenizer parallelism issues
@@ -53,12 +53,19 @@ export ASCEND_GLOBAL_EVENT_ENABLE=0    # 默认不使能event日志信息
 export ASCEND_LAUNCH_BLOCKING=0 # 控制算子执行时是否启动同步模式, 1 同步; 0 异步
 
 # 系统默认环境变量，不建议修改
-MASTER_HOST="$VC_WORKER_HOSTS"
-MASTER_ADDR="${VC_WORKER_HOSTS%%,*}"
-NNODES="$MA_NUM_HOSTS"
-NODE_RANK="$VC_TASK_INDEX"
-NGPUS_PER_NODE="$MA_NUM_GPUS"
-NUM_PROCESSES=$(($NGPUS_PER_NODE * $NNODES))
+# MASTER_HOST="$VC_WORKER_HOSTS"
+# MASTER_ADDR="${VC_WORKER_HOSTS%%,*}"
+# NNODES="$MA_NUM_HOSTS"
+# NODE_RANK="$VC_TASK_INDEX"
+# NGPUS_PER_NODE="$MA_NUM_GPUS"
+# NUM_PROCESSES=$(($NGPUS_PER_NODE * $NNODES))
+
+export MASTER_HOST=172.17.0.1
+export MASTER_ADDR=172.17.0.1
+export NNODES=1
+export NODE_RANK=0
+export NGPUS_PER_NODE=4
+export NUM_PROCESSES=4
 
 echo "------> system config <------"
 echo "VC_WORKER_HOSTS: ${VC_WORKER_HOSTS}"
@@ -72,6 +79,9 @@ echo "${MA_JOB_DIR}"
 echo "------>  <------"
 # https://www.hiascend.com/document/detail/zh/canncommercial/63RC2/modeldevpt/ptmigr/ptmigr_0022.html
 export HCCL_WHITELIST_DISABLE=1
+DEEPSPEED_CONFIG_PATH="./accelerate_config.yaml"
+echo "num_machines: ${NNODES}" >> ${DEEPSPEED_CONFIG_PATH}
+echo "num_processes: ${NUM_PROCESSES}" >> ${DEEPSPEED_CONFIG_PATH}
 
 if [[ $NODE_RANK == 0 ]]; then
     EXT_ARGS="--rdzv_conf=is_host=1"
@@ -100,16 +110,21 @@ export NUMEXPR_MAX_THREADS=4
 # export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3
 export PATH="/home/ma-user/anaconda3/envs/PyTorch-2.1.0/bin/":$PATH
 # 以下三行表示在脚本中解压数据，可根据实际情况决定是否需要。如不需要请注释
-cd /home/ma-user/modelarts/inputs/data-path_0
-tar -xvzf scannetpp_norm_v3_02_vs16_256.tar.gz
-cd $MA_JOB_DIR/train_code
+# cd /home/ma-user/modelarts/inputs/data-path_0
+# tar -xvzf scannetpp_norm_v3_02_vs16_256.tar.gz
+# cd $MA_JOB_DIR/train_code
 # 暂时绝对路径跑torchrun以防报找不到torchrun错误
-bash ~/.bashrc
-python gen_hostfile.py
+# bash ~/.bashrc
+# python gen_hostfile.py
 
-echo "Setting up SSH..."
-ssh-keygen -q -t rsa -N '' -f ~/.ssh/id_rsa
-cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
-deepspeed --hostfile=deepspeed_hostfile --master_addr=$MASTER_ADDR --launcher=pdsh
+# echo "Setting up SSH..."
+# ssh-keygen -q -t rsa -N '' -f ~/.ssh/id_rsa
+
+# cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+# chmod 600 ~/.ssh/authorized_keys
+# deepspeed --hostfile=deepspeed_hostfile --master_addr=$MASTER_ADDR --launcher=pdsh
+# deepspeed --hostfile=deepspeed_hostfile --master_addr=$MASTER_ADDR --launcher=pdsh train_npu_col_ctf_new_metric_KL.py --config configs/train/exp0721_3DGeoVAE_normv14_CTF_lr1e-4.py
 # torchrun --nproc_per_node=$NGPUS_PER_NODE  --nnodes=$NNODES  --master-port 29503 --master-addr $MASTER_ADDR --node_rank=$NODE_RANK train_npu_col_ctf_new_metric_KL.py --config configs/exp0721_3DGeoVAE_normv14_CTF_lr1e-4.py
+echo "beginning accelerator training..."
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3
+accelerate launch --config_file ${DEEPSPEED_CONFIG_PATH} --main_process_ip ${MASTER_ADDR} --machine_rank ${NODE_RANK} train_npu_ctf_new_metric_KL_sdf_singlevs.py --config configs/train/exp0725_4en_8de_KL64_norm_sdf_baseline_1e-4_w10000_tsdf.py

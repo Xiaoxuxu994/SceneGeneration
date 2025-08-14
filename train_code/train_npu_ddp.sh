@@ -18,4 +18,4 @@
 #     --config configs/train/exp0725_4en_8de_KL64_norm_sdf_baseline_1e-4_w10000_tsdf.py
 # DeepSpeed
 export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3
-deepspeed --num_gpus=4 train_npu_ctf_new_metric_KL_sdf_singlevs.py --config ./configs/train/exp0725_4en_8de_KL64_norm_sdf_baseline_1e-4_w10000_tsdf.py
+accelerate launch --config_file ./accelerate_config.yaml --main_process_port 29504 train_npu_ctf_new_metric_KL_sdf_singlevs.py --config configs/train/exp0725_4en_8de_KL64_norm_sdf_baseline_1e-4_w10000_tsdf.py

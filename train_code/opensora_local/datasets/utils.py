@@ -92,13 +92,14 @@ def prepare_dataloader(
         :class:`torch.utils.data.DataLoader`: A DataLoader used for training or testing.
     """
     _kwargs = kwargs.copy()
-    if is_initialized():
-        process_group = process_group or _get_default_group()
-        sampler = StatefulDistributedSampler(
-            dataset, num_replicas=process_group.size(), rank=process_group.rank(), shuffle=shuffle
-        )
-    else:
-        sampler = None
+    # if is_initialized():
+    #     process_group = process_group or _get_default_group()
+    #     sampler = StatefulDistributedSampler(
+    #         dataset, num_replicas=process_group.size(), rank=process_group.rank(), shuffle=shuffle
+    #     )
+    # else:
+    # 直接使用非DDPsampler。
+    sampler = None
     # Deterministic dataloader
     def seed_worker(worker_id):
         worker_seed = seed

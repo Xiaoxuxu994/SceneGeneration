@@ -10,9 +10,9 @@ from typing import Tuple, Optional
 # except ImportError:
 #     colossalai = None
 import torch
-import deepspeed
-import deepspeed.comm as dist
-# import torch.distributed as dist
+# import deepspeed
+# import deepspeed.comm as dist
+import torch.distributed as dist
 import torch.nn as nn
 from torch.distributed import is_initialized
 from opensora_local.acceleration.parallel_states import (
