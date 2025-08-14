@@ -2,9 +2,12 @@ python python/cube_to_mesh.py \
     --mode udf \
     --engine dualmeshudf \
     --in_dir data/datasets/scannetpp_volume_norm_-1_1_0.95 \
-    --voxel_res 256 \
+    --grad_dir data/datasets/scannetpp_volume_norm_-1_1_0.95 \
+    --mesh_dir data/datasets/scannetpp_mesh_norm_-1_1_0.95 \
+    --voxel_res 512 \
     --num_workers 1 \
     --level 0.005 \
+    --precise_grad \
     --force
 
 # python python/cube_to_mesh.py \
