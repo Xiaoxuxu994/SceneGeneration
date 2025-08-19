@@ -210,18 +210,25 @@ def main():
         kwargs_handlers=[ddp_kwargs, init_process_group_kwargs],
         # kwargs_handlers=[ddp_kwargs],
     )
+    
+    # print(accelerator.process_index, accelerator.num_processes, '*****')
+    # exit(-1)
     # colossalai.launch_from_torch(backend='hccl')
     # coordinator = DistCoordinator()
     # deepspeed.initialize()
-    device = torch.device(f'npu:{dist.get_rank()}')
-    if dist.get_rank() == 0:
+    # accelerator.local_process_index: local rank
+    # dist.get_rank: global rank
+    # e.g., 2 nodes, 16 gpus, node_rank = 1
+    # dist.get_rank() = 9, accelerator.local_process_index=1.
+    device = torch.device(f'npu:{accelerator.local_process_index}')
+    if accelerator.local_main_process_first() == 0:
         print("====== cfg: ",cfg)
     else:
         print("====== exp_dir: ", exp_dir)
     dtype = to_torch_dtype(cfg.dtype)
 
     # 2.2. init logger, tensorboard
-    if not dist.get_rank() == 0:
+    if not accelerator.local_process_index == 0:
         logger = create_logger(None)
     else:
         logger = create_logger(exp_dir)
@@ -256,6 +263,8 @@ def main():
         drop_last=True,
         pin_memory=True,
         process_group=get_data_parallel_group(),
+        world_size=accelerator.num_processes,
+        rank=accelerator.process_index
     )
 
     val_dataloader = prepare_dataloader(
@@ -266,6 +275,8 @@ def main():
         drop_last=False,
         pin_memory=True,
         process_group=get_data_parallel_group(),
+        world_size=accelerator.num_processes,
+        rank=accelerator.process_index
     )
 
     logger.info(f"Train Dataset contains {len(train_dataset)} data: ({cfg.train_data_list_name})")
@@ -322,8 +333,14 @@ def main():
     # 4.6. set training mode
     model.train()
     # print(train_dataloader.sampler, '************Before')
-    model, optimizer, train_dataloader, val_dataloader, lr_scheduler = accelerator.prepare(model, optimizer, train_dataloader, val_dataloader, lr_scheduler)
-    print(train_dataloader.sampler, len(train_dataloader), '*************AFter')
+    # if accelerator.process_index == 0:
+    #     import pdb; pdb.set_trace()
+    # else:
+    #     import time; time.sleep(12000)
+    model, optimizer, train_dataloader, val_dataloader,lr_scheduler = accelerator.prepare(model, optimizer, train_dataloader, val_dataloader, lr_scheduler)
+    # train_dataloader = accelerator.prepare_data_loader(train_dataloader, device_placement=False)
+    # val_dataloader = accelerator.prepare_data_loader(val_dataloader, device_placement=False)
+    # print(train_dataloader.sampler, len(train_dataloader), '*************AFter')
 
     # exit(-1)
     
@@ -438,7 +455,7 @@ def main():
         log_step = 0
 
         with tqdm(range(start_step, num_steps_per_epoch),desc=f"Epoch {epoch}",
-            disable=not dist.get_rank() == 0, total=num_steps_per_epoch, initial=start_step,) as pbar:
+            disable=not accelerator.local_process_index == 0, total=num_steps_per_epoch, initial=start_step,) as pbar:
             for step in pbar:
                 input_dict = next(traindataloader_iter)
                 input_dict = {k: v[0].to(device) if isinstance(v, torch.Tensor) else v for k, v in input_dict.items()}
@@ -454,7 +471,8 @@ def main():
                         prof.start()
 
                 loss_kl, output_list, target_list = model(input_dict,vs=scale_level[-1])
-                # print('**********', input_dict["coord"].shape, f'Rank {dist.get_rank()}')
+                # print('**********', input_dict["coord"].shape, f'Rank {accelerator.local_main_process_first()}')
+                
 
                 loss = torch.tensor(0).to(device, dtype)
                 for idx,(logit, target) in enumerate(zip(output_list,target_list)):
@@ -554,7 +572,7 @@ def main():
                     # val_dataloader.sampler.set_epoch(epoch)
                     valdataloader_iter = iter(val_dataloader)
                     with tqdm(range(start_step_eval, num_steps_per_epoch_val),desc=f"Epoch {epoch}",
-                            disable=not dist.get_rank() == 0,total=num_steps_per_epoch_val,initial=start_step_eval,) as pbar_val:
+                            disable=not accelerator.local_process_index==0,total=num_steps_per_epoch_val,initial=start_step_eval,) as pbar_val:
                         for _ in pbar_val:
                             input_dict = next(valdataloader_iter)
                             input_dict = {k: v[0].to(device) if isinstance(v, torch.Tensor) else v for k, v in input_dict.items()}

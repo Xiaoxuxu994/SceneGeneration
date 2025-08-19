@@ -68,6 +68,8 @@ def prepare_dataloader(
     pin_memory=False,
     num_workers=0,
     process_group: Optional[ProcessGroup] = None,
+    world_size=1,
+    rank=0,
     **kwargs,
 ):
     r"""
@@ -95,10 +97,9 @@ def prepare_dataloader(
     # if is_initialized():
     #     process_group = process_group or _get_default_group()
     #     sampler = StatefulDistributedSampler(
-    #         dataset, num_replicas=process_group.size(), rank=process_group.rank(), shuffle=shuffle
+    #         dataset, num_replicas=world_size, rank=rank, shuffle=shuffle
     #     )
     # else:
-    # 直接使用非DDPsampler。
     sampler = None
     # Deterministic dataloader
     def seed_worker(worker_id):
@@ -132,6 +133,7 @@ def prepare_dataloader(
         pin_memory=pin_memory,
         num_workers=num_workers,
         collate_fn=collate_fn,
+        shuffle=shuffle,
         **_kwargs,
     )
 
