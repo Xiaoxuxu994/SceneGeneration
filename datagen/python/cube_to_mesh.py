@@ -1,5 +1,7 @@
 import os
 import sys
+import torch
+import torch_npu
 import argparse
 import trimesh
 import mcubes
@@ -32,6 +34,20 @@ try:
     print("DCUDF imported.")
 except ImportError:
     print("DCUDF not installed. Please refer to https://github.com/jjjkkyz/DCUDF")
+    
+try:
+    sys.path.append("lib/CAPUDF/tools")
+    from surface_extraction import surface_extraction
+    print("CAP-UDF imported.")
+except ImportError:
+    print("CAP-UDF not installed. Please refer to https://github.com/junshengzhou/CAP-UDFF")
+    
+try:
+    sys.path.append("lib/ODC")
+    from occupancy_dual_contouring import occupancy_dual_contouring
+    print("ODC imported.")
+except ImportError:
+    print("ODC not installed. Please refer to https://github.com/KAIST-Visual-AI-Group/ODC")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--in_dir", type=str, required=True)
@@ -41,7 +57,7 @@ parser.add_argument("--mesh_dir", type=str, default="")
 parser.add_argument("--voxel_res", type=int, default=128)
 parser.add_argument("--mode", type=str, choices=["sdf", "udf", "occ"])
 parser.add_argument("--engine", type=str, 
-    choices=["mc", "mcubes", "meshudf", "dualmeshudf", "dcudf"])
+    choices=["mc", "mcubes", "meshudf", "dualmeshudf", "dcudf", "capudf", "odc"])
 parser.add_argument("--boxmin", type=float, default=-1)
 parser.add_argument("--boxmax", type=float, default=1)
 parser.add_argument("--level", type=float, default=0.005)
@@ -119,12 +135,15 @@ def compute_grad(grid, mesh_path: str, grad_path: str, thres=0.01):
     
     return grad
 
+def to_func(xyz, grid):
+    x, y, z = (xyz).T
+    return grid[x.int(), y.int(), z.int()]
+
 def grid_to_mesh(grid_path: str, mesh_path: str):
     grid = np.load(grid_path)
     
-    if args.engine in ["meshudf", "dualmeshudf"]:
+    if args.engine in ["meshudf", "dualmeshudf", "capudf"]:
         if len(args.grad_dir) > 0 and args.precise_grad:
-            print("computing precise gradients to the mesh surface.")
             scene_name = Path(grid_path).parent.stem
             grad_dir = Path(args.grad_dir) / "grad" / scene_name
             grad_dir.mkdir(exist_ok=True, parents=True)
@@ -132,6 +151,7 @@ def grid_to_mesh(grid_path: str, mesh_path: str):
             grad_path = grad_dir / "{}.npy".format(str(file_name))
             original_mesh_path = Path(args.mesh_dir) / scene_name / "normalized.obj"
             if not grad_path.exists():
+                print("computing precise gradients to the mesh surface.")
                 grad = compute_grad(grid, str(original_mesh_path), str(grad_path), level)
             else:
                 print("loading pre-computed gradients from {}".format(str(grad_path)))
@@ -152,6 +172,14 @@ def grid_to_mesh(grid_path: str, mesh_path: str):
         )
         # move the min bound back to [-1, -1, -1]
         verts -= 1
+        mesh = o3d.geometry.TriangleMesh()
+        mesh.vertices = o3d.utility.Vector3dVector(verts)
+        mesh.triangles = o3d.utility.Vector3iVector(faces)
+        mesh.paint_uniform_color([0.8, 0.8, 0.8])
+        
+        o3d.io.write_triangle_mesh(mesh_path, mesh)
+    elif args.engine == "capudf":
+        verts, faces = surface_extraction(grid, grad, args.voxel_res, level)
         mesh = o3d.geometry.TriangleMesh()
         mesh.vertices = o3d.utility.Vector3dVector(verts)
         mesh.triangles = o3d.utility.Vector3iVector(faces)
@@ -202,6 +230,30 @@ def grid_to_mesh(grid_path: str, mesh_path: str):
         verts /= args.voxel_res // 2
         
         mcubes.export_obj(verts, faces, mesh_path)
+    elif args.engine == "odc":
+        odc = occupancy_dual_contouring(
+            # torch.device("cpu")
+            torch.device("npu:0")
+        )
+        verts, faces = odc.extract_mesh(
+            to_func,
+            grid,
+            min_coord=[0]*3,
+            max_coord=[args.voxel_res-1]*3,
+            num_grid=args.voxel_res,
+            isolevel=level
+        )
+        verts, faces = verts.cpu().numpy(), faces.cpu().numpy()
+        # normalize vertices
+        verts -= args.voxel_res // 2
+        verts /= args.voxel_res // 2
+        
+        mesh = o3d.geometry.TriangleMesh()
+        mesh.vertices = o3d.utility.Vector3dVector(verts)
+        mesh.triangles = o3d.utility.Vector3iVector(faces)
+        mesh.paint_uniform_color([0.8, 0.8, 0.8])
+    
+        o3d.io.write_triangle_mesh(mesh_path, mesh)
     else:
         verts, faces, _, _ = measure.marching_cubes(grid, 
             level=level, 

@@ -13,7 +13,7 @@ import sys
 sys.path.append(os.path.dirname(__file__))
 from lib.utils.hash import decode_coords
 
-OCTREE_FILE = "vs{}_to_vs{}_th{}.npy"
+OCTREE_FILE = "vs{}_to_vs{}_th{}.npz"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--in_dir", type=str, required=True)
@@ -44,15 +44,15 @@ def worker_job(input_dir):
     output_path = (output_dir / octree_name).with_suffix(".obj")
     
     if not output_path.exists() or args.force:
-        print("processing {}".format(str(input_path)))
+        print("creating volume from {}".format(str(input_path)))
         octree = np.load(input_path)
         volume = np.full(shape=(args.tar_size, args.tar_size, args.tar_size), fill_value=thres)
-        for row in range(octree.shape[0]):
-            _, coords, value = octree[row]
-            i, j, k = decode_coords(int(coords))
-            volume[i, j, k] = value
+
+        X, Y, Z = octree["tar_coords"].T
+        volume[X, Y, Z] = octree["tar_values"]
             
         # create a mesh
+        print("running marching cubes...")
         verts, faces, _, _ = measure.marching_cubes(volume, 
             level=voxel_size*args.mc_alpha, 
             spacing=(voxel_size, voxel_size, voxel_size)
