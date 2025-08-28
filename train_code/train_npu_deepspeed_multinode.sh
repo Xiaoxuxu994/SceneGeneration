@@ -114,7 +114,7 @@ ROOT='/cache'
 # ls ${ROOT}/data/
 echo "data copy complete"
 cat -A ${MA_JOB_DIR}/train_code/accelerate_config.yaml
-ls /home/ma-user/modelarts/inputs/data-path_0/
+# ls /home/ma-user/modelarts/inputs/data-path_0/
 # deepspeed --hostfile=deepspeed_hostfile --master_addr=$MASTER_ADDR --launcher=mpi train_npu_col_ctf_new_metric_KL.py --config configs/exp0721_3DGeoVAE_normv14_CTF_lr1e-4.py
 # torchrun --nproc_per_node=$NGPUS_PER_NODE  --nnodes=$NNODES  --master-port 29503 --master-addr $MASTER_ADDR --node_rank=$NODE_RANK train_npu_col_ctf_new_metric_KL.py --config configs/exp0721_3DGeoVAE_normv14_CTF_lr1e-4.py
 accelerate launch --main_process_ip=${MASTER_ADDR} --machine_rank=${NODE_RANK} --num_machines=${NNODES} --num_processes=${NUM_PROCESSES} --config_file=${DEEPSPEED_CONFIG_PATH} train_npu_ctf_new_metric_KL_sdf_singlevs.py --config configs/train/exp0725_4en_8de_KL64_norm_sdf_baseline_1e-4_w10000_tsdf.py
