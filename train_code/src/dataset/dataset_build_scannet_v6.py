@@ -348,7 +348,7 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
                 self.samples = [os.path.join(self.data_root, p.strip().replace('.pth','.npz')) for p in f.readlines()] ## npz
             else:
                 raise ValueError(f"[ERROR] Unrecognized datatype: {self.datatype}. Supported types are ['pth', 'npz'].")
-        
+
         self.vs_res = kwargs.get("vs_res",[128])
         aug_cfg = kwargs.get("transform",{})
         self.transforms = []
@@ -415,6 +415,14 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
                     near_ratio = aug_cfg['DecodeQuerySampleSDF'].get('near_ratio',0.8),
                 ))
 
+            # Decoderquery sample random
+            if aug_cfg.get('DecodeQueryRandSampleSDF', {}).get('enabled', False):
+                self.transforms.append(DecodeQueryRandSampleSDF(
+                    sample_rate = aug_cfg['DecodeQueryRandSampleSDF'].get('sample_rate',0.1),
+                    max_number = aug_cfg['DecodeQueryRandSampleSDF'].get('max_number', 200000),
+                    vs_list = aug_cfg['DecodeQueryRandSampleSDF'].get('vs_list',[128]),
+                ))
+                
             # To tensor
             if aug_cfg.get('ToTensor', {}).get('enabled', False):
                 self.transforms.append(ToTensor())
@@ -432,6 +440,8 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
         self.grid_minbound_dict = {}
         vs_list = self.vs_res if isinstance(self.vs_res, list) else [self.vs_res]
         for vs in vs_list:
+            if vs == 512:
+                continue
             grid_idx, minbound = self._generate_dense_grid_index_and_minbound(vs)
             self.grid_index_dict[vs] = grid_idx
             self.grid_minbound_dict[vs] = minbound
@@ -463,20 +473,34 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
         minbound_coords = origin + (grid_idx) * vs_size
 
         return grid_idx, minbound_coords.astype(np.float32)
-        
+
+    def index_to_coord(self,grid_idx, resolution):
+        grid_idx = grid_idx.reshape(-1, 3)
+        vs_size = 2.0 / resolution 
+        origin = np.array([-1.0] * 3, dtype=np.float32)
+        coords = origin + grid_idx * vs_size
+        return coords.astype(np.float32)
+            
     def prepare_train_data(self, input_dict):
         
         ## get query center and grid idx online
         if isinstance(self.vs_res,list):
             for vs in self.vs_res:
-                input_dict[f'pc_query_grid_{vs}'] = self.grid_index_dict[vs]
-                input_dict[f'pc_query_{vs}'] = self.grid_minbound_dict[vs]
+                if f'pc_query_grid_{vs}_oct' in input_dict.keys():
+                    input_dict[f'pc_query_sdf_{vs}'] = input_dict[f'pc_query_sdf_{vs}_oct']
+                    input_dict[f'pc_query_grid_{vs}'] = input_dict[f'pc_query_grid_{vs}_oct']
+                    input_dict[f'pc_query_{vs}'] = self.index_to_coord(input_dict[f'pc_query_grid_{vs}'], vs)
+
+                else:
+                    input_dict[f'pc_query_grid_{vs}'] = self.grid_index_dict[vs]
+                    input_dict[f'pc_query_{vs}'] = self.grid_minbound_dict[vs]
         
         for transform in self.transforms:
             input_dict = transform(input_dict)
         return input_dict
     
     def __getitem__(self, index):
+        
         if self.datatype == 'pth':
             # deal with pth
             input_dict = torch.load(self.samples[index], map_location='cpu')

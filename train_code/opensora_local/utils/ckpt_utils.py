@@ -23,6 +23,9 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 from torchvision.datasets.utils import download_url
 
+import deepspeed
+import deepspeed.comm as dist
+
 pretrained_models = {
     "DiT-XL-2-512x512.pt": "https://dl.fbaipublicfiles.com/DiT/models/DiT-XL-2-512x512.pt",
     "DiT-XL-2-256x256.pt": "https://dl.fbaipublicfiles.com/DiT/models/DiT-XL-2-256x256.pt",
@@ -137,6 +140,26 @@ def record_model_param_shape(model: torch.nn.Module) -> dict:
         param_shape[name] = param.shape
     return param_shape
 
+def deepspeed_save(model, epoch, step, batch_size, global_step, save_dir=''):
+    model.save_checkpoint(
+        save_dir=save_dir,
+        client_state={
+            "epoch": epoch,
+            "step": step,
+            "start_idx": step*batch_size,
+            "global_step": global_step
+        }    
+    )
+
+def deepspeed_load(model, load_dir=''):
+    load_path, client_state = model.load_checkpoint(load_dir=load_dir)
+    if load_path:
+        epoch, step, idx = client_state["epoch"], client_state["step"], client_state["start_idx"]
+    else:
+        print('[WARNING] not find checkpoint, start training from beginning')
+        epoch = step = idx = 0
+    return epoch, step, idx
+
 
 def save(
     booster,
@@ -197,11 +220,13 @@ def load(
             rank = dist.get_rank(get_data_parallel_group())
             map_location = {'npu:%d'% 0: "npu:%d" % rank}
             pts = torch.load(os.path.join(load_dir, f'ckpt{epoch}.pth'), map_location=map_location)
+            # pts = torch.load(os.path.join(load_dir, 'model_ckpt.pt'), map_location=map_location)
 
             model.module.load_state_dict(pts["model"])
             optimizer.load_state_dict(pts["optimizer"])
         else:
             pts = torch.load(os.path.join(load_dir, f'ckpt{epoch}.pth'), map_location='cpu')
+            # pts = torch.load(os.path.join(load_dir, 'model_ckpt.pt'), map_location='cpu')
             model.load_state_dict(pts["model"])
             optimizer.load_state_dict(pts["optimizer"])
     else:
@@ -218,7 +243,7 @@ def create_logger(logging_dir):
     """
     Create a logger that writes to a log file and stdout.
     """
-    if colossalai is None or (is_initialized() and dist.get_rank() == 0):  # real logger
+    if (is_initialized() and dist.get_rank() == 0):  # real logger
         logging.basicConfig(
             level=logging.INFO,
             format="[\033[34m%(asctime)s\033[0m] %(message)s",
@@ -232,27 +257,50 @@ def create_logger(logging_dir):
     return logger
 
 
-def load_checkpoint(model, ckpt_path, save_as_pt=True,strict=True): ##TODO ckpt load strict
-    if ckpt_path.endswith(".pt") or ckpt_path.endswith(".pth"):
+def load_checkpoint(model, ckpt_path, save_as_pt=True, strict=True):
+    """
+    Load model checkpoint with flexible support for .pt/.pth files and sharded directories.
+
+    Args:
+        model (torch.nn.Module): Target model to load weights into.
+        ckpt_path (str): Path to checkpoint file (.pt/.pth) or directory (sharded checkpoint).
+        save_as_pt (bool): Whether to save a `.pt` version after loading from sharded checkpoint.
+        strict (bool): Whether to strictly enforce key match when loading state_dict.
+    """
+    def add_module_prefix(state_dict):
+        return {'module.' + k: v for k, v in state_dict.items() if not k.startswith('module.')}
+
+    if ckpt_path.endswith(('.pt', '.pth')):
         state_dict = find_model(ckpt_path)
-        if 'module' in list(model.state_dict().items())[0][0]:
-            contains_module_prefix = any(key.startswith('module.') for key in state_dict.keys())
-            if not contains_module_prefix:
-                new_state_dict = {}
-                for key, value in state_dict.items():
-                    if 'module' not in key:
-                        new_key = 'module.' + key
-                        new_state_dict[new_key] = value
-                state_dict = new_state_dict
-        
-        missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=strict)
-        print(f"Missing keys: {missing_keys}")
-        print(f"Unexpected keys: {unexpected_keys}")
+
+        # Handle wrapper key (e.g., 'model')
+        if 'model' in state_dict:
+            state_dict = state_dict['model']
+
+        # Adjust module prefix
+        model_keys = list(model.state_dict().keys())
+        model_uses_module = model_keys[0].startswith('module.')
+        ckpt_uses_module = next(iter(state_dict)).startswith('module.')
+
+        if model_uses_module and not ckpt_uses_module:
+            state_dict = add_module_prefix(state_dict)
+
+        # Load
+        if 'module' in state_dict.keys():
+            missing_keys, unexpected_keys = model.load_state_dict(state_dict['module'], strict=strict)
+        else:
+            missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=strict)
+            
+        print(f"[Checkpoint Load] Missing keys: {missing_keys}")
+        print(f"[Checkpoint Load] Unexpected keys: {unexpected_keys}")
+
     elif os.path.isdir(ckpt_path):
         load_from_sharded_state_dict(model, ckpt_path)
+
         if save_as_pt:
             save_path = os.path.join(ckpt_path, "model_ckpt.pt")
             torch.save(model.state_dict(), save_path)
-            print(f"Model checkpoint saved to {save_path}")
+            print(f"[Checkpoint Saved] Converted checkpoint saved to {save_path}")
+
     else:
-        raise ValueError(f"Invalid checkpoint path: {ckpt_path}")
+        raise ValueError(f"[Error] Invalid checkpoint path: {ckpt_path}")
