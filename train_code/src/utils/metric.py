@@ -94,6 +94,34 @@ def sdf_occ_eval_metric_all(output_logit, label, sdf_threshold=0.5, mask=None):
 
     return metrics
 
+def octree2volum(octree_sdf, octree_grid, tar_size=512, thres=5*2.0/256):
+
+    octree_sdf = np.asarray(octree_sdf, dtype=np.float32).reshape(-1)
+    octree_grid = np.asarray(octree_grid)
+
+    ijk = np.rint(octree_grid).astype(np.int64)            # (N,3)
+    i, j, k = ijk[:, 0], ijk[:, 1], ijk[:, 2]
+
+    inb = (
+        (i >= 0) & (i < tar_size) &
+        (j >= 0) & (j < tar_size) &
+        (k >= 0) & (k < tar_size)
+    )
+    if not np.all(inb):
+        i, j, k = i[inb], j[inb], k[inb]
+        sdf_vals = octree_sdf[inb]
+    else:
+        sdf_vals = octree_sdf
+
+    volume = np.full((tar_size, tar_size, tar_size), fill_value=thres, dtype=np.float32)
+
+    flat_idx = np.ravel_multi_index((i, j, k), dims=(tar_size, tar_size, tar_size))
+    volume_flat = volume.ravel()
+    np.minimum.at(volume_flat, flat_idx, sdf_vals)
+
+    return volume
+
+
 def extract_surface_points(udf_field, voxel_size=2.0/128, alpha = 0.5):
     """
     从 UDF 场中提取表面点（UDF ≈ 0）使用 marching cubes.
@@ -180,8 +208,8 @@ def udf_l1_l2_metric(output_logit, label, mask=None,truncatedist=None):
     l2 = torch.sqrt(sqr_diff.mean()).item()
     return [('SDF_L1', l1), ('SDF_L2', l2)]
 
-def sdf_eval_metric_all(output_logit, label, sdf_threshold=0.5, mask=None,
-                        truncatedist=None,
+def sdf_eval_metric_all(output_logit, label, grid = None, octree_save = False, sdf_threshold=0.5, mask=None,
+                        truncatedist = None,
                         compute_surface_metrics=False, mc_alpha=1.0,
                         voxel_res = 128,
                         inout_dir=None,prefix=None):
@@ -236,8 +264,13 @@ def sdf_eval_metric_all(output_logit, label, sdf_threshold=0.5, mask=None,
     if compute_surface_metrics:
         grid_size = [voxel_res,voxel_res,voxel_res]
         try:
-            pred_np_field = output_logit.view(*grid_size).detach().cpu().numpy()
-            label_np_field = label.view(*grid_size).detach().cpu().numpy()
+            if octree_save:
+                pred_np_field = octree2volum(output_logit.detach().cpu().numpy(), grid, tar_size=voxel_res, thres=10*2.0/voxel_res)
+                label_np_field = octree2volum(label.detach().cpu().numpy(), grid, tar_size=voxel_res, thres=10*2.0/voxel_res)
+            else:
+                pred_np_field = output_logit.view(*grid_size).detach().cpu().numpy()
+                label_np_field = label.view(*grid_size).detach().cpu().numpy()
+
             verts_pred, faces_pred = extract_surface_points(pred_np_field, voxel_size=2.0/voxel_res, alpha = mc_alpha)
             verts_label, faces_label = extract_surface_points(label_np_field, voxel_size=2.0/voxel_res, alpha = mc_alpha)
             # if len(verts_pred) > 0 and len(verts_label) > 0:
