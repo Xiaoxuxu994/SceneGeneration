@@ -28,9 +28,11 @@
 python python/octree_to_mesh.py \
     --in_dir data/datasets/scannetpp_volume_norm_-1_1_0.95/octree/ \
     --out_dir data/datasets/scannetpp_volume_norm_-1_1_0.95/octree_mc/ \
-    --src_size 256 \
-    --tar_size 512 \
+    --engine poisson \
+    --src_size 128 \
+    --tar_size 256 \
     --thres 3 \
     --mc_alpha 1 \
     --num_workers 1 \
+    --grad \
     --force

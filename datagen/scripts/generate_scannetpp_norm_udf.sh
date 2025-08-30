@@ -31,13 +31,13 @@
 #     --num_workers 20
 
 python python/export_cube.py \
-    --mode sdf \
+    --mode udf \
     --dataset scannetpp \
     --in_dir data/datasets/scannetpp_mesh/data/ \
     --norm_dir data/datasets/scannetpp_mesh_norm_-1_1_0.95 \
     --out_dir data/datasets/scannetpp_volume_norm_-1_1_0.95 \
-    --voxel_res 256 \
-    --num_workers 16 \
+    --voxel_res 128 \
+    --num_workers 1 \
     --is_norm
 
 # python python/export_cube.py \

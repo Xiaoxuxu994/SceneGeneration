@@ -1,6 +1,7 @@
 import os
 import shutil
 import argparse
+import trimesh
 
 import numpy as np
 import open3d as o3d
@@ -15,10 +16,12 @@ sys.path.append(os.path.dirname(__file__))
 from lib.utils.hash import encode_coords, decode_coords, encode_coords_np, decode_coords_np
 
 VOLUME_FILE = "vs_{}.npy"
-OCTREE_FILE = "vs{}_to_vs{}_th{}.npz"
+OCTREE_FILE = "vs{}_to_vs{}_th{}"
+OCTREE_SUFFIX = ".npz"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--in_dir", type=str, required=True)
+parser.add_argument("--mesh_dir", type=str, default="")
 parser.add_argument("--out_dir", type=str, required=True)
 parser.add_argument("--out_dir_sec", type=str, default="", help="secondary output directory.")
 parser.add_argument("--mc_dir", type=str, default="", help="marching cubes output directory.")
@@ -30,17 +33,53 @@ parser.add_argument("--boxmax", type=float, default=1)
 parser.add_argument("--thres", type=int, required=True, help="number of voxel in the finest resolution.")
 parser.add_argument("--check", action="store_true", help="check octree.")
 parser.add_argument("--stats", action="store_true", help="check compression stats.")
+parser.add_argument("--grad", action="store_true", help="generate octree with gradients, \
+                    i.e. unit vectors to the mesh surface.")
 parser.add_argument("--force", action="store_true", help="generate octree even if target exists.")
 parser.add_argument("--num_workers", type=int, default=1)
 args = parser.parse_args()
 
 in_dir = Path(args.in_dir)
 out_dir = Path(args.out_dir)
+mesh_dir = Path(args.mesh_dir)
 
 out_dir.mkdir(exist_ok=True, parents=True)
 
 assert args.tar_size > args.src_size, \
     "{} must be greater than {}".format(args.tar_size, args.src_size)
+if args.grad: assert len(args.mesh_dir) > 0, \
+    "mesh_dir must be given if you want to compute the gradients."
+
+def compute_grad(query_coords, # indices in a volume
+        mesh_path: str):
+    # compute gradients based on truncated UDFs
+    query_points = query_coords.astype(float)
+    query_points /= args.tar_size
+    query_points *= args.boxmax - args.boxmin
+    query_points += args.boxmin
+
+    print("loading mesh {}".format(mesh_path))
+    mesh = trimesh.load_mesh(mesh_path) # obj file
+
+    print("computing gradients for {} query points".format(query_points.shape[0]))
+    
+    # # slow implementation
+    # closest_points, distance, triangle_id = trimesh.proximity.closest_point(mesh, query_points)
+    # query_grads = (closest_points - query_points) / np.stack([distance]*3, axis=1)
+
+    mesh_o3d = o3d.geometry.TriangleMesh(
+        vertices=o3d.utility.Vector3dVector(np.asarray(mesh.vertices)),
+        triangles=o3d.utility.Vector3iVector(np.asarray(mesh.faces))
+    )
+    scene = o3d.t.geometry.RaycastingScene()
+    scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh_o3d))
+    return_dict = scene.compute_closest_points(o3d.core.Tensor.from_numpy(query_points.astype(np.float32)))
+    closest_points = return_dict["points"].numpy()
+    
+    distance = np.linalg.norm(closest_points - query_points, axis=1) + 1e-16
+    query_grads = (closest_points - query_points) / np.stack([distance]*3, axis=1)
+    
+    return query_grads
 
 def worker_job(input_dir):
     src_path = input_dir / VOLUME_FILE.format(args.src_size)
@@ -54,7 +93,10 @@ def worker_job(input_dir):
     
     output_dir = out_dir / input_dir.name
     output_dir.mkdir(exist_ok=True, parents=True)
-    output_path = output_dir / OCTREE_FILE.format(args.src_size, args.tar_size, args.thres)
+    output_name = OCTREE_FILE.format(args.src_size, args.tar_size, args.thres)
+    # if args.grad: output_name += "_grad"
+    output_path = output_dir / output_name 
+    output_path = output_path.with_suffix(OCTREE_SUFFIX)
     
     if output_path.exists() and not args.force:
         print("found existing octree file {}, skipping...".format(str(output_path)))
@@ -101,17 +143,51 @@ def worker_job(input_dir):
         tar_coords = np.stack([tar_i, tar_j, tar_k], axis=1).astype(int)
         tar_values = tar_vol[tar_i, tar_j, tar_k].astype(float)
         
+        entry_data = {
+            "src_coords": src_coords,
+            "tar_coords": tar_coords,
+            "tar_values": tar_values
+        }
+            
         print("save to {}".format(str(output_path)))
-        np.savez_compressed(output_path, src_coords=src_coords, tar_coords=tar_coords, tar_values=tar_values)
+        # np.savez_compressed(output_path, src_coords=src_coords, tar_coords=tar_coords, tar_values=tar_values)
+        
+        np.savez_compressed(output_path, **entry_data)
         
         if args.check:
             X, Y, Z = tar_coords.T
             original_values = tar_vol[X, Y, Z]
             compressed_values = tar_values
-            
             if not np.array_equal(original_values, compressed_values):
                 raise ValueError("compressed volume are not consistent with the original volume.")
-
+    
+    if args.grad:
+        output_name += "_grad"
+        grad_path = output_dir / output_name 
+        grad_path = grad_path.with_suffix(OCTREE_SUFFIX)
+        
+        if output_path.exists():
+            entry_data = np.load(output_path)
+            tar_coords = entry_data["tar_coords"]
+        
+        # if grad_path.exists() and not args.force:
+        #     print("found existing gradients file {}, skipping...".format(str(grad_path)))
+        # else:
+        #     print("computing gradients using octree...")
+        #     scene_name = input_dir.name
+        #     mesh_path = mesh_dir / scene_name / "normalized.obj"
+        #     tar_grads = compute_grad(tar_coords, mesh_path)
+            
+        #     np.savez_compressed(grad_path, tar_grads=tar_grads)      
+        
+        print("computing gradients using octree...")
+        scene_name = input_dir.name
+        mesh_path = mesh_dir / scene_name / "normalized.obj"
+        tar_grads = compute_grad(tar_coords, mesh_path)
+        
+        print("saving gradients to {}".format(str(grad_path)))
+        np.savez_compressed(grad_path, tar_grads=tar_grads)    
+    
     # copy to a separate secondary output directory
     if len(args.out_dir_sec) > 0:
         out_dir_sec = Path(args.out_dir_sec)
@@ -176,7 +252,7 @@ if __name__ == "__main__":
             # for debugging
             # in_dir = Path("data/nvme2/scannetpp_volume_norm_-1_1_0.95/sdf/836363121f")
             worker_job(in_dir)
-            exit()
+            # exit()
             
     if args.stats:
         sizes = []
@@ -184,6 +260,7 @@ if __name__ == "__main__":
             tar_path = in_dir / VOLUME_FILE.format(args.tar_size)
             output_dir = out_dir / in_dir.name
             output_path = output_dir / OCTREE_FILE.format(args.src_size, args.tar_size, args.thres)
+            output_path = output_path.with_suffix(OCTREE_SUFFIX)
             
             original_size = os.path.getsize(tar_path)
             compressed_size = os.path.getsize(output_path)
