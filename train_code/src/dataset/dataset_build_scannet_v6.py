@@ -487,7 +487,17 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
         if isinstance(self.vs_res,list):
             for vs in self.vs_res:
                 if f'pc_query_grid_{vs}_oct' in input_dict.keys():
-                    input_dict[f'pc_query_sdf_{vs}'] = input_dict[f'pc_query_sdf_{vs}_oct']
+                    if f'pc_query_grad_{vs}_oct' in input_dict.keys():
+                        sdf = input_dict[f'pc_query_sdf_{vs}_oct']   # (N,) or (N,1)
+                        grad = input_dict[f'pc_query_grad_{vs}_oct'] # (N,3)
+
+                        if sdf.ndim == 1:   # (N,) → (N,1)
+                            sdf = np.expand_dims(sdf, axis=-1)
+
+                        input_dict[f'pc_query_sdf_{vs}'] = np.concatenate([sdf, grad], axis=-1)
+                    else:
+                        input_dict[f'pc_query_sdf_{vs}'] = input_dict[f'pc_query_sdf_{vs}_oct']
+                        
                     input_dict[f'pc_query_grid_{vs}'] = input_dict[f'pc_query_grid_{vs}_oct']
                     input_dict[f'pc_query_{vs}'] = self.index_to_coord(input_dict[f'pc_query_grid_{vs}'], vs)
 

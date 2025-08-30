@@ -441,9 +441,25 @@ class VecSetAEV4SINGLEKL(nn.Module):
         target = input_dict[f'pc_query_sdf_{vs}']
 
         logit,_ = self.decode(latent, query_pts,chunk_size=self.chunk_size)
-        logit_list.append(logit.squeeze(-1).squeeze(0))
+        
+        # activation by channel count
+        C = logit.shape[-1]
+        if C == 4:
+            logit = torch.cat([logit[..., :1], torch.tanh(logit[..., 1:])], dim=-1)  # [1, N, 4]
+            logit_list.append(logit.squeeze(0))                                      # [N, 4]
+        elif C == 1:
+            logit_list.append(logit.squeeze(-1).squeeze(0))                          # [N]
+        else:
+            logit_list.append(logit.squeeze(0))                                      # [N, C]
+
         targets_list.append(target)
+
         return kl, logit_list, targets_list
+
+        # logit,_ = self.decode(latent, query_pts,chunk_size=self.chunk_size)
+        # logit_list.append(logit.squeeze(-1).squeeze(0))
+        # targets_list.append(target)
+        # return kl, logit_list, targets_list
     
     def forward_test(self, input_dict,vs):
         ## simple pe encoder + cross attention

@@ -307,6 +307,7 @@ def init_running_metrics(levels: list[int] = None,
         'loss_occ': 0.0,
         'loss_kl': 0.0,
         'loss_sdf': 0.0,
+        'loss_grad': 0.0,
         'grad_norm':0.0,
     }
 
@@ -320,6 +321,7 @@ def init_running_metrics(levels: list[int] = None,
         for lvl in levels:
             metrics[f"loss_occ_s{lvl}"] = 0.0
             metrics[f"loss_sdf_s{lvl}"] = 0.0
+            metrics[f"loss_grad_s{lvl}"] = 0.0
             metrics[f"logit_mean_s{lvl}"] = 0.0
             metrics[f"logit_max_s{lvl}"] = 0.0
             metrics[f"logit_min_s{lvl}"] = 0.0

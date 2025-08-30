@@ -370,9 +370,11 @@ class DecodeQueryRandSampleSDF(object):
 
             # 统一 labels 维度为 (N,)
             if isinstance(labels, np.ndarray):
-                labels = labels.reshape(-1)
+                if labels.ndim == 1:
+                    labels = labels[:, None]
             elif isinstance(labels, torch.Tensor):
-                labels = labels.view(-1)
+                if labels.dim() == 1:
+                    labels = labels.unsqueeze(-1)
 
             # sample_rate==1.0 直接返回原数据
             if self.sample_rate >= 1.0:
