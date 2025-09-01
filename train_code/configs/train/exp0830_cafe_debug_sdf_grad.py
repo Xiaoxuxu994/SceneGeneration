@@ -36,7 +36,8 @@ model = dict(
         attn_dtype='bf16',
         enable_ca_flash=False,
         drop_path_rate=0.3,
-        output_dim = 4,
+        output_dim = 1,
+        output_grad_dim = 3,
     ), ## vs_res=128
 )
 

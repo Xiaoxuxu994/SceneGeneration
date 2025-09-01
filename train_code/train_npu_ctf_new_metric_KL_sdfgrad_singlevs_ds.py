@@ -25,6 +25,7 @@ from accelerate.utils import DistributedDataParallelKwargs, ProjectConfiguration
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 import math
+import re
 
 ## opensora 
 from opensora_local.acceleration.checkpoint import set_grad_checkpoint
@@ -135,9 +136,9 @@ def log_metrics(writer, logger, metrics, step_count, global_step, optimizer, ste
             continue
 
         # 分类为多层级还是默认
-        if '_s' in k:
-            *prefix, scale = k.split('_s')
-            name = '_s'.join(prefix)
+        match = re.fullmatch(r'(.*)_s(\d+)', k)
+        if match:
+            name, scale = match.group(1), match.group(2)
             scale = f's{scale}'
             if scale not in level_groups:
                 level_groups[scale] = {}
@@ -525,7 +526,7 @@ def main():
                 for idx,(logit, target) in enumerate(zip(output_list,target_list)):
                     scale = scale_level[idx]
                     # metrics = occ_eval_metric_all(logit, target, occ_threshold=cfg.occ_threshold)
-                    metrics = sdf_eval_metric_all(logit, target, sdf_threshold=cfg.sdf_threshold, mask=None,
+                    metrics = sdf_eval_metric_all(logit[...,0], target[...,0], sdf_threshold=cfg.sdf_threshold, mask=None,
                                                   truncatedist = cfg.truncatedist,compute_surface_metrics=False)
                     for name, score in metrics:
                         running_metrics[f'{name}_s{scale}'] += score
@@ -622,7 +623,7 @@ def main():
                             for idx,(logit, target) in enumerate(zip(output_list,target_list)):
                                 scale = scale_level[idx]
                                 # metrics = occ_eval_metric_all(logit, target, occ_threshold=cfg.occ_threshold)
-                                metrics = sdf_eval_metric_all(logit, target, sdf_threshold=cfg.sdf_threshold, mask=None,
+                                metrics = sdf_eval_metric_all(logit[...,0], target[...,0], sdf_threshold=cfg.sdf_threshold, mask=None,
                                                               truncatedist = cfg.truncatedist, compute_surface_metrics=False) 
                                 for name, score in metrics:
                                     running_eval_metrics[f'{name}_s{scale}'] += score
