@@ -49,13 +49,23 @@ try:
 except ImportError:
     print("ODC not installed. Please refer to https://github.com/KAIST-Visual-AI-Group/ODC")
 
+OCTREE_FILE = "vs{}_to_vs{}_th{}"
+OCTREE_SUFFIX = ".npz"
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--in_dir", type=str, required=True)
 parser.add_argument("--grad_dir", type=str, default="")
 parser.add_argument("--mesh_dir", type=str, default="")
 # parser.add_argument("--out_dir", type=str, required=True)
 parser.add_argument("--voxel_res", type=int, default=128)
-parser.add_argument("--mode", type=str, choices=["sdf", "udf", "occ"])
+
+# parser.add_argument("--type", type=str, choices=["cube", "octree"], help="specify the input type, \
+#     cube -> a complete volume, octree -> an octree from a truncated volume.")
+parser.add_argument("--mode", type=str, choices=["sdf", "udf", "occ", "octree"])
+parser.add_argument("--oct_src_size", type=int, default=256, help="only necessary for an octree input")
+parser.add_argument("--oct_tar_size", type=int, default=512, help="only necessary for an octree input")
+parser.add_argument("--oct_thres", type=int, default=3, help="only necessary for an octree input")
+
 parser.add_argument("--engine", type=str, 
     choices=["mc", "mcubes", "meshudf", "dualmeshudf", "dcudf", "capudf", "odc"])
 parser.add_argument("--boxmin", type=float, default=-1)
@@ -66,24 +76,31 @@ parser.add_argument("--precise_grad", action="store_true", help="compute precise
 parser.add_argument("--force", action="store_true", help="generate mesh even if target exists.")
 args = parser.parse_args()
 
-if len(args.grad_dir) > 0: assert len(args.mesh_dir) > 0
-
 print("generate mesh data using engine: {}".format(args.engine))
 
 in_dir = Path(args.in_dir) / args.mode
 out_dir = Path(args.in_dir) / "marching_cubes" / args.mode
 
+if len(args.grad_dir) > 0 and args.mode != "octree": 
+    assert len(args.mesh_dir) > 0
+    
 voxel_size = (args.boxmax - args.boxmin) / args.voxel_res
 
 level = args.level
-volume_filename = f'vs_{args.voxel_res}.npy'
+
+if args.mode == "octree":
+    volume_filename = OCTREE_FILE.format(args.oct_src_size, args.oct_tar_size, args.oct_thres)
+    volume_filename += OCTREE_SUFFIX
+else:
+    volume_filename = f'vs_{args.voxel_res}.npy'
 
 def worker_job(src_path):
     src_path_name = src_path.name
     src_dir_name = src_path.parent.name
     tar_dir = out_dir / src_dir_name
     tar_dir.mkdir(exist_ok=True, parents=True)
-    tar_path = (tar_dir / "{}_{}".format(str(src_path.stem), args.engine)).with_suffix(".obj")
+    tar_name = "{}_{}_{}".format(str(src_path.stem), args.mode, args.engine)
+    tar_path = (tar_dir / tar_name).with_suffix(".obj")
     if not tar_path.exists() or args.force:
         print("processing {}".format(str(src_path)))
         # try:
@@ -140,22 +157,64 @@ def to_func(xyz, grid):
     return grid[x.int(), y.int(), z.int()]
 
 def grid_to_mesh(grid_path: str, mesh_path: str):
-    grid = np.load(grid_path)
+
+    if args.mode == "octree":
+        try:
+            print("loading octree from {}".format(grid_path))
+            octree = np.load(grid_path)
+            
+            octree_coords = octree["tar_coords"]
+            octree_values = octree["tar_values"]
+            
+            oct_thres = (args.boxmax - args.boxmin) / args.oct_tar_size * args.oct_thres
+            grid = np.full(shape=(args.oct_tar_size, args.oct_tar_size, args.oct_tar_size), fill_value=oct_thres)
+            
+            X, Y, Z = octree_coords.T
+            grid[X, Y, Z] = octree_values
+        except KeyError:
+            print("please make sure the input octree has tar_coords and tar_values.")
+            exit()
+        
+    else:
+        print("loading volume from {}".format(grid_path))
+        grid = np.load(grid_path)        
     
     if args.engine in ["meshudf", "dualmeshudf", "capudf"]:
+        
         if len(args.grad_dir) > 0 and args.precise_grad:
-            scene_name = Path(grid_path).parent.stem
-            grad_dir = Path(args.grad_dir) / "grad" / scene_name
-            grad_dir.mkdir(exist_ok=True, parents=True)
-            file_name = Path(grid_path).stem
-            grad_path = grad_dir / "{}.npy".format(str(file_name))
-            original_mesh_path = Path(args.mesh_dir) / scene_name / "normalized.obj"
-            if not grad_path.exists():
-                print("computing precise gradients to the mesh surface.")
-                grad = compute_grad(grid, str(original_mesh_path), str(grad_path), level)
+            
+            if args.mode == "octree":
+                print("creating a dummy gradient volume for octree data...")
+                
+                grad = -np.stack(np.gradient(grid), axis=-1)
+                grad_shape = grad.shape
+                grad = normalize(grad.reshape((-1, 3)), axis=1).reshape(grad_shape)
+                
+                scene_name = Path(grid_path).parent.stem
+                grad_dir = Path(args.grad_dir) / args.mode / scene_name
+                grad_name = OCTREE_FILE.format(args.oct_src_size, args.oct_tar_size, args.oct_thres)+"_grad"
+                grad_path = (grad_dir / grad_name).with_suffix(OCTREE_SUFFIX)
+                
+                print("loading precise octree gradients from {}".format(str(grad_path)))
+                
+                octree_grad = np.load(grad_path)["tar_grads"]
+                grad[X, Y, Z] = octree_grad
+                
             else:
-                print("loading pre-computed gradients from {}".format(str(grad_path)))
-                grad = np.load(grad_path)
+                scene_name = Path(grid_path).parent.stem
+                grad_dir = Path(args.grad_dir) / "grad" / scene_name
+                grad_dir.mkdir(exist_ok=True, parents=True)
+                file_name = Path(grid_path).stem
+                grad_path = grad_dir / "{}.npy".format(str(file_name))
+                
+                if not grad_path.exists():
+                    print("computing precise gradients to the mesh surface.")
+                    original_mesh_path = Path(args.mesh_dir) / scene_name / "normalized.obj"
+                    grad = compute_grad(grid, str(original_mesh_path), str(grad_path), level)
+                else:
+                    print("loading pre-computed gradients from {}".format(str(grad_path)))
+                    grad = np.load(grad_path)
+        
         else:
             grad = -np.stack(np.gradient(grid), axis=-1)
             grad_shape = grad.shape
@@ -164,10 +223,13 @@ def grid_to_mesh(grid_path: str, mesh_path: str):
     if args.mode == "occ":
         print(grid.max(), grid.min(), np.sum(grid))
         exit()
+        
+    print("creating mesh file using engine {}".format(args.engine))
     
     if args.engine == "meshudf":
-        verts, faces, _, _ = udf_mc_lewiner(grid,
-            grad,
+        verts, faces, _, _ = udf_mc_lewiner(
+            grid.astype(np.float32),
+            grad.astype(np.float32),
             spacing=(voxel_size, voxel_size, voxel_size)
         )
         # move the min bound back to [-1, -1, -1]
@@ -179,7 +241,12 @@ def grid_to_mesh(grid_path: str, mesh_path: str):
         
         o3d.io.write_triangle_mesh(mesh_path, mesh)
     elif args.engine == "capudf":
-        verts, faces = surface_extraction(grid, grad, args.voxel_res, level)
+        verts, faces = surface_extraction(
+            grid, 
+            grad, 
+            args.voxel_res, 
+            level
+        )
         mesh = o3d.geometry.TriangleMesh()
         mesh.vertices = o3d.utility.Vector3dVector(verts)
         mesh.triangles = o3d.utility.Vector3iVector(faces)
@@ -255,7 +322,8 @@ def grid_to_mesh(grid_path: str, mesh_path: str):
     
         o3d.io.write_triangle_mesh(mesh_path, mesh)
     else:
-        verts, faces, _, _ = measure.marching_cubes(grid, 
+        verts, faces, _, _ = measure.marching_cubes(
+            grid, 
             level=level, 
             spacing=(voxel_size, voxel_size, voxel_size)
         )

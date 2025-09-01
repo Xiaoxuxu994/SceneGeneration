@@ -1,38 +1,51 @@
+# # MeshUDF
 # python python/cube_to_mesh.py \
-#     --mode udf \
-#     --engine mc \
 #     --in_dir data/datasets/riemann_volume_-1_1_0.95/20250821/ \
+#     --grad_dir data/datasets/riemann_volume_-1_1_0.95/20250821/ \
+#     --mode octree \
 #     --voxel_res 512 \
+#     --oct_src_size 256 \
+#     --oct_tar_size 512 \
+#     --oct_thres 3 \
+#     --engine meshudf \
+#     --precise_grad \
 #     --num_workers 1 \
-#     --level 0.0025 \
 #     --force
 
+# # CapUDF
 # python python/cube_to_mesh.py \
-#     --mode udf \
-#     --in_dir data/datasets/scannetpp_volume_norm_-1_1_0.95 \
-#     --voxel_res 128 \
-#     --num_workers 20
-
-# python python/cube_to_mesh.py \
-#     --mode udf \
-#     --in_dir data/datasets/scannetpp_volume_norm_-1_1_0.95 \
-#     --voxel_res 256 \
-#     --num_workers 20
-
-# python python/cube_to_mesh.py \
-#     --mode udf \
-#     --in_dir data/datasets/scannetpp_volume_norm_-1_1_0.95 \
+#     --in_dir data/datasets/riemann_volume_-1_1_0.95/20250821/ \
+#     --grad_dir data/datasets/riemann_volume_-1_1_0.95/20250821/ \
+#     --mode octree \
 #     --voxel_res 512 \
-#     --num_workers 20
+#     --oct_src_size 256 \
+#     --oct_tar_size 512 \
+#     --oct_thres 3 \
+#     --engine capudf \
+#     --precise_grad \
+#     --level 0.003 \
+#     --num_workers 1 \
+#     --force
 
-python python/octree_to_mesh.py \
-    --in_dir data/datasets/scannetpp_volume_norm_-1_1_0.95/octree/ \
-    --out_dir data/datasets/scannetpp_volume_norm_-1_1_0.95/octree_mc/ \
-    --engine poisson \
-    --src_size 128 \
-    --tar_size 256 \
-    --thres 3 \
-    --mc_alpha 1 \
+# # Marching Cubes on octree
+# python python/cube_to_mesh.py \
+#     --in_dir data/datasets/riemann_volume_-1_1_0.95/20250821/ \
+#     --mode octree \
+#     --voxel_res 512 \
+#     --oct_src_size 256 \
+#     --oct_tar_size 512 \
+#     --oct_thres 3 \
+#     --engine mc \
+#     --level 0.003 \
+#     --num_workers 1 \
+#     --force
+
+# Marching Cubes on original volume
+python python/cube_to_mesh.py \
+    --in_dir data/datasets/riemann_volume_-1_1_0.95/20250821/ \
+    --mode udf \
+    --voxel_res 512 \
+    --engine mc \
+    --level 0.003 \
     --num_workers 1 \
-    --grad \
     --force

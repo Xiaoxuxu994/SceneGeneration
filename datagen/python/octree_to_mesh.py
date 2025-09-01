@@ -8,6 +8,7 @@ import multiprocessing as mp
 
 from skimage import measure
 from pathlib import Path
+from sklearn.preprocessing import normalize
 
 import sys
 
@@ -28,7 +29,7 @@ parser.add_argument("--src_size", type=int, required=True)
 parser.add_argument("--tar_size", type=int, required=True)
 parser.add_argument("--thres", type=int, required=True)
 parser.add_argument("--mc_alpha", type=float, default=1.5)
-parser.add_argument("--engine", type=str, choices=["mc", "poisson", "meshudf"])
+parser.add_argument("--engine", type=str, choices=["mc", "pcd", "poisson", "meshudf"])
 parser.add_argument("--boxmin", type=float, default=-1)
 parser.add_argument("--boxmax", type=float, default=1)
 parser.add_argument("--alpha", type=float, default=3)
@@ -48,7 +49,6 @@ def worker_job(input_dir):
     output_dir = out_dir / input_dir_name
     output_dir.mkdir(exist_ok=True, parents=True)
     octree_name = OCTREE_FILE.format(args.src_size, args.tar_size, args.thres)
-    if args.grad: octree_name += "_grad"
     input_path = (input_dir / octree_name).with_suffix(OCTREE_SUFFIX)
     output_name = octree_name+'_'+args.engine
     output_path = (output_dir / output_name).with_suffix(".ply")
@@ -81,7 +81,7 @@ def worker_job(input_dir):
             mesh.paint_uniform_color([0.8, 0.8, 0.8])
             o3d.io.write_triangle_mesh(str(output_path), mesh)
         
-        elif args.engine == "poisson":
+        elif args.engine == "pcd":
             
             octree = np.load(input_path)
             
@@ -111,6 +111,27 @@ def worker_job(input_dir):
             # mesh.paint_uniform_color([0.8, 0.8, 0.8])
 
             # o3d.io.write_triangle_mesh(str(output_path), mesh)
+            
+        elif args.engine == "meshudf":
+            
+            octree = np.load(input_path)
+            
+            print("creating volume from {}".format(str(input_path)))
+            volume = np.full(shape=(args.tar_size, args.tar_size, args.tar_size), fill_value=thres)
+            X, Y, Z = octree["tar_coords"].T
+            volume[X, Y, Z] = octree["tar_values"]
+            
+            # gradients
+            grad = -np.stack(np.gradient(volume), axis=-1)
+            grad_shape = grad.shape
+            grad = normalize(grad.reshape((-1, 3)), axis=1).reshape(grad_shape)
+            
+            grad_name = octree_name+'_grad'
+            grad_path = (input_dir / grad_name).with_suffix(OCTREE_SUFFIX)
+
+            if grad_path.exists():
+                precise_grad = np.load(grad_path)
+                precise_grad = precise_grad["tar_grads"]
 
 def main():
     oct_dir_list = list(sorted(list(in_dir.iterdir())))
