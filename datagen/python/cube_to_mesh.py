@@ -55,6 +55,7 @@ OCTREE_SUFFIX = ".npz"
 parser = argparse.ArgumentParser()
 parser.add_argument("--in_dir", type=str, required=True)
 parser.add_argument("--grad_dir", type=str, default="")
+parser.add_argument("--sign_dir", type=str, default="")
 parser.add_argument("--mesh_dir", type=str, default="")
 # parser.add_argument("--out_dir", type=str, required=True)
 parser.add_argument("--voxel_res", type=int, default=128)
@@ -67,12 +68,15 @@ parser.add_argument("--oct_tar_size", type=int, default=512, help="only necessar
 parser.add_argument("--oct_thres", type=int, default=3, help="only necessary for an octree input")
 
 parser.add_argument("--engine", type=str, 
-    choices=["mc", "mcubes", "meshudf", "dualmeshudf", "dcudf", "capudf", "odc"])
+    choices=["mc", "mcubes", "meshudf", "dualmeshudf", "dcudf", "capudf", "odc", "pcd", "poisson"])
+parser.add_argument("--suffix", type=str,
+    choices=["obj", "ply", "xyz"], default="ply")
 parser.add_argument("--boxmin", type=float, default=-1)
 parser.add_argument("--boxmax", type=float, default=1)
 parser.add_argument("--level", type=float, default=0.005)
 parser.add_argument("--num_workers", type=int, default=1)
 parser.add_argument("--precise_grad", action="store_true", help="compute precise gradients to mesh.")
+parser.add_argument("--normal", action="store_true", help="save normals using gradient vectors and signs.")
 parser.add_argument("--force", action="store_true", help="generate mesh even if target exists.")
 args = parser.parse_args()
 
@@ -100,7 +104,7 @@ def worker_job(src_path):
     tar_dir = out_dir / src_dir_name
     tar_dir.mkdir(exist_ok=True, parents=True)
     tar_name = "{}_{}_{}".format(str(src_path.stem), args.mode, args.engine)
-    tar_path = (tar_dir / tar_name).with_suffix(".obj")
+    tar_path = (tar_dir / tar_name).with_suffix(".{}".format(args.suffix))
     if not tar_path.exists() or args.force:
         print("processing {}".format(str(src_path)))
         # try:
@@ -178,47 +182,48 @@ def grid_to_mesh(grid_path: str, mesh_path: str):
     else:
         print("loading volume from {}".format(grid_path))
         grid = np.load(grid_path)        
-    
-    if args.engine in ["meshudf", "dualmeshudf", "capudf"]:
         
-        if len(args.grad_dir) > 0 and args.precise_grad:
+    if len(args.grad_dir) > 0 and args.precise_grad:
+        
+        if args.mode == "octree":
+        
+            scene_name = Path(grid_path).parent.stem
+            grad_dir = Path(args.grad_dir) / args.mode / scene_name
+            grad_name = OCTREE_FILE.format(args.oct_src_size, args.oct_tar_size, args.oct_thres)+"_grad"
+            grad_path = (grad_dir / grad_name).with_suffix(OCTREE_SUFFIX)
             
-            if args.mode == "octree":
+            print("loading precise octree gradients from {}".format(str(grad_path)))
+            
+            octree_grads = np.load(grad_path)["tar_grads"]
+            
+            if args.engine in ["meshudf", "capudf"]:
                 print("creating a dummy gradient volume for octree data...")
-                
+            
                 grad = -np.stack(np.gradient(grid), axis=-1)
                 grad_shape = grad.shape
                 grad = normalize(grad.reshape((-1, 3)), axis=1).reshape(grad_shape)
                 
-                scene_name = Path(grid_path).parent.stem
-                grad_dir = Path(args.grad_dir) / args.mode / scene_name
-                grad_name = OCTREE_FILE.format(args.oct_src_size, args.oct_tar_size, args.oct_thres)+"_grad"
-                grad_path = (grad_dir / grad_name).with_suffix(OCTREE_SUFFIX)
-                
-                print("loading precise octree gradients from {}".format(str(grad_path)))
-                
-                octree_grad = np.load(grad_path)["tar_grads"]
-                grad[X, Y, Z] = octree_grad
-                
-            else:
-                scene_name = Path(grid_path).parent.stem
-                grad_dir = Path(args.grad_dir) / "grad" / scene_name
-                grad_dir.mkdir(exist_ok=True, parents=True)
-                file_name = Path(grid_path).stem
-                grad_path = grad_dir / "{}.npy".format(str(file_name))
-                
-                if not grad_path.exists():
-                    print("computing precise gradients to the mesh surface.")
-                    original_mesh_path = Path(args.mesh_dir) / scene_name / "normalized.obj"
-                    grad = compute_grad(grid, str(original_mesh_path), str(grad_path), level)
-                else:
-                    print("loading pre-computed gradients from {}".format(str(grad_path)))
-                    grad = np.load(grad_path)
-        
+                grad[X, Y, Z] = octree_grads
+            
         else:
-            grad = -np.stack(np.gradient(grid), axis=-1)
-            grad_shape = grad.shape
-            grad = normalize(grad.reshape((-1, 3)), axis=1).reshape(grad_shape)
+            scene_name = Path(grid_path).parent.stem
+            grad_dir = Path(args.grad_dir) / "grad" / scene_name
+            grad_dir.mkdir(exist_ok=True, parents=True)
+            file_name = Path(grid_path).stem
+            grad_path = grad_dir / "{}.npy".format(str(file_name))
+            
+            if not grad_path.exists():
+                print("computing precise gradients to the mesh surface.")
+                original_mesh_path = Path(args.mesh_dir) / scene_name / "normalized.obj"
+                grad = compute_grad(grid, str(original_mesh_path), str(grad_path), level)
+            else:
+                print("loading pre-computed gradients from {}".format(str(grad_path)))
+                grad = np.load(grad_path)
+    
+    else:
+        grad = -np.stack(np.gradient(grid), axis=-1)
+        grad_shape = grad.shape
+        grad = normalize(grad.reshape((-1, 3)), axis=1).reshape(grad_shape)
     
     if args.mode == "occ":
         print(grid.max(), grid.min(), np.sum(grid))
@@ -226,7 +231,69 @@ def grid_to_mesh(grid_path: str, mesh_path: str):
         
     print("creating mesh file using engine {}".format(args.engine))
     
-    if args.engine == "meshudf":
+    if args.engine == "pcd":
+        
+        if args.mode == "octree" and args.precise_grad:
+            octree_coords = octree_coords.astype(float)        
+            octree_coords -= args.oct_tar_size // 2
+            octree_coords /= args.oct_tar_size // 2
+            
+            verts = octree_coords + octree_grads * octree_values[:, None]
+            
+            # create point clouds
+            verts = o3d.utility.Vector3dVector(verts)
+            pcd = o3d.geometry.PointCloud(verts)
+            
+            if args.normal:
+                scene_name = Path(grid_path).parent.stem
+                sign_dir = Path(args.sign_dir) / args.mode / scene_name
+                sign_name = OCTREE_FILE.format(args.oct_src_size, args.oct_tar_size, args.oct_thres)+"_grad"+"_sign"
+                sign_path = (sign_dir / sign_name).with_suffix(OCTREE_SUFFIX)
+                signs = np.load(sign_path)["tar_grad_signs"]
+                normals = octree_grads * signs[:, None]
+                normals = o3d.utility.Vector3dVector(normals)
+                pcd.normals = o3d.utility.Vector3dVector(normals)
+            
+            o3d.io.write_point_cloud(str(mesh_path), pcd)
+            
+        else:
+            print("please set the mode as 'octree' and use flag '--precise_grad'")
+            
+    elif args.engine == "poisson":
+        
+        if args.mode == "octree" and args.precise_grad and len(args.sign_dir) > 0 and args.normal:
+            
+            octree_coords = octree_coords.astype(float)        
+            octree_coords -= args.oct_tar_size // 2
+            octree_coords /= args.oct_tar_size // 2
+            
+            verts = octree_coords + octree_grads * octree_values[:, None]
+            
+            # create point clouds
+            verts = o3d.utility.Vector3dVector(verts)
+            pcd = o3d.geometry.PointCloud(verts)
+            
+            # load point normals
+            scene_name = Path(grid_path).parent.stem
+            sign_dir = Path(args.sign_dir) / args.mode / scene_name
+            sign_name = OCTREE_FILE.format(args.oct_src_size, args.oct_tar_size, args.oct_thres)+"_grad"+"_sign"
+            sign_path = (sign_dir / sign_name).with_suffix(OCTREE_SUFFIX)
+            signs = np.load(sign_path)["tar_grad_signs"]
+            normals = octree_grads * signs[:, None]
+            normals = o3d.utility.Vector3dVector(normals)
+            pcd.normals = o3d.utility.Vector3dVector(normals)
+            
+            # create a mesh
+            mesh, _ = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=10, n_threads=1)
+            mesh.paint_uniform_color([0.8, 0.8, 0.8])
+            
+            # save mesh
+            o3d.io.write_triangle_mesh(str(mesh_path), mesh)
+            
+        else:
+            print("please set the mode as 'octree', set the path to normal signs, and use flag '--precise_grad' and '--normal'")
+            
+    elif args.engine == "meshudf":
         verts, faces, _, _ = udf_mc_lewiner(
             grid.astype(np.float32),
             grad.astype(np.float32),

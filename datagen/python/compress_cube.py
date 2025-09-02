@@ -35,6 +35,8 @@ parser.add_argument("--check", action="store_true", help="check octree.")
 parser.add_argument("--stats", action="store_true", help="check compression stats.")
 parser.add_argument("--grad", action="store_true", help="generate octree with gradients, \
                     i.e. unit vectors to the mesh surface.")
+parser.add_argument("--sign", action="store_true", help="generate octree with gradient signs, \
+                    i.e. whether the gradients are pointing at the same direction as the triangle normals.")
 parser.add_argument("--force", action="store_true", help="generate octree even if target exists.")
 parser.add_argument("--num_workers", type=int, default=1)
 args = parser.parse_args()
@@ -50,6 +52,17 @@ assert args.tar_size > args.src_size, \
 if args.grad: assert len(args.mesh_dir) > 0, \
     "mesh_dir must be given if you want to compute the gradients."
 
+def compute_angle(A, B):
+    dot_product = (A*B).sum(1)
+    magnitude_A = np.linalg.norm(A, axis=1)
+    magnitude_B = np.linalg.norm(B, axis=1)
+    cosine_angle = dot_product / (magnitude_A * magnitude_B + 1e-16)
+    cosine_angle = np.clip(cosine_angle, -1.0, 1.0)
+    angle_radians = np.arccos(cosine_angle)
+    angle_degrees = np.degrees(angle_radians)
+    
+    return angle_degrees
+
 def compute_grad(query_coords, # indices in a volume
         mesh_path: str):
     # compute gradients based on truncated UDFs
@@ -59,7 +72,8 @@ def compute_grad(query_coords, # indices in a volume
     query_points += args.boxmin
 
     print("loading mesh {}".format(mesh_path))
-    mesh = trimesh.load_mesh(mesh_path) # obj file
+    # mesh = trimesh.load_mesh(mesh_path) # obj file
+    mesh = trimesh.load_mesh(mesh_path, validate=False, process=False) # obj file
 
     print("computing gradients for {} query points".format(query_points.shape[0]))
     
@@ -71,15 +85,24 @@ def compute_grad(query_coords, # indices in a volume
         vertices=o3d.utility.Vector3dVector(np.asarray(mesh.vertices)),
         triangles=o3d.utility.Vector3iVector(np.asarray(mesh.faces))
     )
+    mesh_o3d.compute_triangle_normals()
     scene = o3d.t.geometry.RaycastingScene()
     scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh_o3d))
     return_dict = scene.compute_closest_points(o3d.core.Tensor.from_numpy(query_points.astype(np.float32)))
     closest_points = return_dict["points"].numpy()
+    closest_triangle_ids = [e.item() for e in return_dict["primitive_ids"]]
     
     distance = np.linalg.norm(closest_points - query_points, axis=1) + 1e-16
     query_grads = (closest_points - query_points) / np.stack([distance]*3, axis=1)
     
-    return query_grads
+    # signs
+    triangle_normals = np.array(mesh_o3d.triangle_normals)
+    closest_triangle_normals = triangle_normals[closest_triangle_ids]
+    grad_normal_angles = compute_angle(query_grads, closest_triangle_normals)
+    grad_normal_signs = (grad_normal_angles <= 90).astype(int) # 0 ~ 1
+    grad_normal_signs = grad_normal_signs * 2 - 1 # -1 ~ 1
+    
+    return query_grads, grad_normal_signs
 
 def worker_job(input_dir):
     src_path = input_dir / VOLUME_FILE.format(args.src_size)
@@ -166,27 +189,38 @@ def worker_job(input_dir):
         grad_path = output_dir / output_name 
         grad_path = grad_path.with_suffix(OCTREE_SUFFIX)
         
-        if output_path.exists():
-            entry_data = np.load(output_path)
-            tar_coords = entry_data["tar_coords"]
-        
-        # if grad_path.exists() and not args.force:
-        #     print("found existing gradients file {}, skipping...".format(str(grad_path)))
-        # else:
-        #     print("computing gradients using octree...")
-        #     scene_name = input_dir.name
-        #     mesh_path = mesh_dir / scene_name / "normalized.obj"
-        #     tar_grads = compute_grad(tar_coords, mesh_path)
+        output_name += "_sign"
+        grad_sign_path = output_dir / output_name 
+        grad_sign_path = grad_sign_path.with_suffix(OCTREE_SUFFIX)
             
-        #     np.savez_compressed(grad_path, tar_grads=tar_grads)      
+        if grad_path.exists() and grad_sign_path.exists() and not args.force:
+            print("found existing gradients file {}, skipping...".format(str(grad_path)))
+        else:    
+            print("computing gradients using octree {}...".format(str(output_path)))
+            
+            if output_path.exists():
+                print("loading existing octree from {}".format(str(output_path)))
+                entry_data = np.load(output_path)
+                tar_coords = entry_data["tar_coords"]
+            
+            scene_name = input_dir.name
+            mesh_path = mesh_dir / scene_name / "normalized.obj"
+            tar_grads, tar_grad_signs = compute_grad(tar_coords, mesh_path)
+            
+            if not grad_path.exists():
+                np.savez_compressed(grad_path, tar_grads=tar_grads)      
         
-        print("computing gradients using octree...")
-        scene_name = input_dir.name
-        mesh_path = mesh_dir / scene_name / "normalized.obj"
-        tar_grads = compute_grad(tar_coords, mesh_path)
+            # print("computing gradients using octree {}...".format(str(output_path)))
+            # scene_name = input_dir.name
+            # mesh_path = mesh_dir / scene_name / "normalized.obj"
+            # tar_grads, tar_grad_signs = compute_grad(tar_coords, mesh_path)
+            
+            # print("saving gradients to {}".format(str(grad_path)))
+            # np.savez_compressed(grad_path, tar_grads=tar_grads)
         
-        print("saving gradients to {}".format(str(grad_path)))
-        np.savez_compressed(grad_path, tar_grads=tar_grads)    
+            if args.sign: # NOTE only enable this when gradients are enabled
+                print("saving gradient signs to {}".format(str(grad_sign_path)))
+                np.savez_compressed(grad_sign_path, tar_grad_signs=tar_grad_signs)
     
     # copy to a separate secondary output directory
     if len(args.out_dir_sec) > 0:
