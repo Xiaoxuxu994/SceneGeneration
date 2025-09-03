@@ -47,6 +47,28 @@ def occ_eval_metric_all(output_logit, label, occ_threshold=0.5):
 
     return metrics
 
+def sign_acc_metric_all(output_logit, label, sign_threshold=0.5):
+    """
+    Compute per-class (0 & 1) and weighted metrics:
+    - IoU, Precision, Recall, F1 Score
+
+    Returns:
+        metrics (list of (name, value))
+    """
+    # Apply sigmoid and binarize
+    prob = torch.sigmoid(output_logit)
+    pred = (prob >= sign_threshold).int()
+    label = label.int()
+
+    # Flatten to numpy arrays
+    pred_np = pred.cpu().numpy().flatten()
+    label_np = label.cpu().numpy().flatten()
+
+    acc = (pred_np == label_np).astype(np.float32).mean()
+    metrics = []
+    metrics.append((f"Sign_acc", acc))
+    return metrics
+
 def sdf_occ_eval_metric_all(output_logit, label, sdf_threshold=0.5, mask=None):
 
     """
@@ -308,6 +330,7 @@ def init_running_metrics(levels: list[int] = None,
         'loss_kl': 0.0,
         'loss_sdf': 0.0,
         'loss_grad': 0.0,
+        'loss_sign':0.0,
         'grad_norm':0.0,
     }
 
@@ -322,11 +345,13 @@ def init_running_metrics(levels: list[int] = None,
             metrics[f"loss_occ_s{lvl}"] = 0.0
             metrics[f"loss_sdf_s{lvl}"] = 0.0
             metrics[f"loss_grad_s{lvl}"] = 0.0
+            metrics[f"loss_sign_s{lvl}"] = 0.0
             metrics[f"logit_mean_s{lvl}"] = 0.0
             metrics[f"logit_max_s{lvl}"] = 0.0
             metrics[f"logit_min_s{lvl}"] = 0.0
             metrics[f"SDF_L1_s{lvl}"] = 0.0
             metrics[f"SDF_L2_s{lvl}"] = 0.0
+            metrics[f"Sign_acc_s{lvl}"] = 0.0
             # metrics[f"ChamferDist_s{lvl}"] = 0.0
             # metrics[f"EMD_s{lvl}"] = 0.0
             if include_per_level:

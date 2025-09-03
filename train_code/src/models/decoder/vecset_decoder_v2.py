@@ -25,7 +25,8 @@ class VecSetDecoderV2(nn.Module):
         seg_class = 100,
         seg_dim = 512,
         seg_head_drop_rate=0.0,
-        output_grad_dim=3,
+        output_grad_dim = None,
+        output_sign_dim = None,
     ):
         super().__init__()
 
@@ -64,10 +65,13 @@ class VecSetDecoderV2(nn.Module):
 
         self.to_outputs_grad = nn.Linear(queries_dim, output_grad_dim) if exists(output_grad_dim) else nn.Identity()
 
+        self.to_outputs_sign = nn.Linear(queries_dim, output_sign_dim) if exists(output_sign_dim) else nn.Identity()
+
         if self.seg_head:
             self.to_outputs_seg = nn.Linear(self.seg_dim,self.seg_class)
             self.seg_head_drop_path = DropPath(self.seg_head_drop_rate) if self.seg_head_drop_rate > 0. else nn.Identity()
 
+    ## sdf + grad + sign
     def forward(self, x, queries, chunk_size: int = None):
         # === latent self-attn/ffn 堆叠 ===
         for self_attn, self_ff in self.layers:
@@ -77,7 +81,7 @@ class VecSetDecoderV2(nn.Module):
         B, N, _ = queries.shape
 
         if chunk_size is not None and N > chunk_size:
-            out_chunks, grad_chunks = [], []
+            out_chunks, grad_chunks, sign_chunks = [], [], []
 
             # === chunk-wise processing from point_embed to two heads ===
             for i in range(0, N, chunk_size):
@@ -91,12 +95,15 @@ class VecSetDecoderV2(nn.Module):
 
                 out_chunk  = self.to_outputs(latents_chunk)           # [B, chunk, output_dim]
                 grad_chunk = self.to_outputs_grad(latents_chunk)      # [B, chunk, output_grad_dim]
+                sign_chunk = self.to_outputs_sign(latents_chunk) 
 
                 out_chunks.append(out_chunk)
                 grad_chunks.append(grad_chunk)
+                sign_chunks.append(sign_chunk)
 
             outputs = torch.cat(out_chunks, dim=1)               # [B, N, output_dim]
             outputs_grad = torch.cat(grad_chunks, dim=1)              # [B, N, output_grad_dim]
+            outputs_sign = torch.cat(sign_chunks, dim=1)              # [B, N, output_grad_dim]
 
         else:
             # === Full processing ===
@@ -109,9 +116,56 @@ class VecSetDecoderV2(nn.Module):
 
             outputs = self.to_outputs(latents)                   # [B, N, output_dim]
             outputs_grad = self.to_outputs_grad(latents)              # [B, N, output_grad_dim]
+            outputs_sign = self.to_outputs_sign(latents)              # [B, N, output_grad_dim]
 
-        return torch.cat([outputs, outputs_grad], dim=-1), x
+        return torch.cat([outputs, outputs_grad, outputs_sign], dim=-1), x
 
+    ### TODO sdf+grad
+    # def forward(self, x, queries, chunk_size: int = None):
+    #     # === latent self-attn/ffn 堆叠 ===
+    #     for self_attn, self_ff in self.layers:
+    #         x = self_attn(x, enable_flash=self.enable_flash, attn_dtype=self.attn_dtype) + x
+    #         x = self_ff(x) + x
+
+    #     B, N, _ = queries.shape
+
+    #     if chunk_size is not None and N > chunk_size:
+    #         out_chunks, grad_chunks = [], []
+
+    #         # === chunk-wise processing from point_embed to two heads ===
+    #         for i in range(0, N, chunk_size):
+    #             query_chunk = queries[:, i:i+chunk_size, :]           # [B, chunk, 3]
+    #             qe_chunk = self.point_embed(query_chunk)              # [B, chunk, C]
+    #             latents_chunk = self.decoder_cross_attn(
+    #                 qe_chunk, context=x, enable_flash=self.enable_ca_flash
+    #             )
+    #             if exists(self.decoder_ff):
+    #                 latents_chunk = latents_chunk + self.decoder_ff(latents_chunk)
+
+    #             out_chunk  = self.to_outputs(latents_chunk)           # [B, chunk, output_dim]
+    #             grad_chunk = self.to_outputs_grad(latents_chunk)      # [B, chunk, output_grad_dim]
+
+    #             out_chunks.append(out_chunk)
+    #             grad_chunks.append(grad_chunk)
+
+    #         outputs = torch.cat(out_chunks, dim=1)               # [B, N, output_dim]
+    #         outputs_grad = torch.cat(grad_chunks, dim=1)              # [B, N, output_grad_dim]
+
+    #     else:
+    #         # === Full processing ===
+    #         queries_embeddings = self.point_embed(queries)            # [B, N, C]
+    #         latents = self.decoder_cross_attn(
+    #             queries_embeddings, context=x, enable_flash=self.enable_ca_flash
+    #         )
+    #         if exists(self.decoder_ff):
+    #             latents = latents + self.decoder_ff(latents)
+
+    #         outputs = self.to_outputs(latents)                   # [B, N, output_dim]
+    #         outputs_grad = self.to_outputs_grad(latents)              # [B, N, output_grad_dim]
+
+    #     return torch.cat([outputs, outputs_grad], dim=-1), x
+
+    ### TODO just sdf loss
     # def forward(self, x, queries, chunk_size: int = None):
         
     #     for self_attn, self_ff in self.layers:

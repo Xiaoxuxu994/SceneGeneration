@@ -444,7 +444,10 @@ class VecSetAEV4SINGLEKL(nn.Module):
         
         # activation by channel count
         C = logit.shape[-1]
-        if C == 4:
+        if C == 5:
+            logit = torch.cat([logit[..., :1], torch.tanh(logit[..., 1:-1]), logit[..., -1:]], dim=-1)  # [1, N, 4]
+            logit_list.append(logit.squeeze(0))                                      # [N, 4]
+        elif C == 4:
             logit = torch.cat([logit[..., :1], torch.tanh(logit[..., 1:])], dim=-1)  # [1, N, 4]
             logit_list.append(logit.squeeze(0))                                      # [N, 4]
         elif C == 1:

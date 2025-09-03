@@ -431,7 +431,7 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
             if aug_cfg.get('Collect', {}).get('enabled', False):
                 self.transforms.append(Collect(
                     keys=aug_cfg['Collect'].get('keys'),
-                    feat_keys=aug_cfg['Collect'].get('feat_keys'),
+                    offset_keys_dict=aug_cfg['Collect'].get('offset_keys_dict'),
                 ))
 
 
@@ -440,8 +440,8 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
         self.grid_minbound_dict = {}
         vs_list = self.vs_res if isinstance(self.vs_res, list) else [self.vs_res]
         for vs in vs_list:
-            if vs == 512:
-                continue
+            # if vs == 512:
+            #     continue
             grid_idx, minbound = self._generate_dense_grid_index_and_minbound(vs)
             self.grid_index_dict[vs] = grid_idx
             self.grid_minbound_dict[vs] = minbound
@@ -495,6 +495,15 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
                             sdf = np.expand_dims(sdf, axis=-1)
 
                         input_dict[f'pc_query_sdf_{vs}'] = np.concatenate([sdf, grad], axis=-1)
+                        
+                        if f'pc_query_sign_{vs}_oct' in input_dict.keys():
+                            sign = input_dict[f'pc_query_sign_{vs}_oct']   # (N,) or (N,1)
+                            # transfer to [0,1]
+                            tgt_sign = (sign == 1).astype(np.float32)
+                            if tgt_sign.ndim == 1:   # (N,) → (N,1)
+                                tgt_sign = np.expand_dims(tgt_sign, axis=-1)
+                        input_dict[f'pc_query_sdf_{vs}'] = np.concatenate([sdf, grad,tgt_sign], axis=-1)
+
                     else:
                         input_dict[f'pc_query_sdf_{vs}'] = input_dict[f'pc_query_sdf_{vs}_oct']
                         
