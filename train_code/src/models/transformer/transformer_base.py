@@ -159,12 +159,12 @@ class Attention(nn.Module):
 
 
 class PointEmbed(nn.Module):
-    def __init__(self, hidden_dim=48, dim=128):
+    def __init__(self, hidden_dim=48, dim=128, use_normal=False):
         super().__init__()
 
         assert hidden_dim % 6 == 0
-
         self.embedding_dim = hidden_dim
+        self.use_normal = use_normal
         e = torch.pow(2, torch.arange(self.embedding_dim // 6)).float() * np.pi
         e = torch.stack([
             torch.cat([e, torch.zeros(self.embedding_dim // 6),
@@ -176,7 +176,8 @@ class PointEmbed(nn.Module):
         ])
         self.register_buffer('basis', e)  # 3 x 16
 
-        self.mlp = nn.Linear(self.embedding_dim+3, dim)
+        in_dim = self.embedding_dim + 3 + (3 if use_normal else 0)
+        self.mlp = nn.Linear(in_dim, dim)
 
     @staticmethod
     def embed(input, basis):
@@ -186,9 +187,19 @@ class PointEmbed(nn.Module):
         return embeddings
     
     def forward(self, input):
-        # input: B x N x 3
-        embed = self.mlp(torch.cat([self.embed(input, self.basis), input], dim=2)) # B x N x C
-        return embed
+        '''
+        input:
+            - B x N x 3: xyz
+            - B x N x 6: xyz+normal
+        '''
+        xyz = input[...,:3]
+        xyz_pe = self.embed(xyz, self.basis)
+        feats = [xyz_pe, xyz]
+        if self.use_normal and input.size(-1) >=6 :
+            normal = input[...,3:6]
+            feats.append(normal)
+        feat = torch.cat(feats, dim=-1)
+        return self.mlp(feat)
 
 
 class DiagonalGaussianDistribution(object):
