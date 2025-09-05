@@ -128,7 +128,7 @@ class ProcessData(nn.Module):
 
 
         for key, value in data_batch.items():
-            if key == "scene_name":
+            if key in ["scene_name", "scene_latents"]:
                 input_dict[key] = value
                 target_dict[key] = value
                 continue
@@ -190,4 +190,81 @@ class ProcessData(nn.Module):
         return input_dict, target_dict
 
       
-      
+def pad_images_to_max_size(images, intrinsics):
+    """
+    images: list of tensors [n, 3, H, W] with possibly different H/W.
+    intrinsics: list of tensors [n, 4] representing fx, fy, cx, cy.
+    Returns: single tensor [B, n, 3, H_max, W_max]
+    """
+    # Find maximum dimensions
+    max_height = max(img.shape[-2] for img in images)
+    max_width = max(img.shape[-1] for img in images)
+
+    # Pad images if necessary
+    padded_images = []
+    padded_intrinsics = []
+    for img, fxfycxcy in zip(images, intrinsics):
+        h_padding = max_height - img.shape[-2]
+        w_padding = max_width - img.shape[-1]
+
+        if h_padding > 0 or w_padding > 0:
+            print([img.shape[-2] for img in images], [img.shape[-1] for img in images])
+            pad_top = h_padding // 2
+            pad_bottom = h_padding - pad_top
+            pad_left = w_padding // 2
+            pad_right = w_padding - pad_left
+
+            img = torch.nn.functional.pad(
+                img, (pad_left, pad_right, pad_top, pad_bottom), mode="constant", value=1.0
+            )
+            
+            # Shift intrinsics (cx, cy) accordingly
+            fxfycxcy[2] += pad_left
+            fxfycxcy[3] += pad_top
+        
+        padded_images.append(img)
+        padded_intrinsics.append(fxfycxcy)
+
+    images = torch.stack(padded_images, dim=0)
+    intrinsics = torch.stack(padded_intrinsics, dim=0)
+
+    return images, intrinsics
+
+
+def VGGT_collate(batch):
+    """
+    Collate function that pads images and stacks everything else.
+    """
+    # Images & intrinsics -> pad
+    images = [b["image"] for b in batch]
+    fxfycxcy = [b["fxfycxcy"] for b in batch]
+    images, fxfycxcy = pad_images_to_max_size(images, fxfycxcy)
+
+    # Everything else -> stack/list
+    c2w = torch.stack([b["c2w"] for b in batch], dim=0)
+    indices = torch.stack([b["index"] for b in batch], dim=0)
+    scene_names = [b["scene_name"] for b in batch]
+    
+    if "scene_latents" not in batch[0]:
+        return {
+            "image": images,
+            "c2w": c2w,
+            "fxfycxcy": fxfycxcy,
+            "index": indices,
+            "scene_name": scene_names
+        }
+
+    # Add pre-computed scene latents if enabled
+    scene_latents = {
+        "aggregated_tokens_list": torch.stack([b["scene_latents"]["aggregated_tokens_list"] for b in batch]),
+        "patch_start_idx": torch.tensor([b["scene_latents"]["patch_start_idx"] for b in batch]),
+    }
+
+    return {
+        "image": images,
+        "c2w": c2w,
+        "fxfycxcy": fxfycxcy,
+        "index": indices,
+        "scene_name": scene_names,
+        "scene_latents": scene_latents,
+    }

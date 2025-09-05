@@ -3,15 +3,16 @@
 import importlib
 import os
 import time
-import wandb
+import mlflow
 import torch
 from rich import print
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, DistributedSampler
 import torch.distributed as dist
-from setup import init_config, init_distributed, init_wandb_and_backup
+from setup import init_config, init_distributed, init_mlflow_and_backup
 from utils.metric_utils import visualize_intermediate_results
 from utils.training_utils import create_optimizer, create_lr_scheduler, auto_resume_job, print_rank0
+from utils.data_utils import VGGT_collate
 
 
 # Load config and read(override) arguments from CLI
@@ -23,9 +24,9 @@ os.environ["OMP_NUM_THREADS"] = str(config.training.get("num_threads", 1))
 ddp_info = init_distributed(seed=777)
 dist.barrier()
 
-# Set up wandb and backup source code
+# Set up mlflow and backup source code
 if ddp_info.is_main_process:
-    init_wandb_and_backup(config)
+    init_mlflow_and_backup(config)
 dist.barrier()
 
 
@@ -57,6 +58,7 @@ dataloader = DataLoader(
     drop_last=True,
     prefetch_factor=config.training.prefetch_factor,
     sampler=datasampler,
+    collate_fn=VGGT_collate if 'VGGT' in module else None
 )
 dataloader_iter = iter(dataloader)
 
@@ -175,7 +177,7 @@ while cur_train_step <= total_train_steps:
                     if param.grad is not None:  # Some parameters might not have gradients
                         grad_norms[name] = param.grad.detach().norm().item()  # Detach for safety
                 for layer_name, grad_norm in grad_norms.items():
-                    wandb.log({"grad_norm_details/" + layer_name: grad_norm}, step=cur_train_step)
+                    mlflow.log_metric("grad_norm_details/" + layer_name, grad_norm, step=cur_train_step)
 
             total_grad_norm = 0.0
             if config.training.grad_clip_norm > 0:
@@ -189,10 +191,10 @@ while cur_train_step <= total_train_steps:
                     skip_optimizer_step = True
                     print(f"WARNING: step {cur_train_step} grad norm too large {total_grad_norm} > {allowed_gradnorm}, skipping optimizer step")
 
-                # show grad norm in wandb if it's too large
+                # show grad norm in mlflow if it's too large
                 display_grad_norm = total_grad_norm > config.training.grad_clip_norm * 2.0 or total_grad_norm > allowed_gradnorm
                 if display_grad_norm and ddp_info.is_main_process:
-                    wandb.log({"grad_norm": total_grad_norm}, step=cur_train_step)
+                    mlflow.log_metric("grad_norm", total_grad_norm, step=cur_train_step)
 
             # since skip flag may be updated because of grad norm, we check it again
             if not skip_optimizer_step:
@@ -207,7 +209,7 @@ while cur_train_step <= total_train_steps:
     if ddp_info.is_main_process:
         loss_dict = {k: float(f"{v.item():.6f}") for k, v in ret_dict.loss_metrics.items()}
         # print in console
-        if (cur_train_step % config.training.print_every == 0) or (cur_train_step < 100 + start_train_step):
+        if cur_train_step % config.training.print_every == 0:
             print_str = f"[Epoch {int(cur_epoch):>3d}] | Forwad step: {int(cur_train_step):>6d} (Param update step: {int(cur_param_update_step):>6d})"
             print_str += f" | Iter Time: {time.time() - tic:.2f}s | LR: {optimizer.param_groups[0]['lr']:.6f}\n"
             # Add loss values
@@ -215,10 +217,8 @@ while cur_train_step <= total_train_steps:
                 print_str += f"{k}: {v:.6f} | "
             print(print_str)
 
-        # log in wandb
-        if (cur_train_step % config.training.wandb_log_every == 0) or (
-            cur_train_step < 200 + start_train_step
-        ):
+        # log in mlflow
+        if cur_train_step % config.training.mlflow_log_every == 0:
             log_dict = {
                 "iter": cur_train_step, 
                 "forward_pass_step": cur_train_step,
@@ -229,10 +229,12 @@ while cur_train_step <= total_train_steps:
                 "epoch": cur_epoch,
             }
             log_dict.update({"train/" + k: v for k, v in loss_dict.items()})
-            wandb.log(
-                log_dict,
-                step=cur_train_step,
-            )
+
+            for k, v in log_dict.items():
+                # Only log numbers — MLflow doesn’t accept strings/None
+                if isinstance(v, (int, float)):
+                    mlflow.log_metric(k, v, step=cur_train_step)
+
 
         # save checkpoint
         if (cur_train_step % config.training.checkpoint_every == 0) or (cur_train_step == total_train_steps):
@@ -256,7 +258,9 @@ while cur_train_step <= total_train_steps:
         if export_inter_results:
             vis_path = os.path.join(config.training.checkpoint_dir, f"iter_{cur_train_step:08d}")
             os.makedirs(vis_path, exist_ok=True)
-            visualize_intermediate_results(vis_path, ret_dict)
+            vis_img, vis_save_path = visualize_intermediate_results(vis_path, ret_dict)
+            artifact_name = '-'.join(vis_save_path.split('/')[-2:])
+            mlflow.log_image(vis_img, artifact_file=f'predictions/{artifact_name}')
             torch.cuda.empty_cache()
             model.train()
 

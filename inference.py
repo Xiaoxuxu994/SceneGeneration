@@ -3,6 +3,7 @@
 import importlib
 import os
 import torch
+from tqdm import tqdm
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, DistributedSampler
 import torch.distributed as dist
@@ -81,7 +82,8 @@ with torch.no_grad(), torch.autocast(
     device_type="cuda",
     dtype=amp_dtype_mapping[config.training.amp_dtype],
 ):
-    for batch in dataloader:
+    dataloader_tqdm = tqdm(dataloader) if ddp_info.world_size==1 else dataloader
+    for batch in dataloader_tqdm:
         batch = {k: v.to(ddp_info.device) if type(v) == torch.Tensor else v for k, v in batch.items()}
         result = model(batch)
         if config.inference.get("render_video", False):

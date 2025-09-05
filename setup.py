@@ -13,6 +13,7 @@ import numpy as np
 import random
 import yaml
 import wandb
+import mlflow
 import shutil
 import copy
 from pathlib import Path
@@ -252,4 +253,47 @@ def init_wandb_and_backup(config):
         include_fn=lambda path: path.endswith(extension_to_backup),
     )
 
+
+def init_mlflow_and_backup(config):
+    # MLflow initialization
+    config_copy = copy.deepcopy(config)
+
+    mlflow.set_tracking_uri(config.training.mlfow_tracking_uri)
+    mlflow.set_experiment(config.training.mlflow_project)
+
+    run = mlflow.start_run(run_name=config.training.mlflow_exp_name)
+
+    # Log config parameters
+    mlflow.log_params(flatten_config(config_copy))
+
+    # Source code backup
+    cur_dir = os.path.dirname(os.path.realpath(__file__))
+    trgt_dir = os.path.join(config.training.checkpoint_dir, "src", os.path.basename(cur_dir))
+    os.makedirs(trgt_dir, exist_ok=True)
+    extension_to_backup = (".py", ".yaml", ".sh", ".bash", ".json")
+    exclude_dirs = ("wandb", ".git", "checkpoints", "experiments")
+    local_backup_src_code(cur_dir, trgt_dir, extension_to_backup=extension_to_backup, exclude_dirs=exclude_dirs)
+
+    # Save config file and log to MLflow
+    config_save_path = os.path.join(config.training.checkpoint_dir, "config.yaml")
+    with open(config_save_path, "w") as f:
+        yaml.dump(dict(config), f)
+    mlflow.log_artifact(config_save_path)
+
+    # Log source code folder
+    mlflow.log_artifacts(trgt_dir, artifact_path="source_code")
+
+    return run
+
+
+def flatten_config(config, parent_key="", sep="."):
+    """Helper to flatten nested dict/EasyDict for mlflow.log_params"""
+    items = []
+    for k, v in dict(config).items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict) or isinstance(v, edict):
+            items.extend(flatten_config(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
 

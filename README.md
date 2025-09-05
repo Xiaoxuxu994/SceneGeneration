@@ -48,6 +48,7 @@ We have verified that the re-implemented version matches the performance of the 
 conda create -n LVSM python=3.11
 conda activate LVSM
 pip install -r requirements.txt
+pip install git+https://github.com/facebookresearch/vggt.git@e56963328b7476e615ce8dda9164d381f8dc07a3#egg=vggt
 ```
 As we used [xformers](https://github.com/facebookresearch/xformers) `memory_efficient_attention`, the GPU device compute capability needs > 8.0. Otherwise, it would pop up an error. Check your GPU compute capability in [CUDA GPUs Page](https://developer.nvidia.com/cuda-gpus#compute).
 

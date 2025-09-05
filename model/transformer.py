@@ -22,7 +22,11 @@ def init_weights(module, std=0.02):
         torch.nn.init.normal_(module.weight, mean=0.0, std=std)
         if isinstance(module, nn.Linear) and module.bias is not None:
             torch.nn.init.zeros_(module.bias)
-
+    
+    elif isinstance(module, (nn.Conv2d, nn.ConvTranspose2d)):
+        torch.nn.init.normal_(module.weight, mean=0.0, std=std)
+        if module.bias is not None:
+            torch.nn.init.zeros_(module.bias)
 
 
 # src: https://github.com/pytorch/benchmark/blob/main/torchbenchmark/models/llama/model.py#L28

@@ -192,10 +192,10 @@ def visualize_intermediate_results(out_dir, result):
     input_grid = rearrange(input_images, "(b v) c h w -> (b h) (v w) c", v=v)
     input_grid = (input_grid.numpy() * 255.0).clip(0.0, 255.0).astype(np.uint8)
     
-    # Save the input image grid
-    Image.fromarray(input_grid).save(
-        os.path.join(out_dir, f"input_{input_uid_based_filename}.jpg")
-    )
+    image = Image.fromarray(input_grid)
+    save_path = os.path.join(out_dir, f"input_{input_uid_based_filename}.jpg")
+    
+    return image, save_path
 
 
 def _save_images(result, batch_idx, out_dir):
