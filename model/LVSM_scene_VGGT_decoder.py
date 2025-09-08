@@ -113,6 +113,11 @@ class Images2LatentScene(nn.Module):
                 
         self.transformer_decoder = nn.ModuleList(self.transformer_decoder)
         self.transformer_input_layernorm_decoder = nn.LayerNorm(config.d, bias=False)
+        
+        # Freeze transformer decoder if configured
+        if self.config.training.get("freeze_decoder", False):
+            for param in self.transformer_decoder.parameters():
+                param.requires_grad = False
 
 
     def train(self, mode=True):
