@@ -258,9 +258,11 @@ while cur_train_step <= total_train_steps:
         if export_inter_results:
             vis_path = os.path.join(config.training.checkpoint_dir, f"iter_{cur_train_step:08d}")
             os.makedirs(vis_path, exist_ok=True)
-            vis_img, vis_save_path = visualize_intermediate_results(vis_path, ret_dict)
-            artifact_name = '-'.join(vis_save_path.split('/')[-2:])
-            mlflow.log_image(vis_img, artifact_file=f'predictions/{artifact_name}')
+            input_image, input_save_path, output_image, output_save_path = visualize_intermediate_results(vis_path, ret_dict)
+            input_artifact_name = '-'.join(input_save_path.split('/')[-2:])
+            output_artifact_name = '-'.join(output_save_path.split('/')[-2:])
+            mlflow.log_image(input_image, artifact_file=f'predictions/{input_artifact_name}')
+            mlflow.log_image(output_image, artifact_file=f'predictions/{output_artifact_name}')
             torch.cuda.empty_cache()
             model.train()
 

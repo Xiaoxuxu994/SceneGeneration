@@ -176,9 +176,8 @@ def visualize_intermediate_results(out_dir, result):
         uids = [target.index[b, 0, -1].item() for b in range(target.index.size(0))]
 
         uid_based_filename = f"{uids[0]:08}_{uids[-1]:08}"
-        Image.fromarray(visualized_image).save(
-            os.path.join(out_dir, f"supervision_{uid_based_filename}.jpg")
-        )
+        output_save_path = os.path.join(out_dir, f"supervision_{uid_based_filename}.jpg")
+        output_image = Image.fromarray(visualized_image)
         with open(os.path.join(out_dir, f"uids.txt"), "w") as f:
             uids = "_".join([f"{uid:08}" for uid in uids])
             f.write(uids)
@@ -192,10 +191,10 @@ def visualize_intermediate_results(out_dir, result):
     input_grid = rearrange(input_images, "(b v) c h w -> (b h) (v w) c", v=v)
     input_grid = (input_grid.numpy() * 255.0).clip(0.0, 255.0).astype(np.uint8)
     
-    image = Image.fromarray(input_grid)
-    save_path = os.path.join(out_dir, f"input_{input_uid_based_filename}.jpg")
+    input_image = Image.fromarray(input_grid)
+    input_save_path = os.path.join(out_dir, f"input_{input_uid_based_filename}.jpg")
     
-    return image, save_path
+    return input_image, input_save_path, output_image, output_save_path
 
 
 def _save_images(result, batch_idx, out_dir):
