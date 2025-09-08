@@ -36,8 +36,8 @@ training:
   # features_path: /storage/datasets/nargenziano/re10k_LVSM/train/features
   features_path_save: /storage/datasets/nargenziano/re10k_LVSM/train/features
 
-  resume_ckpt: /storage/home/nargenziano/LVSM/checkpoints/LVSM_scene_VGGT_decoder/
-  reset_training_state: True
+  # resume_ckpt: /storage/home/nargenziano/LVSM/checkpoints/LVSM_scene_VGGT_decoder/
+  reset_training_state: False
 
   grad_accum_steps: 1
   grad_checkpoint_every: 1
