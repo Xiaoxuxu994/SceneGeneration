@@ -1,5 +1,6 @@
 # Copyright (c) 2025 Haian Jin. Created for the LVSM project (ICLR 2025).
 
+import gc
 import os
 import torch
 import torch.nn as nn
@@ -10,7 +11,7 @@ import traceback
 from utils import camera_utils, data_utils
 from .transformer import QK_Norm_TransformerBlock, init_weights
 from .loss import LossComputer
-from .feature_fusion import DPTFeatureFusion
+from .dpt_head import DPTHead
 
 from vggt.models.vggt import VGGT
 
@@ -21,11 +22,11 @@ class Images2LatentScene(nn.Module):
         self.config = config
         self.process_data = data_utils.ProcessData(config)
 
-        # Initialize both input tokenizers, and output de-tokenizer
-        self._init_tokenizers()
-        
         # Initialize transformer blocks
         self._init_transformer()
+        
+        # Initialize both input tokenizers, and output de-tokenizer
+        self._init_tokenizers()        
         
         # Initialize loss computer
         self.loss_computer = LossComputer(config)
@@ -54,114 +55,37 @@ class Images2LatentScene(nn.Module):
         self.target_pose_tokenizer = self._create_tokenizer(
             in_channels = self.config.model.target_pose_tokenizer.in_channels,
             patch_size = self.config.model.target_pose_tokenizer.patch_size,
-            d_model = self.config.model.transformer.d
+            d_model = 2*self.vggt_encoder.patch_embed.embed_dim
         )
-        
-        # Image token decoder (decode image tokens into pixels)
-        self.image_token_decoder = nn.Sequential(
-            nn.LayerNorm(self.config.model.transformer.d, bias=False),
-            nn.Linear(
-                self.config.model.transformer.d,
-                (self.config.model.target_pose_tokenizer.patch_size**2) * 3,
-                bias=False,
-            ),
-            nn.Sigmoid()
-        )
-        self.image_token_decoder.apply(init_weights)
 
 
     def _init_transformer(self):
         """Initialize transformer blocks"""
-        config = self.config.model.transformer
-        use_qk_norm = config.get("use_qk_norm", False)
-
         # Create (frozen) VGGT
-        self.vggt_encoder = VGGT.from_pretrained("facebook/VGGT-1B").aggregator
-        for param in self.vggt_encoder.parameters():
-            param.requires_grad = False
-
-        # Create feature fusion module
-        self.feature_fusion = DPTFeatureFusion(dim_in=2 * self.vggt_encoder.patch_embed.embed_dim, features=self.config.model.transformer.d)
-        
-        # Create transformer decoder blocks
-        self.transformer_decoder = [
-            QK_Norm_TransformerBlock(
-                config.d, config.d_head, use_qk_norm=use_qk_norm
-            ) for _ in range(config.decoder_n_layer)
-        ]
-        
-        # Apply special initialization if configured
-        if config.get("special_init", False):
-            # Decoder
-            for idx, block in enumerate(self.transformer_decoder):
-                if config.get("depth_init", False):
-                    weight_init_std = 0.02 / (2 * (idx + 1)) ** 0.5
-                else:
-                    weight_init_std = 0.02 / (2 * config.decoder_n_layer) ** 0.5
-                block.apply(lambda module: init_weights(module, weight_init_std))  
+        if self.config.training.get('features_path', None) is None:
+            vggt = VGGT.from_pretrained("facebook/VGGT-1B")
+            self.vggt_encoder = vggt.aggregator
+            # Delete the rest of the model to free memory
+            del vggt
+            gc.collect()
+            torch.cuda.empty_cache()
+            for param in self.vggt_encoder.parameters():
+                param.requires_grad = False
+            embed_dim = self.vggt_encoder.patch_embed.embed_dim
         else:
-            # Decoder
-            for block in self.transformer_decoder:
-                block.apply(init_weights)
-        
-        # Initialize feature fusion weights
-        self.feature_fusion.apply(init_weights)
-                
-        self.transformer_decoder = nn.ModuleList(self.transformer_decoder)
-        self.transformer_input_layernorm_decoder = nn.LayerNorm(config.d, bias=False)
+            embed_dim = 1024  # TODO: remove hard-coded
 
+        # Create DPTHead
+        self.dpt_head = DPTHead(dim_in=2*embed_dim, feature_only=False)
+        
+        # Initialize DPTHead weights
+        self.dpt_head.apply(init_weights)
+                
 
     def train(self, mode=True):
         """Override the train method to keep the loss computer in eval mode"""
         super().train(mode)
         self.loss_computer.eval()
-
-
-    
-    def pass_layers(self, transformer_blocks, input_tokens, gradient_checkpoint=False, checkpoint_every=1):
-        """
-        Helper function to pass input tokens through all transformer blocks with optional gradient checkpointing.
-        
-        Args:
-            input_tokens: Tensor of shape [batch_size, num_views * num_patches, hidden_dim]
-                The input tokens to process through the transformer blocks.
-            gradient_checkpoint: bool, default False
-                Whether to use gradient checkpointing to save memory during training.
-            checkpoint_every: int, default 1 
-                Number of transformer layers to group together for gradient checkpointing.
-                Only used when gradient_checkpoint=True.
-                
-        Returns:
-            Tensor of shape [batch_size, num_views * num_patches, hidden_dim]
-                The processed tokens after passing through all transformer blocks.
-        """
-        num_layers = len(transformer_blocks)
-        
-        if not gradient_checkpoint:
-            # Standard forward pass through all layers
-            for layer in transformer_blocks:
-                input_tokens = layer(input_tokens)
-            return input_tokens
-            
-        # Gradient checkpointing enabled - process layers in groups
-        def _process_layer_group(tokens, start_idx, end_idx):
-            """Helper to process a group of consecutive layers."""
-            for idx in range(start_idx, end_idx):
-                tokens = transformer_blocks[idx](tokens)
-            return tokens
-            
-        # Process layer groups with gradient checkpointing
-        for start_idx in range(0, num_layers, checkpoint_every):
-            end_idx = min(start_idx + checkpoint_every, num_layers)
-            input_tokens = torch.utils.checkpoint.checkpoint(
-                _process_layer_group,
-                input_tokens,
-                start_idx,
-                end_idx,
-                use_reentrant=False
-            )
-            
-        return input_tokens
             
 
     def get_posed_input(self, images=None, ray_o=None, ray_d=None, method="default_plucker"):
@@ -197,8 +121,6 @@ class Images2LatentScene(nn.Module):
     
     
     def forward(self, data_batch, has_target_image=True):
-        checkpoint_every = self.config.training.grad_checkpoint_every
-
         input, target = self.process_data(data_batch, has_target_image=has_target_image, target_has_input = self.config.training.target_has_input, compute_rays=True)
         images = input.image
         
@@ -209,53 +131,17 @@ class Images2LatentScene(nn.Module):
             # Encode images with VGGT
             aggregated_tokens_list, patch_start_idx = self.vggt_encoder(images)  # [b, v_input, n_patches, 2*embed_dim] * aggregator_depth
             
-        # Fuse VGGT tokens
-        latent_tokens = self.feature_fusion(aggregated_tokens_list, images, patch_start_idx=patch_start_idx)  # [b, v_input, d, scratch_patch_h, scratch_patch_w]
-        b, v_input, d, scratch_patch_h, scratch_patch_w = latent_tokens.shape
-        latent_tokens = latent_tokens.permute(0, 1, 3, 4, 2).contiguous()  # [b, v_input, scratch_patch_h, scratch_patch_w, d]
-        n_latent_vectors = v_input*scratch_patch_h*scratch_patch_w
-        latent_tokens = latent_tokens.reshape(b, n_latent_vectors, d).contiguous()  # treat n_patches and v_input as sequence length (n_latent_vectors)
-        
         # Get target pose tokens
         target_pose_cond= self.get_posed_input(ray_o=target.ray_o, ray_d=target.ray_d)  # [b, v_target, c, h, w]
         b, v_target, c, h, w = target_pose_cond.size()
         target_pose_tokens = self.target_pose_tokenizer(target_pose_cond)  # [b*v_target, n_patches_target, d]
         _, n_patches_target, d = target_pose_tokens.shape
         
-        # Repeat latent tokens along the batch dimension to match target tokens batch dimension
-        repeated_latent_tokens = repeat(
-                                latent_tokens,
-                                'b nl d -> (b v_target) nl d', 
-                                v_target=v_target)  # [b*v_target, n_latent_vectors, d]
-        
-        # Concatenate target pose and latent tokens
-        print('Target pose: ', target_pose_tokens.shape, 'Latent tokens: ', repeated_latent_tokens.shape)
-        decoder_input_tokens = torch.cat((target_pose_tokens, repeated_latent_tokens), dim=1)  # [b*v_target, n_patches_target + n_latent_vectors, d]
-        decoder_input_tokens = self.transformer_input_layernorm_decoder(decoder_input_tokens)
+        # Feed in DPTHead
+        target_pose_tokens = target_pose_tokens.reshape(b, v_target, n_patches_target, d).contiguous()  # [b, v_target, n_patches_target, d]
+        rendered_images, _ = self.dpt_head(aggregated_tokens_list, images, patch_start_idx, target_pose_tokens)  # [b, v_target, h, w, 3]
+        rendered_images = rendered_images.permute(0, 1, 4, 2, 3).contiguous()  # [b, v_target, 3, h, w]
 
-        # Feed in the decoder
-        transformer_output_tokens = self.pass_layers(self.transformer_decoder, decoder_input_tokens, gradient_checkpoint=True, checkpoint_every=checkpoint_every)
-
-        # Discard the latent tokens
-        target_image_tokens, _ = transformer_output_tokens.split(
-            [n_patches_target, n_latent_vectors], dim=1
-        ) # [b*v_target, n_patches_target, d], [b*v_target, n_latent_vectors, d]
-
-        # [b*v_target, n_patches, p*p*3]
-        rendered_images = self.image_token_decoder(target_image_tokens)
-        
-        height, width = target.image_h_w
-
-        patch_size = self.config.model.target_pose_tokenizer.patch_size
-        rendered_images = rearrange(
-            rendered_images, "(b v) (h w) (p1 p2 c) -> b v c (h p1) (w p2)",
-            v=v_target,
-            h=height // patch_size, 
-            w=width // patch_size, 
-            p1=patch_size, 
-            p2=patch_size, 
-            c=3
-        )
         if has_target_image:
             loss_metrics = self.loss_computer(
                 rendered_images,

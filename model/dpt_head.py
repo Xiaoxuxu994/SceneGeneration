@@ -98,6 +98,11 @@ class DPTHead(nn.Module):
         head_features_1 = features
         head_features_2 = 32
 
+        # Cross-attention for target pose conditioning for each intermediate_layer
+        self.pose_attn = nn.ModuleList(
+            [nn.MultiheadAttention(embed_dim=dim_in, num_heads=16, batch_first=True) for _ in intermediate_layer_idx]
+        )
+        
         if feature_only:
             self.scratch.output_conv1 = nn.Conv2d(head_features_1, head_features_1, kernel_size=3, stride=1, padding=1)
         else:
@@ -117,6 +122,7 @@ class DPTHead(nn.Module):
         aggregated_tokens_list: List[torch.Tensor],
         images: torch.Tensor,
         patch_start_idx: int,
+        target_pose_tokens: torch.Tensor,
         frames_chunk_size: int = 8,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
@@ -138,7 +144,7 @@ class DPTHead(nn.Module):
 
         # If frames_chunk_size is not specified or greater than S, process all frames at once
         if frames_chunk_size is None or frames_chunk_size >= S:
-            return self._forward_impl(aggregated_tokens_list, images, patch_start_idx)
+            return self._forward_impl(aggregated_tokens_list, images, patch_start_idx, target_pose_tokens)
 
         # Otherwise, process frames in chunks to manage memory usage
         assert frames_chunk_size > 0
@@ -153,12 +159,12 @@ class DPTHead(nn.Module):
             # Process batch of frames
             if self.feature_only:
                 chunk_output = self._forward_impl(
-                    aggregated_tokens_list, images, patch_start_idx, frames_start_idx, frames_end_idx
+                    aggregated_tokens_list, images, patch_start_idx, target_pose_tokens, frames_start_idx, frames_end_idx
                 )
                 all_preds.append(chunk_output)
             else:
                 chunk_preds, chunk_conf = self._forward_impl(
-                    aggregated_tokens_list, images, patch_start_idx, frames_start_idx, frames_end_idx
+                    aggregated_tokens_list, images, patch_start_idx, target_pose_tokens, frames_start_idx, frames_end_idx
                 )
                 all_preds.append(chunk_preds)
                 all_conf.append(chunk_conf)
@@ -174,6 +180,7 @@ class DPTHead(nn.Module):
         aggregated_tokens_list: List[torch.Tensor],
         images: torch.Tensor,
         patch_start_idx: int,
+        target_pose_tokens: torch.Tensor,
         frames_start_idx: int = None,
         frames_end_idx: int = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
@@ -184,7 +191,8 @@ class DPTHead(nn.Module):
 
         Args:
             aggregated_tokens_list (List[Tensor]): List of token tensors from different transformer layers.
-            images (Tensor): Input images with shape [B, S, 3, H, W].
+            images (Tensor): Input images with shape [b, v_input, 3, H, W].
+            target_pose_tokens (Tensor): Token of target pose Plücker rays [b, v_target, n_patches_target, d]
             patch_start_idx (int): Starting index for patch tokens.
             frames_start_idx (int, optional): Starting index for frames to process.
             frames_end_idx (int, optional): Ending index for frames to process.
@@ -196,6 +204,7 @@ class DPTHead(nn.Module):
             images = images[:, frames_start_idx:frames_end_idx].contiguous()
 
         B, S, _, H, W = images.shape
+        _, v_target, n_patches_target, _ = target_pose_tokens.shape
 
         patch_h, patch_w = H // self.patch_size, W // self.patch_size
 
@@ -203,20 +212,23 @@ class DPTHead(nn.Module):
         dpt_idx = 0
 
         for layer_idx in self.intermediate_layer_idx:
-            x = aggregated_tokens_list[layer_idx][:, :, patch_start_idx:]
-
+            x = aggregated_tokens_list[layer_idx][:, :, patch_start_idx:]  # [b, v_input, n_patches_input, 2*embed_dim]
+            
             # Select frames if processing a chunk
             if frames_start_idx is not None and frames_end_idx is not None:
                 x = x[:, frames_start_idx:frames_end_idx]
 
-            # TODO: cross-attention with target_pose_tokens here
+            # Treat v_{input/target}*n_patches_{input/target} as sequence length
+            x = x.reshape(B, -1, x.shape[-1]).contiguous()  # [b, v_input*n_patches_input, 2*embed_dim]
+            target_pose_tokens = target_pose_tokens.reshape(B, -1, target_pose_tokens.shape[-1]).contiguous()  # [b, v_target*n_patches_target, d]
+            x, _ = self.pose_attn[dpt_idx](query=target_pose_tokens, key=x, value=x, need_weights=False)  # [b, v_target*n_patches_target, 2*embed_dim]
             
-            x = x.reshape(B * S, -1, x.shape[-1])
+            x = x.reshape(B * v_target, -1, x.shape[-1]).contiguous()  # [b*v_target, n_patches_target, 2*embed_dim]            
 
             x = self.norm(x)
 
-            x = x.permute(0, 2, 1).reshape((x.shape[0], x.shape[-1], patch_h, patch_w))
-
+            x = x.permute(0, 2, 1).reshape((x.shape[0], x.shape[-1], patch_h, patch_w)).contiguous()  # [b*v_target, 2*embed_dim, patch_h_target, patch_w_target]
+            
             x = self.projects[dpt_idx](x)
             if self.pos_embed:
                 x = self._apply_pos_embed(x, W, H)
@@ -239,13 +251,13 @@ class DPTHead(nn.Module):
             out = self._apply_pos_embed(out, W, H)
 
         if self.feature_only:
-            return out.view(B, S, *out.shape[1:])
+            return out.view(B, v_target, *out.shape[1:])
 
         out = self.scratch.output_conv2(out)
         preds, conf = activate_head(out, activation=self.activation, conf_activation=self.conf_activation)
 
-        preds = preds.view(B, S, *preds.shape[1:])
-        conf = conf.view(B, S, *conf.shape[1:])
+        preds = preds.view(B, v_target, *preds.shape[1:])
+        conf = conf.view(B, v_target, *conf.shape[1:])
         return preds, conf
 
     def _apply_pos_embed(self, x: torch.Tensor, W: int, H: int, ratio: float = 0.1) -> torch.Tensor:
@@ -257,7 +269,7 @@ class DPTHead(nn.Module):
         pos_embed = create_uv_grid(patch_w, patch_h, aspect_ratio=W / H, dtype=x.dtype, device=x.device)
         pos_embed = position_grid_to_embed(pos_embed, x.shape[1])
         pos_embed = pos_embed * ratio
-        pos_embed = pos_embed.permute(2, 0, 1)[None].expand(x.shape[0], -1, -1, -1)
+        pos_embed = pos_embed.permute(2, 0, 1)[None].expand(x.shape[0], -1, -1, -1).contiguous()
         return x + pos_embed
 
     def scratch_forward(self, features: List[torch.Tensor]) -> torch.Tensor:
