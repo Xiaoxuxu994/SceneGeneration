@@ -1,5 +1,6 @@
 # Copyright (c) 2025 Haian Jin. Created for the LVSM project (ICLR 2025).
 
+import gc
 import os
 import torch
 import torch.nn as nn
@@ -77,7 +78,12 @@ class Images2LatentScene(nn.Module):
 
         # Create (frozen) VGGT
         if self.config.training.get('features_path', None) is None:
-            self.vggt_encoder = VGGT.from_pretrained("facebook/VGGT-1B").aggregator
+            vggt = VGGT.from_pretrained("facebook/VGGT-1B")
+            self.vggt_encoder = vggt.aggregator
+            # Delete the rest of the model to free memory
+            del vggt
+            gc.collect()
+            torch.cuda.empty_cache()
             for param in self.vggt_encoder.parameters():
                 param.requires_grad = False
             embed_dim = self.vggt_encoder.patch_embed.embed_dim
