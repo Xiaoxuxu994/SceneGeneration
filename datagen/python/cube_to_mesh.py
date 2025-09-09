@@ -52,6 +52,11 @@ except ImportError:
 OCTREE_FILE = "vs{}_to_vs{}_th{}"
 OCTREE_SUFFIX = ".npz"
 
+POISSON_EXE_CMD = (lambda in_path, out_path, depth: f"./lib/AdaptiveSolvers_17.00/Bin/Linux/PoissonRecon --in {in_path} --out {out_path} --depth {depth} --density --threads 1 --verbose")
+SSD_EXE_CMD = (lambda in_path, out_path, depth: f"./lib/AdaptiveSolvers_17.00/Bin/Linux/SSDRecon --in {in_path} --out {out_path} --depth {depth} --density --threads 1 --verbose")
+EXE_CMD = {"poisson_exe": POISSON_EXE_CMD, "ssd_exe": SSD_EXE_CMD}
+TRIM_CMD = (lambda in_path, out_path, value: f"./lib/AdaptiveSolvers_17.00/Bin/Linux/SurfaceTrimmer --in {in_path} --out {out_path} --trim {value} --verbose")
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--in_dir", type=str, required=True)
 parser.add_argument("--grad_dir", type=str, default="")
@@ -67,16 +72,26 @@ parser.add_argument("--oct_src_size", type=int, default=256, help="only necessar
 parser.add_argument("--oct_tar_size", type=int, default=512, help="only necessary for an octree input")
 parser.add_argument("--oct_thres", type=int, default=3, help="only necessary for an octree input")
 
+# NOTE poisson_exe and ssd_exe have to be compiled beforehand, please refer to 
+# https://www.cs.jhu.edu/~misha/Code/PoissonRecon/Version17.00/
+# it is recommended to use v17.00
+# download the source code and put it under ./lib
+# unzip the file, enter the folder, and run `make`
 parser.add_argument("--engine", type=str, 
-    choices=["mc", "mcubes", "meshudf", "dualmeshudf", "dcudf", "capudf", "odc", "pcd", "poisson"])
+    choices=["mc", "mcubes", "meshudf", "dualmeshudf", "dcudf", "capudf", "odc", "pcd", "poisson",
+             "poisson_exe", "ssd_exe" 
+             ])
+
 parser.add_argument("--suffix", type=str,
     choices=["obj", "ply", "xyz"], default="ply")
 parser.add_argument("--boxmin", type=float, default=-1)
 parser.add_argument("--boxmax", type=float, default=1)
 parser.add_argument("--level", type=float, default=0.005)
+parser.add_argument("--depth", type=int, default=8)
 parser.add_argument("--num_workers", type=int, default=1)
 parser.add_argument("--precise_grad", action="store_true", help="compute precise gradients to mesh.")
 parser.add_argument("--normal", action="store_true", help="save normals using gradient vectors and signs.")
+parser.add_argument("--trim", action="store_true", help="trim low density submesh.")
 parser.add_argument("--force", action="store_true", help="generate mesh even if target exists.")
 args = parser.parse_args()
 
@@ -104,6 +119,9 @@ def worker_job(src_path):
     tar_dir = out_dir / src_dir_name
     tar_dir.mkdir(exist_ok=True, parents=True)
     tar_name = "{}_{}_{}".format(str(src_path.stem), args.mode, args.engine)
+    if args.engine == "poisson": 
+        tar_name += "_{}".format(args.depth)
+        if args.trim: tar_name += "_trim"
     tar_path = (tar_dir / tar_name).with_suffix(".{}".format(args.suffix))
     if not tar_path.exists() or args.force:
         print("processing {}".format(str(src_path)))
@@ -284,11 +302,69 @@ def grid_to_mesh(grid_path: str, mesh_path: str):
             pcd.normals = o3d.utility.Vector3dVector(normals)
             
             # create a mesh
-            mesh, _ = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=10, n_threads=1)
+            print("running Poisson Reconstruction with depth {}".format(args.depth))
+            mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, 
+                depth=args.depth, n_threads=1)
+            
             mesh.paint_uniform_color([0.8, 0.8, 0.8])
+            
+            # trim low density submesh
+            if args.trim:
+                vertices_to_remove = densities < args.depth-1
+                # vertices_to_remove = densities < np.quantile(densities, 0.01)
+                mesh.remove_vertices_by_mask(vertices_to_remove)
+                
+                # mesh_path = Path(mesh_path)
+                # mesh_stem = str(mesh_path.stem)+"_trim"
+                # mesh_path = mesh_path.with_stem(mesh_stem)
             
             # save mesh
             o3d.io.write_triangle_mesh(str(mesh_path), mesh)
+            
+        else:
+            print("please set the mode as 'octree', set the path to normal signs, and use flag '--precise_grad' and '--normal'")
+            
+    elif args.engine == "poisson_exe" or args.engine == "ssd_exe":
+        
+        if args.mode == "octree" and args.precise_grad and len(args.sign_dir) > 0 and args.normal:
+            
+            octree_coords = octree_coords.astype(float)        
+            octree_coords -= args.oct_tar_size // 2
+            octree_coords /= args.oct_tar_size // 2
+            
+            verts = octree_coords + octree_grads * octree_values[:, None]
+            
+            # create point clouds
+            verts = o3d.utility.Vector3dVector(verts)
+            pcd = o3d.geometry.PointCloud(verts)
+            
+            # load point normals
+            scene_name = Path(grid_path).parent.stem
+            sign_dir = Path(args.sign_dir) / args.mode / scene_name
+            sign_name = OCTREE_FILE.format(args.oct_src_size, args.oct_tar_size, args.oct_thres)+"_grad"+"_sign"
+            sign_path = (sign_dir / sign_name).with_suffix(OCTREE_SUFFIX)
+            signs = np.load(sign_path)["tar_grad_signs"]
+            normals = octree_grads * signs[:, None]
+            normals = o3d.utility.Vector3dVector(normals)
+            pcd.normals = o3d.utility.Vector3dVector(normals)
+            
+            mesh_path = Path(mesh_path)
+            mesh_stem = mesh_path.stem
+            
+            # create a point cloud
+            print("exporting point cloud file with normal vectors")
+            pcd_stem = str(mesh_stem)+"_pcd"
+            pcd_path = mesh_path.with_stem(pcd_stem)
+            o3d.io.write_point_cloud(str(pcd_path), pcd)
+            
+            print("running Poisson Reconstruction with depth {}".format(args.depth))
+            os.system(EXE_CMD[args.engine](str(pcd_path), str(mesh_path), args.depth))
+            
+            # trim low density submesh
+            if args.trim:    
+                trim_stem = str(mesh_path.stem)+"_trim"
+                trim_path = mesh_path.with_stem(trim_stem)
+                os.system(TRIM_CMD(str(mesh_path), str(trim_path), args.depth-1))
             
         else:
             print("please set the mode as 'octree', set the path to normal signs, and use flag '--precise_grad' and '--normal'")
@@ -415,6 +491,6 @@ def main():
         for src_path in src_npy_list:
             # for debugging
             worker_job(src_path)
-            exit()
+            # exit()
         
 main()

@@ -19,4 +19,4 @@ test_result*
 data-dump
 
 datagen/data
-datagen/lib/AdaptiveSolvers
+datagen/lib/AdaptiveSolvers*
