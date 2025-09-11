@@ -26,6 +26,8 @@ from torchvision.datasets.utils import download_url
 import deepspeed
 import deepspeed.comm as dist
 
+from collections import OrderedDict
+
 pretrained_models = {
     "DiT-XL-2-512x512.pt": "https://dl.fbaipublicfiles.com/DiT/models/DiT-XL-2-512x512.pt",
     "DiT-XL-2-256x256.pt": "https://dl.fbaipublicfiles.com/DiT/models/DiT-XL-2-256x256.pt",
@@ -256,8 +258,24 @@ def create_logger(logging_dir):
         logger.addHandler(logging.NullHandler())
     return logger
 
+def remap_prefix(sd, src_prefix="decoders4.", dst_prefix="decoders.0."):
+    """
+    仅当键以 src_prefix 开头时才改名，避免误替换中间子串。
+    注意：通常目标前缀应写成 'decoders.0.'（末尾带点），这样能无缝接上后续子键。
+    """
+    new_sd = OrderedDict()
+    for k, v in sd.items():
+        if k.startswith(src_prefix):
+            new_k = dst_prefix + k[len(src_prefix):]
+        else:
+            new_k = k
+        if new_k in new_sd:
+            raise RuntimeError(f"Key collision after remap: '{new_k}' 已存在（请检查映射是否合理）")
+        new_sd[new_k] = v
+    return new_sd
 
-def load_checkpoint(model, ckpt_path, save_as_pt=True, strict=True):
+
+def load_checkpoint(model, ckpt_path, save_as_pt=True, strict=True,src_prefix=None, dst_prefix=None):
     """
     Load model checkpoint with flexible support for .pt/.pth files and sharded directories.
 
@@ -276,7 +294,6 @@ def load_checkpoint(model, ckpt_path, save_as_pt=True, strict=True):
         # Handle wrapper key (e.g., 'model')
         if 'model' in state_dict:
             state_dict = state_dict['model']
-
         # Adjust module prefix
         model_keys = list(model.state_dict().keys())
         model_uses_module = model_keys[0].startswith('module.')
@@ -287,6 +304,8 @@ def load_checkpoint(model, ckpt_path, save_as_pt=True, strict=True):
 
         # Load
         if 'module' in state_dict.keys():
+            if src_prefix != None:
+                state_dict['module'] = remap_prefix(state_dict['module'], src_prefix=src_prefix, dst_prefix=dst_prefix)
             missing_keys, unexpected_keys = model.load_state_dict(state_dict['module'], strict=strict)
         else:
             missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=strict)

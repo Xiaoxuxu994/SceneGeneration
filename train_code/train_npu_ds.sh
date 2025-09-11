@@ -8,5 +8,8 @@
 # export ASCEND_RT_VISIBLE_DEVICES=0,1
 # accelerate launch --config_file ./accelerate_config.yaml --main_process_port 29509 --num_processes 2 train_npu_ctf_new_metric_KL_sdfgradsign_singlevs_ds.py --config configs/train/exp0901_cafe_debug_sdf_grad_sign.py
 
-export ASCEND_RT_VISIBLE_DEVICES=0,1
-accelerate launch --config_file ./accelerate_config.yaml --main_process_port 29509 --num_processes 2 train_npu_ctf_new_metric_KL_sdfgradsign_singlevs_ds.py --config configs/train/exp0903_cafe_debug_sdf_grad_sign_normalinput.py
+# export ASCEND_RT_VISIBLE_DEVICES=0,1
+# accelerate launch --config_file ./accelerate_config.yaml --main_process_port 29509 --num_processes 2 train_npu_ctf_new_metric_KL_sdfgradsign_singlevs_ds.py --config configs/train/exp0903_cafe_debug_sdf_grad_sign_normalinput.py
+
+export ASCEND_RT_VISIBLE_DEVICES=4,5,6,7
+accelerate launch --config_file ./accelerate_config.yaml --main_process_port 29509 --num_processes 4 train_npu_ctf_new_metric_KL_sdf_ds.py --config configs/train/exp0911_3D_geometry_vae_ctf_vs256_vs512.py

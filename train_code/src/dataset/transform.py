@@ -178,6 +178,102 @@ class DecodeQuerySample(object):
         return data_dict
 
 @TRANSFORMS.register_module()
+class DecodeQuerySampleOCC(object):
+    def __init__(self, sample_rate=0.1, max_number=100000, vs_res=128):
+        """
+        仅支持单一 vs：
+          - pc_query_{vs_res}      : (N, D)  numpy
+          - pc_query_occ_{vs_res}  : (N,) 或 (N,1)，取值 {0,1}
+        """
+        self.sample_rate = float(sample_rate)
+        self.vs_res = int(vs_res)
+        self.max_number = int(max_number)
+
+    @staticmethod
+    def _to_1d(arr):
+        # (N,1) -> (N,), 其他保持
+        return arr.reshape(-1)
+
+    @staticmethod
+    def _rand_idx(n, k):
+        if n <= 0 or k <= 0:
+            return None
+        k = min(k, n)
+        return np.random.choice(n, size=k, replace=False)
+
+    def _downsample_by_class(self, points, labels_1d):
+        # 布尔掩码与类内全量索引
+        mask0 = (labels_1d == 0)
+        mask1 = (labels_1d == 1)
+        idx0_all = np.flatnonzero(mask0)
+        idx1_all = np.flatnonzero(mask1)
+
+        n0, n1 = idx0_all.size, idx1_all.size
+        k0 = min(self.max_number, int(np.ceil(n0 * self.sample_rate))) if n0 > 0 else 0
+        k1 = min(self.max_number, int(np.ceil(n1 * self.sample_rate))) if n1 > 0 else 0
+
+        sub0 = self._rand_idx(n0, k0)
+        sub1 = self._rand_idx(n1, k1)
+        idx0 = idx0_all[sub0] if sub0 is not None else None
+        idx1 = idx1_all[sub1] if sub1 is not None else None
+
+        pts0 = points[idx0] if idx0 is not None else None
+        pts1 = points[idx1] if idx1 is not None else None
+        lbl0 = labels_1d[idx0] if idx0 is not None else None
+        lbl1 = labels_1d[idx1] if idx1 is not None else None
+        return pts0, pts1, lbl0, lbl1
+
+    @staticmethod
+    def _concat(a, b):
+        if a is None and b is None: return None
+        if a is None: return b
+        if b is None: return a
+        return np.concatenate([a, b], axis=0)
+
+    @staticmethod
+    def _shuffle_sync(points, labels):
+        N = points.shape[0]
+        perm = np.random.permutation(N)
+        return points[perm], labels[perm]
+
+    def __call__(self, data_dict):
+        vs = self.vs_res
+        kpts = f'pc_query_{vs}'
+        klbl = f'pc_query_occ_{vs}'
+
+        if kpts not in data_dict or klbl not in data_dict:
+            return data_dict
+
+        points = data_dict[kpts]
+        labels = data_dict[klbl]
+        labels_1d = self._to_1d(labels)
+
+        # 不采样：只规范 label 为 1D
+        if self.sample_rate >= 1.0:
+            data_dict[kpts] = points
+            data_dict[klbl] = labels_1d
+            return data_dict
+
+        # 两类分别下采样
+        pts0, pts1, lbl0, lbl1 = self._downsample_by_class(points, labels_1d)
+
+        # 合并并兜底
+        pts = self._concat(pts0, pts1)
+        lbl = self._concat(lbl0, lbl1)
+        if pts is None or lbl is None or pts.shape[0] == 0:
+            data_dict[kpts] = points
+            data_dict[klbl] = labels_1d
+            return data_dict
+
+        # 打乱（同步）
+        pts, lbl = self._shuffle_sync(pts, lbl)
+
+        # 写回
+        data_dict[kpts] = pts
+        data_dict[klbl] = lbl
+        return data_dict
+
+@TRANSFORMS.register_module()
 class DecodeQuerySampleSDF(object):
     def __init__(
         self,
@@ -196,31 +292,28 @@ class DecodeQuerySampleSDF(object):
         self.near_thresh = near_thresh
         self.near_ratio = near_ratio
 
-    def sample_points(self, points, labels, segment=None, mask=None):
+    def sample_points(self, points, labels, grids, segment=None):
         """
             Helper function to sample points and labels for both classes
         """
 
         # Split points and labels with threshold
-        near_mask = labels <= self.near_thresh
+        near_mask = labels <= self.near_thresh 
         far_mask = labels > self.near_thresh
 
         points_near = points[near_mask]
         points_far = points[far_mask]
         labels_near = labels[near_mask]
         labels_far = labels[far_mask]
-
+        grids_near = grids[near_mask]
+        grids_far = grids[far_mask]
+        
         # Handle segment data if it exists
         segment_near, segment_far = None, None
-        mask_near, mask_far = None, None
 
         if segment is not None:
             segment_near = segment[near_mask]
             segment_far = segment[far_mask]
-
-        if mask is not None:
-            mask_near = mask[near_mask]
-            mask_far = mask[far_mask]
 
         total_target = min(self.max_number, int(len(points) * self.sample_rate))
         near_target = int(total_target * self.near_ratio)
@@ -231,26 +324,22 @@ class DecodeQuerySampleSDF(object):
 
         sampled_points = np.concatenate([points_near[near_idx], points_far[far_idx]], axis=0)
         sampled_label = np.concatenate([labels_near[near_idx], labels_far[far_idx]], axis=0)
+        sampled_grid = np.concatenate([grids_near[near_idx], grids_far[far_idx]], axis=0)
 
         if segment is not None:
             sampled_segment = np.concatenate([segment_near[near_idx], segment_far[far_idx]], axis=0)
         else:
             sampled_segment = None
 
-        if mask is not None:
-            sampled_mask = np.concatenate([mask_near[near_idx], mask_far[far_idx]], axis=0)
-        else:
-            sampled_mask = None
-
         perm = torch.randperm(len(sampled_points))
         sampled_points = sampled_points[perm]
         sampled_label = sampled_label[perm]
+        sampled_grid = sampled_grid[perm]
         if sampled_segment is not None:
             sampled_segment = sampled_segment[perm]
-        if sampled_mask is not None:
-            sampled_mask = sampled_mask[perm]
 
-        return sampled_points, sampled_label, sampled_segment, sampled_mask
+
+        return sampled_points, sampled_label, sampled_grid, sampled_segment
     
         
     def __call__(self, data_dict):
@@ -259,28 +348,26 @@ class DecodeQuerySampleSDF(object):
         for vs in self.vs_list:
             points = data_dict[f'pc_query_{vs}']
             labels = data_dict[f'pc_query_sdf_{vs}']
-            mask = data_dict.get(f'mask_gt_{vs}', None)
+            grids = data_dict[f'pc_query_grid_{vs}']
             segment = data_dict.get(f'pc_query_segment_{vs}', None)
             # If sample_rate is 1.0, return data_dict as is
             if self.sample_rate == 1.0:
                 data_dict[f'pc_query_{vs}'] = points
                 data_dict[f'pc_query_sdf_{vs}'] = labels
+                data_dict[f'pc_query_grid_{vs}'] = grids
                 if segment is not None:
                     data_dict[f'pc_query_segment_{vs}'] = segment
-                if mask is not None:
-                    data_dict[f'mask_gt_{vs}'] = mask
                 return data_dict
 
-            sampled_points, sampled_label, sampled_segment, sampled_mask = self.sample_points(points, labels, segment, mask)
+            sampled_points, sampled_label, sampled_grid, sampled_segment = self.sample_points(points, labels, grids, segment)
 
             if sampled_segment is not None:
                 data_dict[f'pc_query_segment_{vs}'] = sampled_segment
-            if sampled_mask is not None:
-                data_dict[f'mask_gt_{vs}'] = sampled_mask
 
             # Update the data_dict with the sampled and shuffled points and labels
             data_dict[f'pc_query_{vs}'] = sampled_points
             data_dict[f'pc_query_sdf_{vs}'] = sampled_label
+            data_dict[f'pc_query_grid_{vs}'] = sampled_grid
                    
         return data_dict
 
