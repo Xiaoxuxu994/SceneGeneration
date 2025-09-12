@@ -37,7 +37,7 @@ from opensora_local.acceleration.parallel_states import (
 from opensora_local.datasets import prepare_dataloader
 from opensora_local.utils.ckpt_utils import create_logger, deepspeed_load, deepspeed_save, load_checkpoint, save, load
 from opensora_local.utils.config_utils import (
-    create_experiment_workspace,
+    create_experiment_workspace_all,
     create_tensorboard_writer,
     parse_configs,
     save_training_config,
@@ -52,6 +52,86 @@ from src.utils.metric import occ_eval_metric_all,init_running_metrics,sdf_eval_m
 import gc
 import time
 # print(os.environ['MASTER_PORT'])
+from torch.utils.tensorboard import SummaryWriter
+
+def softclip(logit, tau, type:str='sigmoid', alpha:float=1.0):
+    if type == 'sigmoid':
+        return tau * torch.sigmoid(logit * alpha)
+    if type == 'sigmoid_center':
+        return tau * torch.sigmoid((logit - tau/2) * alpha)
+    if type == 'swish':
+        swish = logit * torch.sigmoid(logit)
+        return tau * torch.sigmoid(swish * alpha)
+    if type == 'swish_center':
+        swish = logit * torch.sigmoid(logit)
+        return tau * torch.sigmoid((swish - tau/4) * alpha)
+
+class StabilityMonitor:
+    def __init__(self, model, log_dir="analysis/stability"):
+        self.model = model
+        self.writer = SummaryWriter(log_dir)
+        self._register_hooks()
+
+    def _register_hooks(self):
+        for name, module in self.model.named_modules():
+            if not isinstance(module, torch.nn.Module):
+                continue
+
+            module._name = name  # 保存模块名用于记录
+
+            def forward_hook(mod, inp, out):
+                stats = {}
+                if isinstance(out, (tuple, list)):
+                    for ind, val in enumerate(out):
+                        if isinstance(val, torch.Tensor):
+                            stats[f"min_{ind}"] = val.min().item()
+                            stats[f"max_{ind}"] = val.max().item()
+                            stats[f"mean_{ind}"] = val.mean().item()
+                            stats[f"std_{ind}"] = val.std().item()
+                elif isinstance(out, torch.Tensor):
+                    stats = {
+                        "min": out.min().item(),
+                        "max": out.max().item(),
+                        "mean": out.mean().item(),
+                        "std": out.std().item()
+                    }
+                mod._forward_stats = stats
+
+            def backward_hook(mod, grad_input, grad_output):
+                stats = {}
+                if isinstance(grad_output, (tuple, list)):
+                    for ind, val in enumerate(grad_output):
+                        if isinstance(val, torch.Tensor):
+                            stats[f"min_{ind}"] = val.min().item()
+                            stats[f"max_{ind}"] = val.max().item()
+                            stats[f"mean_{ind}"] = val.mean().item()
+                            stats[f"std_{ind}"] = val.std().item()
+                            stats[f"norm_{ind}"] = val.norm().item()
+                elif isinstance(grad_output, torch.Tensor):
+                    stats = {
+                        "min": grad_output.min().item(),
+                        "max": grad_output.max().item(),
+                        "mean": grad_output.mean().item(),
+                        "std": grad_output.std().item(),
+                        "norm": grad_output.norm().item()
+                    }
+                mod._backward_stats = stats
+
+            module.register_forward_hook(forward_hook)
+            module.register_full_backward_hook(backward_hook)
+
+    def log(self, step):
+        for module in self.model.modules():
+            if hasattr(module, "_forward_stats"):
+                for key, value in module._forward_stats.items():
+                    self.writer.add_scalar(f"{module._name}/forward_{key}", value, step)
+
+            if hasattr(module, "_backward_stats"):
+                for key, value in module._backward_stats.items():
+                    self.writer.add_scalar(f"{module._name}/backward_{key}", value, step)
+
+    def close(self):
+        self.writer.close()
 
 class GradNormHook:
     def __init__(self, global_step_fn=None):
@@ -183,34 +263,38 @@ def main():
     torch.npu.manual_seed(cfg.seed)
     torch.npu.manual_seed_all(cfg.seed)
     
-    exp_name, exp_dir = create_experiment_workspace(cfg)
-    save_training_config(cfg._cfg_dict, exp_dir)
-    os.makedirs(exp_dir, exist_ok=True)
-    
-
-    # ======================================================
-    # 2. runtime variables & colossalai launch
-    # ======================================================
-    assert torch.npu.is_available(), "Training currently requires at least one NPU."
-    assert cfg.dtype in ["fp32", "fp16", "bf16"], f"Unknown mixed precision {cfg.dtype}"
-    
     # 2.1. colossalai init distributed training
     # deepspeed.init_distributed(dist_backend='hccl')
-    project_config = ProjectConfiguration(project_dir=exp_dir, logging_dir=os.path.join(exp_dir, 'log'))
+    # project_config = ProjectConfiguration(project_dir=exp_dir, logging_dir=os.path.join(exp_dir, 'log'))
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     init_process_group_kwargs = InitProcessGroupKwargs(
         backend="hccl"
     )
     # mixed_precision = "no" if torch.backends.mps.is_available() else self.args.mixed_precision
-    
-
     accelerator = Accelerator(
-        project_config=project_config,
-        log_with='tensorboard',
+        # project_config=project_config,
+        # log_with='tensorboard',
         kwargs_handlers=[ddp_kwargs, init_process_group_kwargs],
         # kwargs_handlers=[ddp_kwargs],
     )
+
+    # 2.2. init logger, tensorboard
+    exp_dir, model_dir, monitor_dir = create_experiment_workspace_all(cfg)
+    if accelerator.is_main_process: # only makedir on global_rank0 process, also logger and tensorboard writer
+        save_training_config(cfg._cfg_dict, exp_dir)
+        logger = create_logger(exp_dir)
+        logger.info(f"Experiment directory created at {exp_dir}")
+        writer = create_tensorboard_writer(exp_dir)
+    else:
+        logger = create_logger(None)
+    logger.info(f"Train cfg: {cfg}")
     
+    # ======================================================
+    # 2. runtime variables & colossalai launch
+    # ======================================================
+    assert torch.npu.is_available(), "Training currently requires at least one NPU."
+    assert cfg.dtype in ["fp32", "fp16", "bf16"], f"Unknown mixed precision {cfg.dtype}"
+
     # print(accelerator.process_index, accelerator.num_processes, '*****')
     # exit(-1)
     # colossalai.launch_from_torch(backend='hccl')
@@ -227,31 +311,18 @@ def main():
         print("====== exp_dir: ", exp_dir)
     dtype = to_torch_dtype(cfg.dtype)
 
-    # 2.2. init logger, tensorboard
-    if not accelerator.local_process_index == 0:
-        logger = create_logger(None)
-    else:
-        logger = create_logger(exp_dir)
-        logger.info(f"Experiment directory created at {exp_dir}")
-        writer = create_tensorboard_writer(exp_dir)
-    
-    logger.info(f"Train cfg: {cfg}")
-    
-    # 2.3. initialize ColossalAI booster
-
-    
     # ======================================================
     # 3. build dataset and dataloader
     # ======================================================
     # DatasetForScanNet
     scale_level = cfg.vs_res
     train_dataset = DatasetForScanNetV6DEBUGAUGSDF(
-        data_root=os.path.join(cfg.data_root, 'train'),
+        data_root=cfg.data_root,
         data_list_name=cfg.train_data_list_name,
         **build_dataset_kwargs(cfg.train_data_args)
     )
     val_dataset = DatasetForScanNetV6DEBUGAUGSDF(
-        data_root=os.path.join(cfg.data_root, 'val'),
+        data_root=cfg.data_root,
         data_list_name=cfg.val_data_list_name,
         **build_dataset_kwargs(cfg.val_data_args)
     )
@@ -294,7 +365,13 @@ def main():
     # 4.2. move to device
     model = model.to(device, dtype)
 
-    # 4.3. load pretrain model 
+    # 4.2.5 register hook class to model, output to each rank dir
+    if cfg.monitor:
+        monitor_rank_dir = f"{monitor_dir}/rank{dist.get_rank()}"
+        os.makedirs(monitor_rank_dir, exist_ok=True)
+        monitor = StabilityMonitor(model, log_dir=monitor_rank_dir)
+
+    # 4.3. load pretrain model  cfg.load=/exp_name/model/model.pt
     if cfg.load is not None:
         logger.info("Loading checkpoint......")
         load_checkpoint(model, cfg.load, save_as_pt=False, strict=False)
@@ -365,7 +442,7 @@ def main():
 
     # 6.1. resume training
     if cfg.resume is not None:
-        logger.info("Resuming checkpoint......")
+        logger.info("Resuming checkpoint......") # cfg.resume = /exp_name/optimizer
         start_epoch, start_step, sampler_start_idx = deepspeed_load(model, cfg.resume)
         # start_epoch, start_step, sampler_start_idx = load(None, model, optimizer, lr_scheduler, cfg.resume)
         logger.info(f"Loaded checkpoint {cfg.load} at epoch {start_epoch} step {start_step}")
@@ -438,6 +515,7 @@ def main():
     # =======================================================
     # 9. Training Loop
     # =======================================================
+    all_step = cfg.epochs * num_steps_per_epoch
     grad_hook = GradNormHook(global_step_fn=lambda: global_step)
     grad_hook.register_hooks(model)  # 注册 hook 到模型参数
     for epoch in range(start_epoch, cfg.epochs):
@@ -487,11 +565,18 @@ def main():
                     ## enable_sdf_loss
                     if cfg.enable_sdf_loss:
                         if cfg.truncatedist:
-                            loss_sdf = cfg.loss_weight_SDF[idx] * \
-                            (sdf_criterion(
-                                torch.clip(logit, 0.0, cfg.truncatedist), 
-                                torch.clip(target, 0.0, cfg.truncatedist))                              
-                            )
+                            if not cfg.softclip:
+                                loss_sdf = cfg.loss_weight_SDF[idx] * \
+                                (sdf_criterion(
+                                    torch.clip(logit, 0.0, cfg.truncatedist), 
+                                    torch.clip(target, 0.0, cfg.truncatedist))                              
+                                )
+                            else:
+                                loss_sdf = cfg.loss_weight_SDF[idx] * \
+                                (sdf_criterion(
+                                    softclip(logit, cfg.truncatedist, type=cfg.softcliptype, alpha=cfg.softclipalpha),
+                                    torch.clip(target, 0.0, cfg.truncatedist))
+                                )
                         else:
                             loss_sdf = cfg.loss_weight_SDF[idx] * sdf_criterion(logit, target)
                         if (not torch.isnan(loss_sdf)) and (not torch.isinf(loss_sdf)):
@@ -545,10 +630,13 @@ def main():
                 global_step = epoch * num_steps_per_epoch + step
 
                 ## Log to tensorboard
-                if dist.get_rank() == 0 and (global_step) % cfg.log_every == 0:
+                if dist.get_rank() == 0 and ((global_step) % cfg.log_every == 0 or global_step + 1 == all_step):
                     log_metrics(writer, logger, running_metrics, log_step, global_step, optimizer, step,mode='train')
                     running_metrics = {k: 0.0 for k in running_metrics}
                     log_step = 0
+                
+                if cfg.monitor and cfg.monitor_every > 0 and global_step % cfg.monitor_every == 0:
+                    monitor.log(global_step)
 
                 # 清理释放
                 # del input_dict, output_list, target_list, loss, loss_occ,loss_kl
@@ -556,11 +644,12 @@ def main():
                 cleanup_memory()
 
                 # Save checkpoint
-                if cfg.ckpt_every > 0 and (global_step) % cfg.ckpt_every == 0:
+                if cfg.ckpt_every > 0 and ((global_step + 1) % cfg.ckpt_every == 0 or global_step + 1 == all_step):
                     # save(None, model, optimizer, lr_scheduler, epoch, step, global_step, cfg.batch_size, exp_dir)
-                    deepspeed_save(model, epoch, step, cfg.batch_size, global_step, exp_dir)
-                    logger.info(f"Saved checkpoint at epoch {epoch} step {step} global_step {global_step} to {exp_dir}")
-
+                    deepspeed_save(model, epoch, step, cfg.batch_size, global_step, model_dir)
+                    logger.info(f"Saved checkpoint at epoch {epoch} step {step} global_step {global_step} to {model_dir}")
+                
+                if cfg.eval_every > 0 and (global_step % cfg.eval_every == 0 or global_step + 1 == all_step):
                     ### Eval Set
                     logger.info(f"Evaluating {epoch} step {step} global_step {global_step}......")
                     model.eval()
@@ -598,11 +687,18 @@ def main():
                                 ## enable_sdf_loss
                                 if cfg.enable_sdf_loss:
                                     if cfg.truncatedist:
-                                        eval_loss_sdf = cfg.loss_weight_SDF[idx] * \
-                                                        (sdf_criterion(
-                                                            torch.clip(logit, 0.0, cfg.truncatedist), 
-                                                            torch.clip(target, 0.0, cfg.truncatedist))                            
-                                                        )
+                                        if not cfg.softclip:
+                                            eval_loss_sdf = cfg.loss_weight_SDF[idx] * \
+                                            (sdf_criterion(
+                                                torch.clip(logit, 0.0, cfg.truncatedist), 
+                                                torch.clip(target, 0.0, cfg.truncatedist))                            
+                                            )
+                                        else:
+                                            eval_loss_sdf = cfg.loss_weight_SDF[idx] * \
+                                            (sdf_criterion(
+                                                softclip(logit, cfg.truncatedist, type=cfg.softcliptype, alpha=cfg.softclipalpha),
+                                                torch.clip(target, 0.0, cfg.truncatedist))
+                                            )
                                     else:
                                         eval_loss_sdf = cfg.loss_weight_SDF[idx] * sdf_criterion(logit, target)
 
