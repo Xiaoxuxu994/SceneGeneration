@@ -65,6 +65,16 @@ def softclip(logit, tau, type:str='sigmoid', alpha:float=1.0):
     if type == 'swish_center':
         swish = logit * torch.sigmoid(logit)
         return tau * torch.sigmoid((swish - tau/4) * alpha)
+    if type == 'double_leaky_relu':
+        neg_part = logit * alpha
+        mid_part = logit
+        pos_part = tau + (logit - tau)*alpha
+        # Masks
+        neg_mask = (logit < 0).float()
+        mid_mask = ((logit >= 0) & (logit <= tau)).float()
+        pos_mask = (logit > tau).float()
+        # Combine all parts
+        return neg_mask * neg_part + mid_mask * mid_part + pos_mask * pos_part
 
 class StabilityMonitor:
     def __init__(self, model, log_dir="analysis/stability"):
@@ -279,7 +289,7 @@ def main():
     )
 
     # 2.2. init logger, tensorboard
-    exp_dir, model_dir, monitor_dir = create_experiment_workspace_all(cfg)
+    exp_dir, model_dir, monitor_dir = create_experiment_workspace_all(cfg, accelerator.is_main_process)
     if accelerator.is_main_process: # only makedir on global_rank0 process, also logger and tensorboard writer
         save_training_config(cfg._cfg_dict, exp_dir)
         logger = create_logger(exp_dir)
@@ -443,9 +453,13 @@ def main():
     # 6.1. resume training
     if cfg.resume is not None:
         logger.info("Resuming checkpoint......") # cfg.resume = /exp_name/optimizer
-        start_epoch, start_step, sampler_start_idx = deepspeed_load(model, cfg.resume)
-        # start_epoch, start_step, sampler_start_idx = load(None, model, optimizer, lr_scheduler, cfg.resume)
-        logger.info(f"Loaded checkpoint {cfg.load} at epoch {start_epoch} step {start_step}")
+        last_epoch, last_step, sampler_start_idx = deepspeed_load(model, cfg.resume)
+        logger.info(f"Loaded checkpoint {cfg.resume} at epoch {last_epoch} step {last_step}")
+        last_global_step = last_epoch * num_steps_per_epoch + last_step
+        lr_scheduler.load_state_dict(torch.load(os.path.join(cfg.resume, f'global_step{last_global_step + 1}/lr_scheduler.pt'))) 
+        start_step = last_step + 1 if last_step < num_steps_per_epoch - 1 else 0
+        start_epoch = last_epoch if last_step < num_steps_per_epoch - 1 else last_epoch + 1
+        # start_epoch, start_step, sampler_start_idx = load(None, model, optimizer, lr_scheduler, cfg.resume)    
     logger.info(f"Training for {cfg.epochs} epochs with {num_steps_per_epoch} steps per epoch")
     logger.info(f"Evaluating every {cfg.ckpt_every} interval with {num_steps_per_epoch_val} steps per epoch")
   
@@ -647,6 +661,7 @@ def main():
                 if cfg.ckpt_every > 0 and ((global_step + 1) % cfg.ckpt_every == 0 or global_step + 1 == all_step):
                     # save(None, model, optimizer, lr_scheduler, epoch, step, global_step, cfg.batch_size, exp_dir)
                     deepspeed_save(model, epoch, step, cfg.batch_size, global_step, model_dir)
+                    torch.save(lr_scheduler.state_dict(), os.path.join(model_dir, f'global_step{global_step + 1}/lr_scheduler.pt'))
                     logger.info(f"Saved checkpoint at epoch {epoch} step {step} global_step {global_step} to {model_dir}")
                 
                 if cfg.eval_every > 0 and (global_step % cfg.eval_every == 0 or global_step + 1 == all_step):
