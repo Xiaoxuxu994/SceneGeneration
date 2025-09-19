@@ -4,6 +4,7 @@ grad_checkpoint = True
 plugin = "zero2"
 sp_size = 1
 seed = 42
+init_with_xavier = True
 
 # model setting
 model = dict(
@@ -129,6 +130,7 @@ loss_weight_occ = [1.0]
 softclip = True
 softcliptype = 'double_leaky_relu'
 softclipalpha = 0.01
+epoch_ratio = 1.0 # 0.0=always hardclip, 1.0=always softclip
 
 ## KL loss
 loss_weight_KL = 1e-3

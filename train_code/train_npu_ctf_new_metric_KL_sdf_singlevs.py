@@ -201,6 +201,11 @@ def cleanup_memory():
 def log_memory_usage():
     print(f"当前显存占用: {torch_npu.npu.memory_allocated()/1024**2:.2f}MB / {torch_npu.npu.max_memory_allocated()/1024**2:.2f}MB")
 
+def init_weights(m):
+    if isinstance(m, torch.nn.Linear):
+        torch.nn.init.xavier_uniform_(m.weight)
+        if m.bias is not None:
+             torch.nn.init.zeros_(m.bias)
 
 def log_metrics(writer, logger, metrics, step_count, global_step, optimizer, step, mode='train'):
     avg_metrics = {k: v / step_count for k, v in metrics.items()}
@@ -371,6 +376,8 @@ def main():
     # ======================================================
     # 4.1. build model
     model = build_module(cfg.model, MODELS)
+    if cfg.init_with_xavier:
+        model.apply(init_weights)
 
     # 4.2. move to device
     model = model.to(device, dtype)
@@ -579,7 +586,7 @@ def main():
                     ## enable_sdf_loss
                     if cfg.enable_sdf_loss:
                         if cfg.truncatedist:
-                            if not cfg.softclip:
+                            if not cfg.softclip or epoch >= cfg.epochs * cfg.epoch_ratio:
                                 loss_sdf = cfg.loss_weight_SDF[idx] * \
                                 (sdf_criterion(
                                     torch.clip(logit, 0.0, cfg.truncatedist), 
@@ -644,9 +651,10 @@ def main():
                 global_step = epoch * num_steps_per_epoch + step
 
                 ## Log to tensorboard
-                if dist.get_rank() == 0 and ((global_step) % cfg.log_every == 0 or global_step + 1 == all_step):
-                    log_metrics(writer, logger, running_metrics, log_step, global_step, optimizer, step,mode='train')
-                    running_metrics = {k: 0.0 for k in running_metrics}
+                if (global_step) % cfg.log_every == 0 or global_step + 1 == all_step:
+                    if accelerator.is_main_process: # 只在global_rank = 0上写入log和writer
+                        log_metrics(writer, logger, running_metrics, log_step, global_step, optimizer, step,mode='train')
+                    running_metrics = {k: 0.0 for k in running_metrics} # every log_every steps, clear out running_metrics
                     log_step = 0
                 
                 if cfg.monitor and cfg.monitor_every > 0 and global_step % cfg.monitor_every == 0:
@@ -661,10 +669,11 @@ def main():
                 if cfg.ckpt_every > 0 and ((global_step + 1) % cfg.ckpt_every == 0 or global_step + 1 == all_step):
                     # save(None, model, optimizer, lr_scheduler, epoch, step, global_step, cfg.batch_size, exp_dir)
                     deepspeed_save(model, epoch, step, cfg.batch_size, global_step, model_dir)
-                    torch.save(lr_scheduler.state_dict(), os.path.join(model_dir, f'global_step{global_step + 1}/lr_scheduler.pt'))
+                    if accelerator.is_main_process: # only save lr_scheduler on global_rank0
+                        torch.save(lr_scheduler.state_dict(), os.path.join(model_dir, f'global_step{global_step + 1}/lr_scheduler.pt'))
                     logger.info(f"Saved checkpoint at epoch {epoch} step {step} global_step {global_step} to {model_dir}")
                 
-                if cfg.eval_every > 0 and (global_step % cfg.eval_every == 0 or global_step + 1 == all_step):
+                if cfg.eval_every > 0 and ((global_step + 1) % cfg.eval_every == 0 or global_step + 1 == all_step):
                     ### Eval Set
                     logger.info(f"Evaluating {epoch} step {step} global_step {global_step}......")
                     model.eval()
@@ -752,7 +761,7 @@ def main():
                     if dist.get_rank() == 0:
                         log_metrics(writer, logger, running_eval_metrics, eval_log_step, global_step, optimizer, step, mode='eval')
                         log_memory_usage()
-                        cleanup_memory() 
+                    cleanup_memory() 
 
                     # val_dataloader.sampler.set_start_index(0)
                     start_step_eval = 0                       
