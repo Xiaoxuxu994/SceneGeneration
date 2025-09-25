@@ -296,6 +296,7 @@ class VecSetAEV5CTFKL(nn.Module):
                 logvar_min = -30.0,
                 logvar_max = 20.0,  
                 use_cpu_fps=False,
+                use_kernel_fps=False,
                 use_skip = False,
                 encoder_dict = dict(
                     type = "PE",
@@ -342,8 +343,11 @@ class VecSetAEV5CTFKL(nn.Module):
         self.chunk_size = chunk_size
         self.use_skip = use_skip
         self.use_cpu_fps = use_cpu_fps
+        self.use_kernel_fps = use_kernel_fps
         if use_cpu_fps:
             print('Using fps_cpu kernel...')
+        if use_kernel_fps:
+            print('Using custom fps kernel...')
 
         ## training mode
         self.mode = 'coarse_to_fine'
@@ -402,8 +406,16 @@ class VecSetAEV5CTFKL(nn.Module):
         pos = flattened
         ratio = 1.0 * self.num_latent / N
 
+        if self.use_kernel_fps:
+            x = pc[0,:,0].contiguous()
+            y = pc[0,:,1].contiguous()
+            z = pc[0,:,2].contiguous()
+            seed_idx = np.random.randint(0, N-1)
+            torch.npu.synchronize()
+            idx,_ = cust_fps(x, y, z, N, self.num_latent, seed_idx)
+            torch.npu.synchronize() 
         # 120000为经验数值。最终版本应不添加此限制。
-        if self.use_cpu_fps and N <= 120000:
+        elif (self.use_cpu_fps) and (N <= 120000):
             idx = sample_farthest_points(pc.cpu(), lengths=torch.tensor([N], dtype=torch.long), K=self.num_latent, random_start_point=True).view(-1).to(pc.device)
         else:
             idx = fps_fallback(pos, batch, ratio=ratio, random_start=True)
@@ -450,6 +462,8 @@ class VecSetAEV5CTFKL(nn.Module):
         latent = self.kl_proj(latent)
 
         logit_list, targets_list, mask_list = [], [], [None]
+
+        # target = 0.0 #!!!!!!!!!!!!!!!!!!!!!!!!
         prev_latents = []
         latent_input = latent
 
@@ -462,11 +476,11 @@ class VecSetAEV5CTFKL(nn.Module):
             grid_key = f'pc_query_grid_{res}'
             if mask_list[-1] is not None:
                 query_pts = input_dict[query_key][mask_list[-1]].unsqueeze(0)
-                target = input_dict[label_key][mask_list[-1]]
+                target = input_dict[label_key][mask_list[-1]] #!!!!!!!!!!!!!!!!!!!
                 grid = input_dict[grid_key][mask_list[-1]]
             else:
                 query_pts = input_dict[query_key].unsqueeze(0)
-                target = input_dict[label_key]
+                target = input_dict[label_key] #!@!!!!!!!!!!!!!!!!!!!!!
                 grid = input_dict[grid_key]
 
             # Skip connection: only add previous block
@@ -492,18 +506,28 @@ class VecSetAEV5CTFKL(nn.Module):
                 label_c = target <= thres
 
             logit_list.append(logit.squeeze(-1).squeeze(0))
-            targets_list.append(target)
+            targets_list.append(target) #!!!!!!!!!!!!!!!!!!!!!!!
             prev_latents.append(latent_out)
 
             if next_res is not None:
                 fine_grid = input_dict[f'pc_query_grid_{next_res}']
-                mask = get_fine_voxel_mask_from_coarse_labels(
-                    coarse_label=label_c,
-                    scale_factor=2,
-                    resolution_fine=next_res,
-                    coarse_grid=grid,
-                    fine_grid=fine_grid
+                ## org one
+                # mask = get_fine_voxel_mask_from_coarse_labels(
+                #     coarse_label=label_c,
+                #     scale_factor=2,
+                #     resolution_fine=next_res,
+                #     coarse_grid=grid,
+                #     fine_grid=fine_grid
+                # )
+                ## fast version v1
+                mask = get_fine_voxel_mask_from_coarse_labels_fast(
+                    coarse_label = label_c,                      
+                    scale_factor = 2,                   
+                    resolution_coarse = res,              
+                    coarse_grid = grid,                        
+                    fine_grid = fine_grid, 
                 )
+
                 mask_list.append(mask)
 
         return (kl, logit_list, targets_list, mask_list) if return_mask else (kl, logit_list, targets_list)

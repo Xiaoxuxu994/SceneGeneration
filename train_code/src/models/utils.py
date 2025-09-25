@@ -2,6 +2,7 @@ import torch
 from typing import Optional, Union, List, Tuple
 import math
 import fps_cpu
+from . import kernel_cust_fps
 
 def sample_farthest_points(
     points: torch.Tensor,
@@ -131,6 +132,44 @@ def fps_fallback(x, batch=None, ratio=0.25, random_start=True):
     return torch.cat(output_idx, dim=0)
 
 
+def _workspace_layout(M: int):
+    BLOCKS_UPPER_BOUND = 24
+    cc_slots = BLOCKS_UPPER_BOUND * 2  * 8 * 4
+    off_dist = 0
+    off_ccv  = off_dist + M * 4
+    off_cci  = off_ccv  + cc_slots
+    total    = off_cci  + cc_slots
+    return off_dist, off_ccv, off_cci, total, cc_slots
+
+def cust_fps(x: torch.Tensor,
+             y: torch.Tensor,
+             z: torch.Tensor,
+             M: int,
+             K: int,
+             seed_idx: int):
+    
+    assert x.numel() == M and y.numel() == M and z.numel() == M
+    assert x.device == y.device == z.device
+    assert x.is_contiguous() and y.is_contiguous() and z.is_contiguous()
+
+    # 统一到 float32（与你内核 Local/GM float 相符，避免 32/64 混用导致的微小差异）
+    if x.dtype != torch.float32:
+        x = x.to(torch.float32)
+    if y.dtype != torch.float32:
+        y = y.to(torch.float32)
+    if z.dtype != torch.float32:
+        z = z.to(torch.float32)
+
+    off_dist, off_ccv, off_cci, total, cc_slots = _workspace_layout(M)
+
+    workspace = torch.zeros(total*2, dtype=torch.float32, device=x.device)
+
+    out_idx = torch.empty(K, dtype=torch.int32, device=x.device)
+
+    kernel_cust_fps.kernel_cust_fps(x, y, z, out_idx, workspace, K, seed_idx)
+
+    return out_idx, workspace
+
 def hash_coords(coords, resolution):
     return coords[:, 0] * (resolution+1) * (resolution+1) + coords[:, 1] * (resolution+1) + coords[:, 2]
 
@@ -165,3 +204,29 @@ def logit2label(logit, threshold=0.5):
     prob = torch.sigmoid(logit)         
     return (prob >= threshold)
 
+
+def get_fine_voxel_mask_from_coarse_labels_fast(
+    coarse_label,                      
+    scale_factor: int,                   
+    resolution_coarse: int,              
+    coarse_grid,                        
+    fine_grid,                           
+):
+    device = coarse_label.device
+    active_coarse = coarse_grid[coarse_label.bool()]
+    if active_coarse.numel() == 0:
+        return torch.zeros((fine_grid.shape[0],), dtype=torch.bool, device=device)
+
+    def hash_coords(coords, R):
+        R1 = R + 1
+        coords = coords.to(torch.int64)
+        return coords[:, 0] * (R1 * R1) + coords[:, 1] * R1 + coords[:, 2]
+
+    active_hash = hash_coords(active_coarse, resolution_coarse)
+    table_size = (resolution_coarse + 1) ** 3
+    occ = torch.zeros(table_size, dtype=torch.bool, device=device)
+    occ[active_hash] = True
+
+    parent_coarse = torch.div(fine_grid, scale_factor, rounding_mode='floor')
+    parent_hash = hash_coords(parent_coarse, resolution_coarse)
+    return occ[parent_hash]

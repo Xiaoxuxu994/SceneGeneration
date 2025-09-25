@@ -3,7 +3,7 @@ import json
 import logging
 import operator
 import os
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Set
 
 try:
     import colossalai
@@ -323,3 +323,20 @@ def load_checkpoint(model, ckpt_path, save_as_pt=True, strict=True,src_prefix=No
 
     else:
         raise ValueError(f"[Error] Invalid checkpoint path: {ckpt_path}")
+    
+def get_loaded_param_names(ckpt_path, src_prefix, dst_prefix, model) -> Set[str]:
+    
+    obj = torch.load(ckpt_path, map_location="cpu")
+    sd =  obj.get("module", obj)
+    if not isinstance(sd, dict):
+        sd = obj  
+
+    mapped = set()
+    for k in sd.keys():
+        k_m = k
+        if src_prefix and k.startswith(src_prefix):
+            k_m = dst_prefix + k[len(src_prefix):]
+        mapped.add(k_m)
+
+    param_names = {n for n, _ in model.named_parameters()}
+    return mapped & param_names

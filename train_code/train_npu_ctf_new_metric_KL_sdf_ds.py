@@ -4,10 +4,9 @@ import numpy as np
 import random
 import torch
 import torch_npu
-from torch_npu.contrib import transfer_to_npu
+import torch.nn as nn
 torch._C._jit_set_profiling_mode(False)
 from tqdm import tqdm
-from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 from accelerate import Accelerator
 from accelerate.utils import DistributedDataParallelKwargs, ProjectConfiguration, InitProcessGroupKwargs
@@ -21,12 +20,10 @@ import re
 from opensora_local.acceleration.checkpoint import set_grad_checkpoint
 from opensora_local.acceleration.parallel_states import (
     get_data_parallel_group,
-    set_data_parallel_group,
-    set_sequence_parallel_group,
 )
 
 from opensora_local.datasets import prepare_dataloader
-from opensora_local.utils.ckpt_utils import create_logger, deepspeed_load, deepspeed_save, load_checkpoint, save, load
+from opensora_local.utils.ckpt_utils import create_logger, deepspeed_load, deepspeed_save, load_checkpoint, get_loaded_param_names
 from opensora_local.utils.config_utils import (
     create_experiment_workspace,
     create_tensorboard_writer,
@@ -38,7 +35,7 @@ from opensora_local.utils.misc import all_reduce_mean, format_numel_str, get_mod
 ## src code
 from src.registry import MODELS, build_module, build_dataset_kwargs
 from src.dataset.dataset_build_scannet_v6 import DatasetForScanNetV6DEBUGAUGSDF
-from src.utils.metric import occ_eval_metric_all,init_running_metrics,sdf_eval_metric_all
+from src.utils.metric import init_running_metrics,sdf_eval_metric_all
 
 import gc
 # print(os.environ['MASTER_PORT'])
@@ -137,7 +134,19 @@ def log_metrics(writer, logger, metrics, step_count, global_step, optimizer, ste
 
     # 构建输出
     log_lines = [f"=={mode}_metrics (Step {step}, Global Step {global_step})=="]
-    log_lines.append(f"LR: {optimizer.param_groups[0]['lr']:.6f}")
+    
+    # log_lines.append(f"LR: {optimizer.param_groups[0]['lr']:.6f}")
+    ## support mulitlr log
+    lr_groups = [pg["lr"] for pg in optimizer.param_groups]
+
+    if len(lr_groups) == 1:
+        log_lines.append(f"LR: {lr_groups[0]:.6f}")
+        writer.add_scalar("lr", lr_groups[0], global_step)
+    else:
+        lr_text = ", ".join([f"{pg.get('name', f'g{i}')}:{pg['lr']:.6f}" for i, pg in enumerate(optimizer.param_groups)])
+        log_lines.append(f"LRs: {lr_text}")
+        for i, pg in enumerate(optimizer.param_groups):
+            writer.add_scalar(f"lr/{pg.get('name', f'group{i}')}", pg["lr"], global_step)
 
     for k, v in sorted(default_metrics.items()):
         log_lines.append(f"{k}: {v:.4f}")
@@ -150,7 +159,7 @@ def log_metrics(writer, logger, metrics, step_count, global_step, optimizer, ste
             # writer.add_scalar(f"{mode}_{k}_{scale}", v, global_step)
 
     logger.info("\n" + " | ".join(log_lines))
-    writer.add_scalar("lr", optimizer.param_groups[0]['lr'], global_step)
+    # writer.add_scalar("lr", optimizer.param_groups[0]['lr'], global_step)
 
 def reduce_metrics(metrics_dict, device):
     if torch.distributed.is_initialized():
@@ -161,6 +170,45 @@ def reduce_metrics(metrics_dict, device):
                 t = torch.tensor(v, dtype=torch.float32, device=device)
             metrics_dict[k] = all_reduce_mean(t)
     return metrics_dict
+
+def freeze_by_prefix(model: nn.Module, prefixes, verbose=True):
+    """
+    1) 将以 prefixes 开头的参数 requires_grad=False
+    2) 将对应模块切换到 eval()，避免 Dropout/BN 在训练态运行/更新统计量
+    """
+    if not prefixes:
+        return
+
+    # 1) 冻结参数
+    frozen, total = 0, 0
+    for name, p in model.named_parameters():
+        total += p.numel()
+        if any(name.startswith(pref) for pref in prefixes):
+            p.requires_grad_(False)
+            frozen += p.numel()
+
+    if verbose:
+        print(f"[freeze] Frozen params: {frozen/1e6:.2f}M / {total/1e6:.2f}M")
+
+    # 2) 将匹配到的模块切到 eval()
+    for mname, m in model.named_modules():
+        if any(mname.startswith(pref) for pref in prefixes):
+            m.eval()
+
+def set_train_with_frozen(model: nn.Module, prefixes):
+    """
+    类似 model.train()，但会把冻结前缀对应的模块再次切回 eval()。
+    用它来替代裸调用 model.train()。
+    """
+    model.train()
+    if not prefixes:
+        return
+    for mname, m in model.named_modules():
+        if any(mname.startswith(pref) for pref in prefixes):
+            m.eval()
+
+def unwrap_model(m):
+    return m.module if hasattr(m, "module") else m
 
 def main():
     # ======================================================
@@ -279,45 +327,52 @@ def main():
     
     ## fix backbone
     freeze_prefixes = getattr(cfg, "freeze_prefixes", None)
-    if freeze_prefixes is not None:
-        frozen, total = 0, 0
-        for name, p in model.named_parameters():
-            total += p.numel()
-            if any(name.startswith(pref) for pref in freeze_prefixes):
-                p.requires_grad_(False)
-                frozen += p.numel()        
-        logger.info(f"Frozen params: {frozen/1e6:.2f}M / {total/1e6:.2f}M")
+    if freeze_prefixes:
+        # 注意：先在未 wrap 的模型上执行（accel/DP/DDP 之前）
+        freeze_by_prefix(model, freeze_prefixes, verbose=True)
 
-    total_steps = cfg.epochs * len(train_dataloader)
-    # print('len(train_dataloader): ',len(train_dataloader))
-    warmup_steps = int(cfg.warmup_ratio * total_steps)
-    # Test DeepSpeed
+    ## get load pretrain param
+    loaded_param_names = set()
+    if cfg.load is not None:
+        loaded_param_names = get_loaded_param_names(
+            cfg.load, src_prefix='decoder4.', dst_prefix='decoders.0.', model=model
+        )
+    # group params
+    pretrained_params, new_params = [], []
+    for n, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+        (pretrained_params if n in loaded_param_names else new_params).append(p)
 
-    # parameters = filter(lambda p: p.requires_grad, model.parameters())
-    # print(device, '***********************')
-    # model, optimizer, _, _ = deepspeed.initialize(
-    #     model=model,
-    #     model_parameters=parameters,
-    #     config_params=deepspeed_config
-    # )
+    param_groups = []
+    if len(pretrained_params) > 0:
+        param_groups.append({"name":"pretrained", "params": pretrained_params, "lr": cfg.lr_pretrain, "weight_decay": cfg.weight_decay})
+    if len(new_params) > 0:
+        param_groups.append({"name": "new", "params": new_params, "lr": cfg.lr, "weight_decay": cfg.weight_decay})
+    if len(param_groups) == 0:
+        raise ValueError("No trainable parameters found (did you freeze everything?).")
 
     # 4.4. setup optimizer & lr_scheduler
-    optimizer = AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()), lr=cfg.lr, weight_decay=cfg.weight_decay
-    )
+    optimizer = AdamW(param_groups)
 
     # cosinLR+warmup
+    total_steps = cfg.epochs * len(train_dataloader)
+    warmup_steps = int(cfg.warmup_ratio * total_steps)
     lr_scheduler_type = getattr(cfg, "lr_scheduler", None)
     if lr_scheduler_type=='cosine':
         # cosinLR+warmup
-        lr_scheduler = LambdaLR(
-            optimizer,
-            lr_lambda=cosine_warmup_schedule(
-                warmup_steps=warmup_steps,
-                total_steps=total_steps,
-                min_lr_ratio=cfg.min_lr_ratio
-            )
-        )
+        lambdas = []
+        for g in param_groups:
+            if g['lr'] == cfg.lr_pretrain:
+                lambdas.append(lambda _step:1.0)
+            else:
+                lambdas.append(cosine_warmup_schedule(
+                    warmup_steps=warmup_steps,
+                    total_steps=total_steps,
+                    min_lr_ratio=cfg.min_lr_ratio
+                    )
+                )
+        lr_scheduler = LambdaLR(optimizer,lr_lambda=lambdas)
     else:
         lr_scheduler = None
 
@@ -328,8 +383,12 @@ def main():
     # 4.6. set training mode
     model.train()
     # print(train_dataloader.sampler, '************Before')
-    model, optimizer, train_dataloader, val_dataloader, lr_scheduler = accelerator.prepare(model, optimizer, train_dataloader, val_dataloader, lr_scheduler)
+    model, optimizer, train_dataloader, val_dataloader, lr_scheduler = accelerator.prepare(
+        model, optimizer, train_dataloader, val_dataloader, lr_scheduler)
+    
     print(train_dataloader.sampler, len(train_dataloader), '*************AFter')
+
+    freeze_by_prefix(unwrap_model(model), freeze_prefixes, verbose=True)
 
     # =======================================================
     # 5. boost model for distributed training with colossalai
@@ -350,6 +409,10 @@ def main():
         start_epoch, start_step, sampler_start_idx = deepspeed_load(model, cfg.resume)
         # start_epoch, start_step, sampler_start_idx = load(None, model, optimizer, lr_scheduler, cfg.resume)
         logger.info(f"Loaded checkpoint {cfg.load} at epoch {start_epoch} step {start_step}")
+        freeze_by_prefix(unwrap_model(model), freeze_prefixes, verbose=True)
+        for g in optimizer.param_groups:
+            g["lr"] = cfg.lr_pretrain if g["params"] and all(p in pretrained_params for p in g["params"]) else cfg.lr
+
     logger.info(f"Training for {cfg.epochs} epochs with {num_steps_per_epoch} steps per epoch")
     logger.info(f"Evaluating every {cfg.ckpt_every} interval with {num_steps_per_epoch_val} steps per epoch")
   
@@ -419,7 +482,7 @@ def main():
             for step in pbar:
                 input_dict = next(traindataloader_iter)
                 input_dict = {k: v[0].to(device) if isinstance(v, torch.Tensor) else v for k, v in input_dict.items()}
-                model.train()
+                set_train_with_frozen(unwrap_model(model), freeze_prefixes)
                 
                 core_model = model.module if hasattr(model, 'module') else model
                 if epoch < cfg.gt_warmup_epochs:
@@ -440,7 +503,13 @@ def main():
                     
                     ## enable_sdf_loss
                     if cfg.enable_sdf_loss:
-                        loss_sdf = cfg.loss_weight_SDF[idx] * sdf_criterion(logit, target)
+                        if cfg.truncatedist_train[idx]  == 0.0:
+                            loss_sdf = cfg.loss_weight_SDF[idx] * sdf_criterion(logit, target)
+                        else:
+                            loss_sdf = cfg.loss_weight_SDF[idx] * sdf_criterion(
+                                torch.clip(logit, 0.0, cfg.truncatedist_train[idx]),
+                                torch.clip(target, 0.0, cfg.truncatedist_train[idx]))
+                            
                         if (not torch.isnan(loss_sdf)) and (not torch.isinf(loss_sdf)):
                             loss += loss_sdf
                             running_metrics[f'loss_sdf_s{scale}'] += loss_sdf.item()
@@ -527,7 +596,12 @@ def main():
 
                                 ## enable_sdf_loss
                                 if cfg.enable_sdf_loss:
-                                    eval_loss_sdf = cfg.loss_weight_SDF[idx] * sdf_criterion(logit.detach(), target.detach())
+                                    if cfg.truncatedist_train[idx]  == 0.0:
+                                        eval_loss_sdf = cfg.loss_weight_SDF[idx] * sdf_criterion(logit.detach(), target.detach())
+                                    else:
+                                        eval_loss_sdf = cfg.loss_weight_SDF[idx] * sdf_criterion(
+                                            torch.clip(logit.detach(), 0.0, cfg.truncatedist_train[idx]),
+                                            torch.clip(target.detach(), 0.0, cfg.truncatedist_train[idx]))
 
                                     if (not torch.isnan(eval_loss_sdf)) and (not torch.isinf(eval_loss_sdf)):
                                         eval_loss +=  eval_loss_sdf

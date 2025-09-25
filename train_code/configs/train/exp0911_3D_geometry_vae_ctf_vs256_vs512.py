@@ -13,7 +13,8 @@ model = dict(
     kl_dim = 64,
     chunk_size = 200000, # for [129*129*129]
     use_skip = True,
-    use_cpu_fps = True,
+    use_cpu_fps = False,
+    use_kernel_fps = True,
     encoder_dict = dict(type = "PE",),
     query_encoder_dict = dict(type = "PE",),
     transformer_dict = dict(
@@ -36,7 +37,7 @@ model = dict(
             attn_dtype='bf16',
             enable_ca_flash=False,
             drop_path_rate=0.3,
-            output_dim = 1,), ## vs_res=16
+            output_dim = 1,), ## vs_res=256
         dict(
             type = "VecSetDecoderV1",
             depth = 16,
@@ -46,7 +47,7 @@ model = dict(
             attn_dtype='bf16',
             enable_ca_flash=False,
             drop_path_rate=0.3,
-            output_dim = 1,), ## vs_res=32
+            output_dim = 1,), ## vs_res=512
     ],
     decoder_info = [
             (0, 256, 512, 'pc_query_sdf_256',  3.0*2.0/512),
@@ -59,8 +60,8 @@ model = dict(
 batch_size = 1 # currently only support batchsize = 1
 num_workers = 8
 data_root = "/mnt/nvme3/z00533370/dataset/scannetpp_norm_v3_02_vs16_256_oct512_3x_grad_sign/"
-# train_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_train2.txt'
-train_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_val.txt'
+train_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_train2.txt'
+# train_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_val.txt'
 val_data_list_name = 'datacache/scannetpp_trainval/nvs_sem_val.txt'
 vs_res = [256,512]
 vs_res_gd = 128
@@ -68,13 +69,19 @@ train_data_args = dict(
     datatype = 'npz',
     vs_res = vs_res,
     transform = {
-    'GridSample': {
+    # 'GridSample': {
+    #     'enabled': True,
+    #     'grid_size': 2.0 / vs_res_gd, # encoder voxelsize
+    #     'hash_type': 'fnv',
+    #     'mode': 'train', # train for both train and test
+    #     'keys': ('coord',),
+    #     'return_grid_coord': False
+    # },
+    'UniformDownSample': {
         'enabled': True,
-        'grid_size': 2.0 / vs_res_gd, # encoder voxelsize
-        'hash_type': 'fnv',
-        'mode': 'train', # train for both train and test
-        'keys': ('coord',),
-        'return_grid_coord': False
+        'point_max': 200000, 
+        'sample_rate': 0.1,
+        'random': True,
     },
     'DecodeQuerySampleSDF': {
         'enabled': True,
@@ -97,13 +104,19 @@ val_data_args = dict(
     datatype = 'npz',
     vs_res = vs_res,
     transform = {
-    'GridSample': {
+    # 'GridSample': {
+    #     'enabled': True,
+    #     'grid_size': 2.0 / vs_res_gd, # encoder voxelsize
+    #     'hash_type': 'fnv',
+    #     'mode': 'train', # train for both train and test
+    #     'keys': ('coord',),
+    #     'return_grid_coord': False
+    # },
+    'UniformDownSample': {
         'enabled': True,
-        'grid_size': 2.0 / vs_res_gd, # encoder voxelsize
-        'hash_type': 'fnv',
-        'mode': 'train', # train for both train and test
-        'keys': ('coord',),
-        'return_grid_coord': False
+        'point_max': 200000, 
+        'sample_rate': 0.1,
+        'random': True,
     },
     'DecodeQuerySampleSDF': {
         'enabled': True,
@@ -129,9 +142,10 @@ log_every = 500
 ckpt_every = 500
 resume = None
 load = '/mnt/nvme2/dataset/geovae_train/de=16_lr=1e-4_w=1e4_kl=1e-3/mp_rank_00_model_states.pt'
-freeze_prefixes = ['encoder','query_encoder','cross_attend_blocks','self_attend_blocks','mean_fc','logvar_fc','kl_proj','decoders.0']
+freeze_prefixes = None #['encoder','query_encoder','cross_attend_blocks','self_attend_blocks','mean_fc','logvar_fc','kl_proj','decoders.0']
 
 lr = 1e-4 
+lr_pretrain = 1e-5
 min_lr_ratio=0.05
 warmup_ratio=0.1
 grad_clip = 1.0
@@ -154,6 +168,8 @@ loss_weight_KL = 1e-3
 occ_threshold = 0.5 # eval metric loss after sigmoid
 sdf_threshold = [1.0 * 2.0/vs_res[-2], 1.0 * 2.0/vs_res[-1]]
 truncatedist = [3.0 * 2.0/vs_res[-2], 3.0 * 2.0/vs_res[-1]]
+# truncatedist_train = [5.0 * 2.0/vs_res[-2], 0.0]
+truncatedist_train = [0.0, 0.0]
 
 # Others
 outputs = "/mnt/nvme3/z00533370/exp_result/exp0911_3D_geometry_vae_ctf_vs256_vs512/"
