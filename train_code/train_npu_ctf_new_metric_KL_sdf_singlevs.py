@@ -47,7 +47,7 @@ from opensora_local.utils.misc import all_reduce_mean, format_numel_str, get_mod
 ## src code
 from src.registry import MODELS, build_module, build_dataset_kwargs
 from src.dataset.dataset_build_scannet_v6 import DatasetForScanNetV6DEBUGAUGSDF
-from src.utils.metric import occ_eval_metric_all,init_running_metrics,sdf_eval_metric_all
+from src.utils.metric import init_running_metrics, sdf_eval_metric_all_TM, sdf_eval_metric_all
 
 import gc
 import time
@@ -411,7 +411,6 @@ def main():
     )
 
     # cosinLR+warmup
-    
     lr_scheduler = LambdaLR(
         optimizer,
         lr_lambda=cosine_warmup_schedule(
@@ -424,7 +423,10 @@ def main():
     if cfg.grad_checkpoint:
         set_grad_checkpoint(model)
 
-    # 4.6. set training mode
+    # 4.6. choose metric calc func
+    calc_metric = sdf_eval_metric_all if cfg.use_cpu_metric else sdf_eval_metric_all_TM
+
+    # 4.7. set training mode
     model.train()
     # print(train_dataloader.sampler, '************Before')
     # if accelerator.process_index == 0:
@@ -637,8 +639,7 @@ def main():
                 for idx,(logit, target) in enumerate(zip(output_list,target_list)):
                     scale = scale_level[idx]
                     # metrics = occ_eval_metric_all(logit, target, occ_threshold=cfg.occ_threshold)
-                    metrics = sdf_eval_metric_all(logit, target, sdf_threshold=cfg.sdf_threshold, mask=None,
-                                                  truncatedist = cfg.truncatedist,compute_surface_metrics=False)
+                    metrics = calc_metric(logit, target, sdf_threshold=cfg.sdf_threshold, mask=None, truncatedist = cfg.truncatedist,compute_surface_metrics=False)
                     for name, score in metrics:
                         running_metrics[f'{name}_s{scale}'] += score
                     # running_metrics[f'logit_mean_s{scale}'] += logit.mean().item()
@@ -742,8 +743,7 @@ def main():
                             for idx,(logit, target) in enumerate(zip(output_list,target_list)):
                                 scale = scale_level[idx]
                                 # metrics = occ_eval_metric_all(logit, target, occ_threshold=cfg.occ_threshold)
-                                metrics = sdf_eval_metric_all(logit, target, sdf_threshold=cfg.sdf_threshold, mask=None,
-                                                              truncatedist = cfg.truncatedist, compute_surface_metrics=False) 
+                                metrics = calc_metric(logit, target, sdf_threshold=cfg.sdf_threshold, mask=None, truncatedist = cfg.truncatedist, compute_surface_metrics=False) 
                                 for name, score in metrics:
                                     running_eval_metrics[f'{name}_s{scale}'] += score
                                 # running_eval_metrics[f'logit_mean_s{scale}'] += logit.mean().item()

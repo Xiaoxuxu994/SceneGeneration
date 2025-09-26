@@ -6,6 +6,7 @@ from skimage.measure import marching_cubes
 # import ot
 import numpy as np
 from src.utils.misc import save_surface_as_mesh
+from torchmetrics.classification import BinaryJaccardIndex
 
 def occ_eval_metric_all(output_logit, label, occ_threshold=0.5):
     """
@@ -250,6 +251,104 @@ def sdf_eval_metric_all(output_logit, label, sdf_threshold=0.5, mask=None,
                 save_surface_as_mesh(f'{inout_dir}/gt_mesh_{prefix}.ply', verts_label, faces_label)
         except Exception as e:
             print(f"[warning] Surface extraction failed: {e}")
+
+    return metrics
+
+@torch.no_grad()
+def iou_from_udf(udf_pred, udf_gt, tau=0.5, ignore_mask=None):
+    """
+    udf_pred, udf_gt: 预测和真值UDF场
+    tau: udf -> occ场 阈值
+    ignore_mask: bool, True表示忽略该位置
+    return: (IoU_cl0, IoU_cl1, mIoU)
+    """
+    # 二值占据
+    pred_mask = (udf_pred <= tau)
+    gt_mask   = (udf_gt   <= tau)
+
+    # 目标（int64），以及 ignore_index = -1
+    if ignore_mask is not None:
+        tgt = torch.where(
+            ignore_mask.to(torch.bool),
+            torch.full(gt_mask.shape, -1, dtype=torch.int64, device=gt_mask.device),
+            gt_mask.to(torch.int64)
+        )
+        ignore_index = -1
+    else:
+        tgt = gt_mask.to(torch.int64)
+        ignore_index = None
+
+    # 前景 IoU（class=1）
+    tm_fg = BinaryJaccardIndex(ignore_index=ignore_index, validate_args=False).to(udf_pred.device)
+    tm_fg.update(preds=pred_mask, target=tgt)
+    iou_fg = tm_fg.compute().item()
+
+    # 背景 IoU（class=0）：对补集
+    tm_bg = BinaryJaccardIndex(ignore_index=ignore_index, validate_args=False).to(udf_pred.device)
+    tgt_bg = torch.where(tgt != -1, 1 - tgt, tgt) 
+    tm_bg.update(preds=~pred_mask, target=tgt_bg)
+    iou_bg = tm_bg.compute().item()
+
+    miou = 0.5 * (iou_bg + iou_fg)
+    return iou_bg, iou_fg, miou
+
+
+@torch.no_grad()
+def weighted_iou(iou_bg, iou_fg, y_true_mask, ignore_mask=None,
+                 mode="freq", w0=1.0, w1=1.0):
+    """
+    计算 Weighted IoU
+    - mode="custom": 使用 w0(背景), w1(前景)
+    - mode="freq"  : 按 GT 频次加权(FWIoU), 忽略区域不计入权重
+    y_true_mask: bool 或 0/1(前景=1), 用于统计权重(或自定义时可随意传)
+    ignore_mask: bool,可选;True 表示忽略, 不计入频次
+    返回: wIoU(float), (w0_used, w1_used)
+    """
+    if mode == "freq":
+        t = y_true_mask.to(torch.bool)
+        if ignore_mask is not None:
+            keep = ~ignore_mask.to(torch.bool)
+            t = t[keep]
+        w1_used = int(t.sum().item())
+        w0_used = int((~t).sum().item())
+    else:
+        w0_used, w1_used = float(w0), float(w1)
+
+    total_w = (w0_used + w1_used)
+    if total_w <= 0:
+        return 0.5 * (iou_bg + iou_fg), (w0_used, w1_used)
+
+    wIoU = (w0_used * iou_bg + w1_used * iou_fg) / total_w
+    return float(wIoU), (w0_used, w1_used)
+
+
+@torch.no_grad()
+def sdf_eval_metric_all_TM(output_udf, udf_label,
+                           sdf_threshold=0.5, mask=None,
+                           truncatedist=None, compute_surface_metrics=False):
+    """
+    用 UDF + 阈值 sdf_threshold 计算 IoU(0/1 与 mIoU/weighted), 以及(可选)UDF的 L1/L2(调用udf_l1_l2_metric)
+    参数:
+        output_udf: 预测 UDF
+        udf_label : GT UDF
+        sdf_threshold: UDF→占据的阈值, 如  1*voxel_size
+        mask: 忽略区域(bool), True=忽略
+        truncatedist: 传给 L1/L2 的截断距离(可选)
+    返回:
+        metrics: list[(name, value)]
+    """
+    # 1) IoU 相关
+    iou_bg, iou_fg, iou_m = iou_from_udf(output_udf, udf_label, tau=sdf_threshold, ignore_mask=mask)
+    gt_occ_mask = (udf_label <= sdf_threshold)
+    wavg, (w0_used, w1_used) = weighted_iou(iou_bg, iou_fg, gt_occ_mask, ignore_mask=mask,
+                                            mode="freq", w0=1.0, w1=1.0)
+
+    metrics = [
+        ("IoU_cl0", iou_bg),
+        ("IoU_cl1", iou_fg),
+        ("IoU_wavg", wavg),
+    ]
+    metrics.extend(udf_l1_l2_metric(output_udf, udf_label, mask, truncatedist))
 
     return metrics
 

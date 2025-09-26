@@ -143,6 +143,7 @@ loss_weight_SDF = [10000.0]
 #eval metric loss
 occ_threshold = 0.5 # eval metric loss after sigmoid
 sdf_threshold = 2.0 / vs_res[-1]
+use_cpu_metric = True # use simplified torchmetric to speed up training
 
 # 指定输出路径, 如果如下则模型ckpt位于output/test2/model/global_stepxxx, 训练log位于output/test2/tensorboard
 outputs = "output/test2"
