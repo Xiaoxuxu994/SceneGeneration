@@ -231,7 +231,11 @@ class Dataset(Dataset):
         avg_pose = torch.linalg.inv(avg_pose) # average w2c matrix
         in_c2ws = avg_pose @ in_c2ws 
 
-
+        # # align coordinate system (OpenCV coordinate) to the first camera
+        # in_02w = in_c2ws[0, ...]  # cam0 to world
+        # in_w20 = torch.linalg.inv(in_02w)  # world to cam0
+        # in_c2ws = in_w20 @ in_c2ws  # all cams to cam0
+        
         # Rescale the whole scene to a fixed scale
         scene_scale = torch.max(torch.abs(in_c2ws[:, :3, 3]))
         scene_scale = scene_scale_factor * scene_scale

@@ -76,7 +76,7 @@ class Images2LatentScene(nn.Module):
             embed_dim = 1024  # TODO: remove hard-coded
 
         # Create DPTHead
-        self.dpt_head = DPTHead(dim_in=2*embed_dim, feature_only=False)
+        self.dpt_head = DPTHead(dim_in=2*embed_dim, dim_pose=2*self.vggt_encoder.patch_embed.embed_dim, feature_only=False)
         
         # Initialize DPTHead weights
         self.dpt_head.apply(init_weights)

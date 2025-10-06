@@ -91,7 +91,8 @@ class Images2LatentScene(nn.Module):
             embed_dim = 1024  # TODO: remove hard-coded
 
         # Create feature fusion module
-        self.feature_fusion = DPTFeatureFusion(dim_in=2*embed_dim, features=self.config.model.transformer.d)
+        # self.feature_fusion = DPTFeatureFusion(dim_in=2*embed_dim, features=self.config.model.transformer.d)
+        self.feature_fusion = nn.Conv1d(in_channels=2*embed_dim*4, out_channels=self.config.model.transformer.d, kernel_size=1)  # 4 is the chosen number of VGGT intermediate_layer_idx from aggregated_tokens_list
         
         # Create transformer decoder blocks
         self.transformer_decoder = [
@@ -225,11 +226,21 @@ class Images2LatentScene(nn.Module):
             # Encode images with VGGT
             aggregated_tokens_list, patch_start_idx = self.vggt_encoder(images)  # [b, v_input, n_patches, 2*embed_dim] * aggregator_depth
             
-        # Fuse VGGT tokens
-        latent_tokens = self.feature_fusion(aggregated_tokens_list, images, patch_start_idx=patch_start_idx)  # [b, v_input, d, scratch_patch_h, scratch_patch_w]
-        b, v_input, d, scratch_patch_h, scratch_patch_w = latent_tokens.shape
-        latent_tokens = latent_tokens.permute(0, 1, 3, 4, 2).contiguous()  # [b, v_input, scratch_patch_h, scratch_patch_w, d]
-        n_latent_vectors = v_input*scratch_patch_h*scratch_patch_w
+        # # Fuse VGGT tokens
+        # latent_tokens = self.feature_fusion(aggregated_tokens_list, images, patch_start_idx=patch_start_idx)  # [b, v_input, d, scratch_patch_h, scratch_patch_w]
+        # b, v_input, d, scratch_patch_h, scratch_patch_w = latent_tokens.shape
+        # latent_tokens = latent_tokens.permute(0, 1, 3, 4, 2).contiguous()  # [b, v_input, scratch_patch_h, scratch_patch_w, d]
+        # n_latent_vectors = v_input*scratch_patch_h*scratch_patch_w
+        # latent_tokens = latent_tokens.reshape(b, n_latent_vectors, d).contiguous()  # treat n_patches and v_input as sequence length (n_latent_vectors)
+        
+        # Fuse VGGT tokens (simple Conv feature fusion)
+        latent_tokens = torch.cat([aggregated_tokens_list[i_layer] for i_layer in [4, 11, 17, 23]], dim=-1)  # [b, v_input, n_patches, 2*embed_dim*4]
+        b, v_input, n_patches, _ = latent_tokens.shape
+        latent_tokens = latent_tokens.permute(0, 1, 3, 2).reshape(b*v_input, -1, n_patches).contiguous()  # [b*v_input, 2*embed_dim*4, n_patches] for Conv1d
+        latent_tokens = self.feature_fusion(latent_tokens)  # [b*v_input, d, n_patches]
+        latent_tokens = latent_tokens.reshape(b, v_input, -1, n_patches).permute(0, 1, 3, 2).contiguous()  # [b, v_input, n_patches, d]
+        b, v_input, n_patches, d = latent_tokens.shape
+        n_latent_vectors = v_input*n_patches
         latent_tokens = latent_tokens.reshape(b, n_latent_vectors, d).contiguous()  # treat n_patches and v_input as sequence length (n_latent_vectors)
         
         # Get target pose tokens

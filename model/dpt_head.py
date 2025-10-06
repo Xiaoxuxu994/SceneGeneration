@@ -17,6 +17,7 @@ import torch.nn.functional as F
 from vggt.heads.head_act import activate_head
 from vggt.heads.utils import create_uv_grid, position_grid_to_embed
 
+from .pose_fusion import CrossAttentionStack
 
 class DPTHead(nn.Module):
     """
@@ -28,6 +29,7 @@ class DPTHead(nn.Module):
 
     Args:
         dim_in (int): Input dimension (channels).
+        dim_pose (int): Target pose vector dimension (channels).
         patch_size (int, optional): Patch size. Default is 14.
         output_dim (int, optional): Number of output channels. Default is 4.
         activation (str, optional): Activation type. Default is "inv_log".
@@ -43,6 +45,7 @@ class DPTHead(nn.Module):
     def __init__(
         self,
         dim_in: int,
+        dim_pose: int,
         patch_size: int = 14,
         output_dim: int = 4,
         activation: str = "inv_log",
@@ -100,7 +103,15 @@ class DPTHead(nn.Module):
 
         # Cross-attention for target pose conditioning for each intermediate_layer
         self.pose_attn = nn.ModuleList(
-            [nn.MultiheadAttention(embed_dim=dim_in, num_heads=16, batch_first=True) for _ in intermediate_layer_idx]
+            [
+                CrossAttentionStack(
+                    num_layers=1,
+                    dim_query=dim_pose,
+                    dim_context=dim_in,
+                    embed_dim=dim_pose,
+                    mlp=False,                    
+                )
+            for _ in intermediate_layer_idx]
         )
         
         if feature_only:
@@ -221,7 +232,7 @@ class DPTHead(nn.Module):
             # Treat v_{input/target}*n_patches_{input/target} as sequence length
             x = x.reshape(B, -1, x.shape[-1]).contiguous()  # [b, v_input*n_patches_input, 2*embed_dim]
             target_pose_tokens = target_pose_tokens.reshape(B, -1, target_pose_tokens.shape[-1]).contiguous()  # [b, v_target*n_patches_target, d]
-            x, _ = self.pose_attn[dpt_idx](query=target_pose_tokens, key=x, value=x, need_weights=False)  # [b, v_target*n_patches_target, 2*embed_dim]
+            x = self.pose_attn[dpt_idx](query_tokens=target_pose_tokens, context_tokens=x)  # [b, v_target*n_patches_target, 2*embed_dim]
             
             x = x.reshape(B * v_target, -1, x.shape[-1]).contiguous()  # [b*v_target, n_patches_target, 2*embed_dim]            
 
