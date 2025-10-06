@@ -47,8 +47,20 @@ We have verified that the re-implemented version matches the performance of the 
 ```
 conda create -n LVSM python=3.11
 conda activate LVSM
+```
+
+For VGGT:
+```
 pip install -r requirements.txt
 pip install git+https://github.com/facebookresearch/vggt.git@e56963328b7476e615ce8dda9164d381f8dc07a3#egg=vggt
+```
+
+For MapAnything (with PRoPE):
+```
+pip install -r https://raw.githubusercontent.com/liruilong940607/prope/893cd85ff91d4f19602c85e173dd1c7600915aed/requirements.txt
+pip install git+https://github.com/liruilong940607/prope.git@893cd85ff91d4f19602c85e173dd1c7600915aed
+pip install git+https://github.com/facebookresearch/map-anything.git@46af95e6c976bc29d5de37e433e4240217caee5b#egg=mapanything
+pip install -r requirements.txt
 ```
 As we used [xformers](https://github.com/facebookresearch/xformers) `memory_efficient_attention`, the GPU device compute capability needs > 8.0. Otherwise, it would pop up an error. Check your GPU compute capability in [CUDA GPUs Page](https://developer.nvidia.com/cuda-gpus#compute).
 
