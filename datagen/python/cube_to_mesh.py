@@ -352,13 +352,15 @@ def grid_to_mesh(grid_path: str, mesh_path: str):
             mesh_stem = mesh_path.stem
             
             # create a point cloud
-            print("exporting point cloud file with normal vectors")
             pcd_stem = str(mesh_stem)+"_pcd"
             pcd_path = mesh_path.with_stem(pcd_stem)
-            o3d.io.write_point_cloud(str(pcd_path), pcd)
+            if not pcd_path.exists():
+                print("exporting point cloud file with normal vectors")
+                o3d.io.write_point_cloud(str(pcd_path), pcd)
             
-            print("running Poisson Reconstruction with depth {}".format(args.depth))
-            os.system(EXE_CMD[args.engine](str(pcd_path), str(mesh_path), args.depth))
+            if not mesh_path.exists():
+                print("running Poisson Reconstruction with depth {}".format(args.depth))
+                os.system(EXE_CMD[args.engine](str(pcd_path), str(mesh_path), args.depth))
             
             # trim low density submesh
             if args.trim:    

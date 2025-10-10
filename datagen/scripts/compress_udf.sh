@@ -76,9 +76,7 @@ python python/compress_cube.py \
     --mesh_dir data/datasets/scannetpp_mesh_norm_-1_1_0.95/ \
     --src_size 256 \
     --tar_size 512 \
-    --thres 1 \
-    --num_workers 1 \
-    --grad \
-    --sign \
+    --thres 5 \
+    --num_workers 32 \
     --check \
     --stats

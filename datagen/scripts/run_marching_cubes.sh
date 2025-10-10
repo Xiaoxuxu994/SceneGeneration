@@ -52,6 +52,20 @@
 #     --num_workers 1 \
 #     --force
 
+# Marching Cubes on octree
+python python/cube_to_mesh.py \
+    --in_dir data/datasets/scannetpp_results/20250902/ \
+    --mode octree \
+    --voxel_res 512 \
+    --oct_src_size 256 \
+    --oct_tar_size 512 \
+    --oct_thres 3 \
+    --engine mc \
+    --level 0.005 \
+    --num_workers 1 \
+    --force
+
+
 # # Marching Cubes on octree
 # python python/cube_to_mesh.py \
 #     --in_dir data/datasets/riemann_scan_volume_-1_1_0.95/ \
@@ -176,24 +190,24 @@
 #     --num_workers 1 \
 #     --force
 
-# Poisson Reconstruction using compiled executables
-python python/cube_to_mesh.py \
-    --in_dir data/datasets/scannetpp_results/20250902/ \
-    --grad_dir data/datasets/scannetpp_results/20250902/ \
-    --sign_dir data/datasets/scannetpp_results/20250902/ \
-    --mode octree \
-    --voxel_res 512 \
-    --oct_src_size 256 \
-    --oct_tar_size 512 \
-    --oct_thres 3 \
-    --engine poisson_exe \
-    --trim \
-    --depth 10 \
-    --suffix ply \
-    --precise_grad \
-    --normal \
-    --num_workers 1 \
-    --force
+# # Poisson Reconstruction using compiled executables
+# python python/cube_to_mesh.py \
+#     --in_dir data/datasets/scannetpp_results/20250909/ \
+#     --grad_dir data/datasets/scannetpp_results/20250909/ \
+#     --sign_dir data/datasets/scannetpp_results/20250909/ \
+#     --mode octree \
+#     --voxel_res 512 \
+#     --oct_src_size 256 \
+#     --oct_tar_size 512 \
+#     --oct_thres 3 \
+#     --engine ssd_exe \
+#     --trim \
+#     --depth 10 \
+#     --suffix ply \
+#     --precise_grad \
+#     --normal \
+#     --num_workers 1 \
+#     --force
 
 # # Poisson Reconstruction
 # python python/cube_to_mesh.py \
