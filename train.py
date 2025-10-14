@@ -12,7 +12,7 @@ import torch.distributed as dist
 from setup import init_config, init_distributed, init_mlflow_and_backup
 from utils.metric_utils import visualize_intermediate_results
 from utils.training_utils import create_optimizer, create_lr_scheduler, auto_resume_job, print_rank0
-from utils.data_utils import VGGT_collate, MapAnything_collate, MA_collate
+from utils.data_utils import VGGT_collate, MapAnything_collate, MA_collate, PRoPE_collate
 
 
 # Load config and read(override) arguments from CLI
@@ -48,7 +48,9 @@ dataset = Dataset(config)
 batch_size_per_gpu = config.training.batch_size_per_gpu
 
 datasampler = DistributedSampler(dataset)
-if 'VGGT' in module:
+if 'PRoPE' in config.model.class_name:
+    collate_fn = PRoPE_collate
+elif 'VGGT' in module:
     collate_fn = VGGT_collate
 elif 'MapAnything' in module:
     collate_fn = MapAnything_collate

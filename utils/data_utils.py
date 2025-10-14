@@ -9,8 +9,95 @@ from easydict import EasyDict as edict
 from einops import rearrange
 import imageio
 
-from uniception.models.encoders.image_normalizations import IMAGE_NORMALIZATION_DICT
-from mapanything.utils.geometry import rotation_matrix_to_quaternion
+
+def standardize_quaternion(quaternions: torch.Tensor) -> torch.Tensor:
+    """
+    Convert a unit quaternion to a standard form: one in which the real
+    part is non negative.
+
+    Args:
+        quaternions: Quaternions with real part last,
+            as tensor of shape (..., 4).
+
+    Returns:
+        Standardized quaternions as tensor of shape (..., 4).
+    """
+    return torch.where(quaternions[..., 3:4] < 0, -quaternions, quaternions)
+
+
+def _sqrt_positive_part(x: torch.Tensor) -> torch.Tensor:
+    """
+    Returns torch.sqrt(torch.max(0, x))
+    but with a zero subgradient where x is 0.
+    """
+    ret = torch.zeros_like(x)
+    positive_mask = x > 0
+    if torch.is_grad_enabled():
+        ret[positive_mask] = torch.sqrt(x[positive_mask])
+    else:
+        ret = torch.where(positive_mask, torch.sqrt(x), ret)
+    return ret
+
+
+def rotation_matrix_to_quaternion(matrix: torch.Tensor) -> torch.Tensor:
+    """
+    Convert rotations given as rotation matrices to quaternions.
+
+    Args:
+        matrix: Rotation matrices as tensor of shape (..., 3, 3).
+
+    Returns:
+        quaternions with real part last, as tensor of shape (..., 4).
+        Quaternion Order: XYZW or say ijkr, scalar-last
+    """
+    if matrix.size(-1) != 3 or matrix.size(-2) != 3:
+        raise ValueError(f"Invalid rotation matrix shape {matrix.shape}.")
+
+    batch_dim = matrix.shape[:-2]
+    m00, m01, m02, m10, m11, m12, m20, m21, m22 = torch.unbind(
+        matrix.reshape(batch_dim + (9,)), dim=-1
+    )
+
+    q_abs = _sqrt_positive_part(
+        torch.stack(
+            [
+                1.0 + m00 + m11 + m22,
+                1.0 + m00 - m11 - m22,
+                1.0 - m00 + m11 - m22,
+                1.0 - m00 - m11 + m22,
+            ],
+            dim=-1,
+        )
+    )
+
+    # we produce the desired quaternion multiplied by each of r, i, j, k
+    quat_by_rijk = torch.stack(
+        [
+            torch.stack([q_abs[..., 0] ** 2, m21 - m12, m02 - m20, m10 - m01], dim=-1),
+            torch.stack([m21 - m12, q_abs[..., 1] ** 2, m10 + m01, m02 + m20], dim=-1),
+            torch.stack([m02 - m20, m10 + m01, q_abs[..., 2] ** 2, m12 + m21], dim=-1),
+            torch.stack([m10 - m01, m20 + m02, m21 + m12, q_abs[..., 3] ** 2], dim=-1),
+        ],
+        dim=-2,
+    )
+
+    # We floor here at 0.1 but the exact level is not important; if q_abs is small,
+    # the candidate won't be picked.
+    flr = torch.tensor(0.1).to(dtype=q_abs.dtype, device=q_abs.device)
+    quat_candidates = quat_by_rijk / (2.0 * q_abs[..., None].max(flr))
+
+    # if not for numerical problems, quat_candidates[i] should be same (up to a sign),
+    # forall i; we pick the best-conditioned one (with the largest denominator)
+    out = quat_candidates[
+        F.one_hot(q_abs.argmax(dim=-1), num_classes=4) > 0.5, :
+    ].reshape(batch_dim + (4,))
+
+    # Convert from rijk to ijkr
+    out = out[..., [1, 2, 3, 0]]
+
+    out = standardize_quaternion(out)
+
+    return out
 
 
 def create_video_from_frames(frames, output_video_file, framerate=30):
@@ -429,6 +516,106 @@ def pad_images_to_max_size(images, intrinsics):
     return images, intrinsics
 
 
+def crop_images_to_min_size(images, intrinsics):
+    """
+    images: list of tensors [n, 3, H, W] with possibly different H/W.
+    intrinsics: list of tensors [n, 4] representing fx, fy, cx, cy.
+    Returns:
+        cropped_images: tensor [B, n, 3, H_min, W_min]
+        adjusted_intrinsics: tensor [B, n, 4]
+    """
+    # Find minimum dimensions across batch
+    min_height = min(img.shape[-2] for img in images)
+    min_width = min(img.shape[-1] for img in images)
+
+    cropped_images = []
+    adjusted_intrinsics = []
+
+    for img, fxfycxcy in zip(images, intrinsics):
+        H, W = img.shape[-2:]
+        start_y = (H - min_height) // 2
+        start_x = (W - min_width) // 2
+
+        # Crop the image (center crop)
+        cropped_img = img[..., start_y:start_y + min_height, start_x:start_x + min_width]
+
+        # Adjust intrinsics: move principal point relative to new crop
+        fxfycxcy = fxfycxcy.clone()
+        fxfycxcy[..., 2] -= start_x  # shift cx
+        fxfycxcy[..., 3] -= start_y  # shift cy
+
+        cropped_images.append(cropped_img)
+        adjusted_intrinsics.append(fxfycxcy)
+
+    cropped_images = torch.stack(cropped_images, dim=0)
+    adjusted_intrinsics = torch.stack(adjusted_intrinsics, dim=0)
+
+    return cropped_images, adjusted_intrinsics
+
+
+def resize_images_to_target_size(images, intrinsics, target_height, target_width):
+    """
+    Resize all images in a batch to target_height x target_width by cropping or padding.
+
+    Args:
+        images: list of tensors [n, 3, H, W].
+        intrinsics: list of tensors [n, 4] representing fx, fy, cx, cy.
+        target_height: desired height (int).
+        target_width: desired width (int).
+
+    Returns:
+        resized_images: tensor [B, n, 3, target_height, target_width].
+        adjusted_intrinsics: tensor [B, n, 4].
+    """
+    resized_images = []
+    adjusted_intrinsics = []
+
+    for img, fxfycxcy in zip(images, intrinsics):
+        H, W = img.shape[-2:]
+        new_img = img
+        new_intrinsics = fxfycxcy.clone()
+
+        # --- CROP if larger ---
+        if H > target_height or W > target_width:
+            start_y = max((H - target_height) // 2, 0)
+            start_x = max((W - target_width) // 2, 0)
+            new_img = new_img[..., start_y:start_y + target_height, start_x:start_x + target_width]
+            new_intrinsics[..., 2] -= start_x  # adjust cx
+            new_intrinsics[..., 3] -= start_y  # adjust cy
+
+        # Update sizes after cropping
+        H, W = new_img.shape[-2:]
+
+        # --- PAD if smaller ---
+        pad_height = max(target_height - H, 0)
+        pad_width = max(target_width - W, 0)
+
+        if pad_height > 0 or pad_width > 0:
+            pad_top = pad_height // 2
+            pad_bottom = pad_height - pad_top
+            pad_left = pad_width // 2
+            pad_right = pad_width - pad_left
+
+            new_img = F.pad(
+                new_img,
+                (pad_left, pad_right, pad_top, pad_bottom),
+                mode="constant",
+                value=1.0
+            )
+
+            # adjust intrinsics for padding
+            new_intrinsics[..., 2] += pad_left
+            new_intrinsics[..., 3] += pad_top
+
+        resized_images.append(new_img)
+        adjusted_intrinsics.append(new_intrinsics)
+
+    resized_images = torch.stack(resized_images, dim=0)
+    adjusted_intrinsics = torch.stack(adjusted_intrinsics, dim=0)
+
+    return resized_images, adjusted_intrinsics
+
+
 def VGGT_collate(batch):
     """
     Collate function that pads images and stacks everything else.
@@ -476,7 +663,7 @@ def MA_collate(batch):
     images = [b["image"] for b in batch]
     fxfycxcy = [b["fxfycxcy"] for b in batch]
     images, fxfycxcy = pad_images_to_max_size(images, fxfycxcy)
-
+    
     # Everything else -> stack/list
     c2w = torch.stack([b["c2w"] for b in batch], dim=0)
     indices = torch.stack([b["index"] for b in batch], dim=0)
@@ -495,6 +682,33 @@ def MA_collate(batch):
     }
 
 
+def PRoPE_collate(batch):
+    """
+    Collate function that pads images and stacks everything else.
+    """
+    # Images & intrinsics -> pad
+    images = [b["image"] for b in batch]
+    fxfycxcy = [b["fxfycxcy"] for b in batch]
+    images, fxfycxcy = resize_images_to_target_size(images, fxfycxcy, target_height=294, target_width=518)
+    
+    # Everything else -> stack/list
+    c2w = torch.stack([b["c2w"] for b in batch], dim=0)
+    indices = torch.stack([b["index"] for b in batch], dim=0)
+    scene_names = [b["scene_name"] for b in batch]
+    is_metric_scale = torch.stack([b["is_metric_scale"] for b in batch], dim=0)
+    norm_type = [b["norm_type"] for b in batch]
+    
+    return {
+        "image": images,
+        "c2w": c2w,
+        "fxfycxcy": fxfycxcy,
+        "index": indices,
+        "scene_name": scene_names,
+        "is_metric_scale": is_metric_scale,
+        "norm_type": norm_type,
+    }
+    
+    
 def MapAnything_collate(batch):
     """
     Collate function for batching views with padding and ray adjustment.
@@ -579,6 +793,8 @@ def MapAnything_collate(batch):
 
 
 def denormalize(image, norm_type="dinov2"):
+    from uniception.models.encoders.image_normalizations import IMAGE_NORMALIZATION_DICT
+
     img_norm = IMAGE_NORMALIZATION_DICT[norm_type]
     mean = img_norm.mean.view(1, 1, 3, 1, 1).to(image.device)
     std = img_norm.std.view(1, 1, 3, 1, 1).to(image.device)
