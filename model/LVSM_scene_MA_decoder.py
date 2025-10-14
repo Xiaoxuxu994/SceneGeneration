@@ -4,6 +4,7 @@ import gc
 import os
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from easydict import EasyDict as edict
 from einops.layers.torch import Rearrange
 from einops import rearrange, repeat
@@ -12,7 +13,7 @@ from utils import camera_utils, data_utils
 from .transformer import QK_Norm_TransformerBlock, init_weights
 from .loss import LossComputer
 from .mapanything_encoder import MapAnythingEncoder
-from .feature_fusion_mapanything import DPTFeatureFusion
+from .feature_fusion import DPTFeatureFusion
 from .pose_fusion import CrossAttentionStack
 
  
@@ -110,10 +111,12 @@ class Images2LatentScene(nn.Module):
             ):
                 param.requires_grad = True
 
-        # # Create feature fusion module
+        # Create feature fusion module
         # self.feature_fusion = DPTFeatureFusion(
-        #     hooks=range(4),
-        #     input_feature_dims=[self.mapanything_encoder.encoder.enc_embed_dim] + [self.config.model.transformer.d]*3
+        #     dim_in=[self.mapanything_encoder.encoder.enc_embed_dim] + [self.config.model.transformer.d]*3,  # TODO: remove hard-coded
+        #     features=self.config.model.transformer.d,
+        #     intermediate_layer_idx=range(4),
+        #     pos_embed=False,
         # )
         self.feature_fusion = nn.Conv1d(
             in_channels=self.mapanything_encoder.encoder.enc_embed_dim + self.config.model.transformer.d*3,  # TODO: remove hard-coded
@@ -250,12 +253,17 @@ class Images2LatentScene(nn.Module):
             input.camera_pose_trans,
             input.is_metric_scale
         )
-        _, embed_dim, patch_h, patch_w = aggregated_tokens_list[0].shape
+        _, _, patch_h, patch_w = aggregated_tokens_list[0].shape
         n_patches = patch_h * patch_w
         
         # # Fuse MapAnything tokens
-        # latent_tokens = self.feature_fusion(aggregated_tokens_list)
-        # raise ValueError(latent_tokens.shape)
+        # b, v_input, _, _, _ = input.image.shape
+        # aggregated_tokens_list = [t.view(b, v_input, t.size(1), -1).permute(0, 1, 3, 2) for t in aggregated_tokens_list]
+        # latent_tokens = self.feature_fusion(aggregated_tokens_list, input.image, patch_start_idx=0)  # [b, v_input, d, scratch_patch_h, scratch_patch_w]
+        # b, v_input, d, scratch_patch_h, scratch_patch_w = latent_tokens.shape
+        # latent_tokens = latent_tokens.permute(0, 1, 3, 4, 2).contiguous()  # [b, v_input, scratch_patch_h, scratch_patch_w, d]
+        # n_latent_vectors = v_input*scratch_patch_h*scratch_patch_w
+        # latent_tokens = latent_tokens.reshape(b, n_latent_vectors, d).contiguous()  # treat n_patches and v_input as sequence length (n_latent_vectors)
         
         # Fuse MapAnything tokens (simple Conv feature fusion)
         latent_tokens = torch.cat(aggregated_tokens_list, dim=1)  # [b*v_input, embed_dim*4, patch_h, patch_w]
@@ -287,8 +295,28 @@ class Images2LatentScene(nn.Module):
         # target_pose_tokens = self.target_pose_proj(target_pose_tokens)  # [b*v_target, n_patches_target, d]
         
         # Get target pose tokens (LVSM way)
-        target_pose_cond= self.get_posed_input(ray_o=target.ray_o, ray_d=target.ray_d)  # [b, v_target, c, h, w]
-        b, v_target, c, h, w = target_pose_cond.size()
+        mapanything_patch_size = 14
+        if self.config.model.target_pose_tokenizer.patch_size != mapanything_patch_size:
+            # Reshape target image (and recompute rays) to use LVSM pre-trained decoder
+            b, v_target, c, h, w = target.image.shape
+            patch_size = self.config.model.target_pose_tokenizer.patch_size
+            resize_h = self.config.model.target_pose_tokenizer.image_size
+            resize_w = int(resize_h / h * w)
+            resize_w = int(round(resize_w / patch_size) * patch_size)
+            target.image = target.image.contiguous().view(b * v_target, c, h, w)
+            target.image = F.interpolate(
+                target.image,
+                size=(resize_h, resize_w),
+                mode="bilinear",
+                align_corners=False
+            )
+            target.image = target.image.contiguous().view(b, v_target, c, resize_h, resize_w)
+            target.image_h_w = resize_h, resize_w
+            target.ray_o, target.ray_d = self.process_data.compute_rays(
+                c2w=target.c2w, fxfycxcy=target.fxfycxcy, h=resize_h, w=resize_w,
+            )
+        target_pose_cond = self.get_posed_input(ray_o=target.ray_o, ray_d=target.ray_d)  # [b, v_target, c, resize_h, resize_w]
+        b, v_target, c, resize_h, resize_w = target_pose_cond.size()
         target_pose_tokens = self.target_pose_tokenizer(target_pose_cond)  # [b*v_target, n_patches_target, d]
         _, n_patches_target, d = target_pose_tokens.shape
         
