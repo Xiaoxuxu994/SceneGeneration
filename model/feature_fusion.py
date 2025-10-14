@@ -14,7 +14,6 @@ from typing import List, Dict, Tuple, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from vggt.heads.utils import create_uv_grid, position_grid_to_embed
 
 
 class DPTFeatureFusion(nn.Module):
@@ -38,7 +37,7 @@ class DPTFeatureFusion(nn.Module):
 
     def __init__(
         self,
-        dim_in: int,
+        dim_in: List[int],
         patch_size: int = 14,
         activation: str = "inv_log",
         features: int = 256,
@@ -54,11 +53,14 @@ class DPTFeatureFusion(nn.Module):
         self.down_ratio = down_ratio
         self.intermediate_layer_idx = intermediate_layer_idx
 
-        self.norm = nn.LayerNorm(dim_in)
+        if isinstance(dim_in, int):
+            dim_in = [dim_in]*len(out_channels)
+            
+        self.norms = nn.ModuleList([nn.LayerNorm(d_in) for d_in in dim_in])
 
         # Projection layers for each output channel from tokens.
         self.projects = nn.ModuleList(
-            [nn.Conv2d(in_channels=dim_in, out_channels=oc, kernel_size=1, stride=1, padding=0) for oc in out_channels]
+            [nn.Conv2d(in_channels=d_in, out_channels=oc, kernel_size=1, stride=1, padding=0) for d_in, oc in zip(dim_in, out_channels)]
         )
 
         # Resize layers for upsampling feature maps.
@@ -182,7 +184,7 @@ class DPTFeatureFusion(nn.Module):
 
             x = x.reshape(B * S, -1, x.shape[-1]).contiguous()
 
-            x = self.norm(x)
+            x = self.norms[dpt_idx](x)
 
             x = x.permute(0, 2, 1).reshape((x.shape[0], x.shape[-1], patch_h, patch_w)).contiguous()
 
@@ -211,6 +213,8 @@ class DPTFeatureFusion(nn.Module):
         """
         Apply positional embedding to tensor x.
         """
+        from vggt.heads.utils import create_uv_grid, position_grid_to_embed
+        
         patch_w = x.shape[-1]
         patch_h = x.shape[-2]
         pos_embed = create_uv_grid(patch_w, patch_h, aspect_ratio=W / H, dtype=x.dtype, device=x.device)
