@@ -9,6 +9,8 @@ from torch.utils.data import DataLoader, DistributedSampler
 import torch.distributed as dist
 from setup import init_config, init_distributed
 from utils.metric_utils import export_results, summarize_evaluation
+from utils.data_utils import VGGT_collate, MapAnything_collate, MA_collate, PRoPE_collate
+
 
 # Load config and read(override) arguments from CLI
 config = init_config()
@@ -38,6 +40,16 @@ Dataset = importlib.import_module(module).__dict__[class_name]
 dataset = Dataset(config)
 
 datasampler = DistributedSampler(dataset)
+if 'PRoPE' in config.model.class_name:
+    collate_fn = PRoPE_collate
+elif 'VGGT' in module:
+    collate_fn = VGGT_collate
+elif 'MapAnything' in module:
+    collate_fn = MapAnything_collate
+elif 'MA' in module:
+    collate_fn = MA_collate
+else:
+    collate_fn = None
 dataloader = DataLoader(
     dataset,
     batch_size=config.training.batch_size_per_gpu,
@@ -47,7 +59,8 @@ dataloader = DataLoader(
     persistent_workers=True,
     pin_memory=False,
     drop_last=True,
-    sampler=datasampler
+    sampler=datasampler,
+    collate_fn=collate_fn
 )
 dataloader_iter = iter(dataloader)
 
@@ -88,7 +101,7 @@ with torch.no_grad(), torch.autocast(
         result = model(batch)
         if config.inference.get("render_video", False):
             result= model.module.render_video(result, **config.inference.render_video_config)
-        export_results(result, config.inference_out_dir, compute_metrics=config.inference.get("compute_metrics"))
+        export_results(result, config.inference_out_dir, compute_metrics=config.inference.get("compute_metrics"), save_img=False)
     torch.cuda.empty_cache()
 
 
