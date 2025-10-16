@@ -343,16 +343,17 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
         self.datatype = kwargs.get("datatype",'pth')
         self.freequery_root = kwargs.get("freequery_root", None)
         with open(data_list_name, 'r') as f:
+            content = f.readlines()
             if self.datatype == 'pth':
-                self.samples = [os.path.join(self.data_root, p.strip()) for p in f.readlines()] ## pth
+                self.samples = [os.path.join(self.data_root, p.strip()) for p in content] ## pth
             elif self.datatype == 'npz':
-                self.samples = [os.path.join(self.data_root, p.strip().replace('.pth','.npz')) for p in f.readlines()] ## npz
+                self.samples = [os.path.join(self.data_root, p.strip().replace('.pth','.npz')) for p in content] ## npz
             else:
                 raise ValueError(f"[ERROR] Unrecognized datatype: {self.datatype}. Supported types are ['pth', 'npz'].")
             # free query 单独数据路径构建 只针对 20251015 数据版本
             self.samples_freequery = []
             if self.freequery_root is not None:
-                for p in f.readlines():
+                for p in content:
                     sha256 = p.strip().split("/")[-1].split(".")[0]
                     self.samples_freequery.append(os.path.join(self.freequery_root, sha256, 'queries_10000000.npz'))
         self.vs_res = kwargs.get("vs_res",[128])

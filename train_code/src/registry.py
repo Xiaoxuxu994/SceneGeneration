@@ -19,6 +19,8 @@ def build_dataset_kwargs(cfg):
         kwargs["datatype"] = cfg.datatype
     if getattr(cfg, "transform", False):
         kwargs["transform"] = cfg.transform
+    if getattr(cfg, "freequery_root", False):
+        kwargs["freequery_root"] = cfg.freequery_root
     return kwargs
 
 def build_module(module, builder, **kwargs):
