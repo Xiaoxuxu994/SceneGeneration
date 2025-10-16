@@ -54,6 +54,7 @@ truncatedist = 5 * 2.0 / 256
 train_data_args = dict(
     datatype = 'npz',
     vs_res = vs_res, #  gen data[key](key in vs_res):pc_query_{vs}, pc_query_sdf_{vs}
+    freequery_root = '"/home/ma-user/modelarts/inputs/freequery_root_1/', # 补充的freequery数据
     transform = {
     'GridSample': {
         'enabled': True,
