@@ -273,15 +273,150 @@ class DecodeQuerySampleOCC(object):
         data_dict[klbl] = lbl
         return data_dict
 
+# @TRANSFORMS.register_module()
+# class DecodeQuerySampleSDF(object):
+#     def __init__(
+#         self,
+#         sample_rate=0.1,
+#         max_number = 100000,
+#         vs_list=[128,],
+#         near_thresh=0.05,
+#         near_ratio=0.8,
+#     ):
+#         '''
+#             currently only support single voxel size input
+#         '''
+#         self.sample_rate = sample_rate
+#         self.vs_list = vs_list # for voxel size prefix
+#         self.max_number = max_number
+#         self.near_thresh = near_thresh
+#         self.near_ratio = near_ratio
+
+#     def sample_points(self, points, labels, grids, segment=None):
+#         """
+#             Helper function to sample points and labels for both classes
+#         """
+
+#         # Split points and labels with threshold
+#         near_mask = labels <= self.near_thresh 
+#         far_mask = labels > self.near_thresh
+
+#         points_near = points[near_mask]
+#         points_far = points[far_mask]
+#         labels_near = labels[near_mask]
+#         labels_far = labels[far_mask]
+#         grids_near = grids[near_mask]
+#         grids_far = grids[far_mask]
+        
+#         # Handle segment data if it exists
+#         segment_near, segment_far = None, None
+
+#         if segment is not None:
+#             segment_near = segment[near_mask]
+#             segment_far = segment[far_mask]
+
+#         total_target = min(self.max_number, int(len(points) * self.sample_rate))
+#         near_target = int(total_target * self.near_ratio)
+#         far_target = total_target - near_target
+
+#         near_idx = torch.randperm(len(points_near))[:min(near_target, len(points_near))]
+#         far_idx = torch.randperm(len(points_far))[:min(far_target, len(points_far))]
+
+#         sampled_points = np.concatenate([points_near[near_idx], points_far[far_idx]], axis=0)
+#         sampled_label = np.concatenate([labels_near[near_idx], labels_far[far_idx]], axis=0)
+#         sampled_grid = np.concatenate([grids_near[near_idx], grids_far[far_idx]], axis=0)
+
+#         if segment is not None:
+#             sampled_segment = np.concatenate([segment_near[near_idx], segment_far[far_idx]], axis=0)
+#         else:
+#             sampled_segment = None
+
+#         perm = torch.randperm(len(sampled_points))
+#         sampled_points = sampled_points[perm]
+#         sampled_label = sampled_label[perm]
+#         sampled_grid = sampled_grid[perm]
+#         if sampled_segment is not None:
+#             sampled_segment = sampled_segment[perm]
+
+
+#         return sampled_points, sampled_label, sampled_grid, sampled_segment
+    
+        
+#     def __call__(self, data_dict):
+
+#         # Extract the point cloud, labels, and optionally segments
+#         for vs in self.vs_list:
+#             points = data_dict[f'pc_query_{vs}']
+#             labels = data_dict[f'pc_query_sdf_{vs}']
+#             grids = data_dict[f'pc_query_grid_{vs}']
+#             segment = data_dict.get(f'pc_query_segment_{vs}', None)
+#             # If sample_rate is 1.0, return data_dict as is
+#             if self.sample_rate == 1.0:
+#                 data_dict[f'pc_query_{vs}'] = points
+#                 data_dict[f'pc_query_sdf_{vs}'] = labels
+#                 data_dict[f'pc_query_grid_{vs}'] = grids
+#                 if segment is not None:
+#                     data_dict[f'pc_query_segment_{vs}'] = segment
+#                 return data_dict
+
+#             sampled_points, sampled_label, sampled_grid, sampled_segment = self.sample_points(points, labels, grids, segment)
+
+#             if sampled_segment is not None:
+#                 data_dict[f'pc_query_segment_{vs}'] = sampled_segment
+
+#             # Update the data_dict with the sampled and shuffled points and labels
+#             data_dict[f'pc_query_{vs}'] = sampled_points
+#             data_dict[f'pc_query_sdf_{vs}'] = sampled_label
+#             data_dict[f'pc_query_grid_{vs}'] = sampled_grid
+                   
+#         return data_dict
+
+@TRANSFORMS.register_module()
+class MergeDecodeQuery(object):
+    def __init__(self, vs_list=[256,512]):
+        self.vs_list = vs_list
+ 
+    def __call__(self, data_dict):
+        data_dict['pc_query_merge'] = np.concatenate([data_dict[f'pc_query_{vs}'] for vs in self.vs_list], axis = 0)
+        data_dict['pc_query_sdf_merge'] = np.concatenate([data_dict[f'pc_query_sdf_{vs}'] for vs in self.vs_list], axis = 0)
+        # for vs in self.vs_list:
+        #     del data_dict[f'pc_query_{vs}']
+        #     del data_dict[f'pc_query_sdf_{vs}']
+        cnt_seg = 0
+        cnt_msk = 0
+        for vs in self.vs_list:
+            mask = data_dict.get(f'mask_gt_{vs}', None)
+            segment = data_dict.get(f'pc_query_segment_{vs}', None)
+            if segment is not None:
+                cnt_seg += 1
+            if mask is not None:
+                cnt_msk += 1
+        if cnt_seg == len(self.vs_list):
+            data_dict['pc_query_segment_merge'] = np.concatenate([data_dict[f'pc_query_segment_{vs}'] for vs in self.vs_list], axis = 0)
+            # for vs in self.vs_list:
+            #     del data_dict[f'pc_query_segment_{vs}']
+        if cnt_msk == len(self.vs_list):
+            data_dict['mask_gt_merge'] = np.concatenate([data_dict[f'mask_gt_{vs}'] for vs in self.vs_list], axis = 0)
+            # for vs in self.vs_list:
+            #     del data_dict[f'mask_gt_{vs}']
+        ## Add permutation of merge point
+        N = data_dict['pc_query_merge'].shape[0]
+        perm = np.random.permutation(N)  
+        for k in ['pc_query_merge', 'pc_query_sdf_merge', 'pc_query_segment_merge', 'mask_gt_merge']:
+            if k in data_dict:
+                data_dict[k] = data_dict[k][perm]        
+        return data_dict
+    
 @TRANSFORMS.register_module()
 class DecodeQuerySampleSDF(object):
     def __init__(
         self,
         sample_rate=0.1,
         max_number = 100000,
-        vs_list=[128,],
-        near_thresh=0.05,
-        near_ratio=0.8,
+        vs_list=[256, 512],
+        near_thresh=[0.05, None],
+        near_ratio=[0.8, None],
+        sample_type=['nearfar', 'uniform'],
     ):
         '''
             currently only support single voxel size input
@@ -291,32 +426,82 @@ class DecodeQuerySampleSDF(object):
         self.max_number = max_number
         self.near_thresh = near_thresh
         self.near_ratio = near_ratio
+        self.sample_type = sample_type
+        
+    @staticmethod
+    def _rand_indices(N, k, backend="np", device=None):
+        """返回长度为 k 的随机不重复下标"""
+        if N == 0 or k == 0:
+            return None
+        if backend == "torch":
+            idx = torch.randperm(N, device=device)[:k]
+            return idx
+        else:
+            # numpy
+            return np.random.choice(N, size=k, replace=False)
+    def _uniform_random_sample(self, points, labels, segment=None, mask=None):
+        """
+        统一随机采样（保持输入/输出类型一致；segment/mask 同步采样）
+        """
+        # 检查后端与形状
+        is_torch = isinstance(points, torch.Tensor)
+        N = points.shape[0]
+        if N == 0:
+            return points, labels, segment, mask
 
-    def sample_points(self, points, labels, grids, segment=None):
+        # 目标采样数
+        k = min(self.max_number, int(np.ceil(N * self.sample_rate)))
+        k = max(1, k) if N > 0 else 0
+        if self.sample_rate >= 1.0 or k >= N:
+            # 等价于不采样（直接返回）
+            return points, labels, segment, mask
+
+        # 生成随机下标
+        if is_torch:
+            device = points.device
+            idx = self._rand_indices(N, k, backend="torch", device=device)
+            # 索引
+            pts_s = points.index_select(0, idx)
+            lbl_s = labels.index_select(0, idx)
+            seg_s = segment.index_select(0, idx) if segment is not None else None
+            msk_s = mask.index_select(0, idx) if mask is not None else None
+        else:
+            idx = self._rand_indices(N, k, backend="np")
+            pts_s = points[idx]
+            lbl_s = labels[idx]
+            seg_s = segment[idx] if segment is not None else None
+            msk_s = mask[idx] if mask is not None else None
+
+        return pts_s, lbl_s, seg_s, msk_s
+
+    def _near_far_sample(self, points, labels, near_thresh, near_ratio, segment=None, mask=None):
         """
             Helper function to sample points and labels for both classes
         """
 
         # Split points and labels with threshold
-        near_mask = labels <= self.near_thresh 
-        far_mask = labels > self.near_thresh
+        near_mask = labels <= near_thresh
+        far_mask = labels > near_thresh
 
         points_near = points[near_mask]
         points_far = points[far_mask]
         labels_near = labels[near_mask]
         labels_far = labels[far_mask]
-        grids_near = grids[near_mask]
-        grids_far = grids[far_mask]
-        
+
         # Handle segment data if it exists
         segment_near, segment_far = None, None
+        mask_near, mask_far = None, None
 
         if segment is not None:
             segment_near = segment[near_mask]
             segment_far = segment[far_mask]
 
+        if mask is not None:
+            mask_near = mask[near_mask]
+            mask_far = mask[far_mask]
+
         total_target = min(self.max_number, int(len(points) * self.sample_rate))
-        near_target = int(total_target * self.near_ratio)
+        near_target = int(total_target * near_ratio)
         far_target = total_target - near_target
 
         near_idx = torch.randperm(len(points_near))[:min(near_target, len(points_near))]
@@ -324,53 +509,75 @@ class DecodeQuerySampleSDF(object):
 
         sampled_points = np.concatenate([points_near[near_idx], points_far[far_idx]], axis=0)
         sampled_label = np.concatenate([labels_near[near_idx], labels_far[far_idx]], axis=0)
-        sampled_grid = np.concatenate([grids_near[near_idx], grids_far[far_idx]], axis=0)
 
         if segment is not None:
             sampled_segment = np.concatenate([segment_near[near_idx], segment_far[far_idx]], axis=0)
         else:
             sampled_segment = None
 
+        if mask is not None:
+            sampled_mask = np.concatenate([mask_near[near_idx], mask_far[far_idx]], axis=0)
+        else:
+            sampled_mask = None
+
         perm = torch.randperm(len(sampled_points))
         sampled_points = sampled_points[perm]
         sampled_label = sampled_label[perm]
-        sampled_grid = sampled_grid[perm]
         if sampled_segment is not None:
             sampled_segment = sampled_segment[perm]
+        if sampled_mask is not None:
+            sampled_mask = sampled_mask[perm]
 
-
-        return sampled_points, sampled_label, sampled_grid, sampled_segment
+        return sampled_points, sampled_label, sampled_segment, sampled_mask
     
         
     def __call__(self, data_dict):
 
         # Extract the point cloud, labels, and optionally segments
-        for vs in self.vs_list:
-            points = data_dict[f'pc_query_{vs}']
-            labels = data_dict[f'pc_query_sdf_{vs}']
-            grids = data_dict[f'pc_query_grid_{vs}']
-            segment = data_dict.get(f'pc_query_segment_{vs}', None)
+        cnt_seg = 0
+        cnt_msk = 0
+        for vs, near_thresh, near_ratio, sample_type in zip(self.vs_list, self.near_thresh, self.near_ratio, self.sample_type):
+            key_pts = f'pc_query_{vs}'
+            key_lbl = f'pc_query_sdf_{vs}'
+            key_seg = f'pc_query_segment_{vs}'
+            key_msk = f'mask_gt_{vs}'
+
+            if key_pts not in data_dict or key_lbl not in data_dict:
+                continue
+
+            points = data_dict[key_pts]
+            labels = data_dict[key_lbl]
+            segment = data_dict.get(key_seg, None)
+            mask = data_dict.get(key_msk, None)
             # If sample_rate is 1.0, return data_dict as is
             if self.sample_rate == 1.0:
-                data_dict[f'pc_query_{vs}'] = points
-                data_dict[f'pc_query_sdf_{vs}'] = labels
-                data_dict[f'pc_query_grid_{vs}'] = grids
+                data_dict[key_pts] = points
+                data_dict[key_lbl] = labels
                 if segment is not None:
-                    data_dict[f'pc_query_segment_{vs}'] = segment
-                return data_dict
+                    data_dict[key_seg] = segment
+                    cnt_seg += 1
+                if mask is not None:
+                    data_dict[key_msk] = mask
+                    cnt_msk += 1
+                continue
+            if sample_type == 'nearfar':
+                pts_s, lbl_s, seg_s, msk_s = self._near_far_sample(points, labels, near_thresh, near_ratio, segment, mask)
+            if sample_type == 'uniform':
+                pts_s, lbl_s, seg_s, msk_s = self._uniform_random_sample(points, labels, segment, mask)
 
-            sampled_points, sampled_label, sampled_grid, sampled_segment = self.sample_points(points, labels, grids, segment)
-
-            if sampled_segment is not None:
-                data_dict[f'pc_query_segment_{vs}'] = sampled_segment
+            if seg_s is not None:
+                data_dict[key_seg] = seg_s
+                cnt_seg += 1
+            if msk_s is not None:
+                data_dict[key_msk] = msk_s
+                cnt_msk += 1
 
             # Update the data_dict with the sampled and shuffled points and labels
-            data_dict[f'pc_query_{vs}'] = sampled_points
-            data_dict[f'pc_query_sdf_{vs}'] = sampled_label
-            data_dict[f'pc_query_grid_{vs}'] = sampled_grid
-                   
-        return data_dict
+            data_dict[key_pts] = pts_s
+            data_dict[key_lbl] = lbl_s
 
+        return data_dict
+        
 @TRANSFORMS.register_module()
 class DecodeQueryRandSampleSDF(object):
     def __init__(
@@ -455,13 +662,13 @@ class DecodeQueryRandSampleSDF(object):
             segment = data_dict.get(key_seg, None)
             mask    = data_dict.get(key_msk, None)
 
-            # 统一 labels 维度为 (N,)
-            if isinstance(labels, np.ndarray):
-                if labels.ndim == 1:
-                    labels = labels[:, None]
-            elif isinstance(labels, torch.Tensor):
-                if labels.dim() == 1:
-                    labels = labels.unsqueeze(-1)
+            # # 统一 labels 维度为 (N,)
+            # if isinstance(labels, np.ndarray):
+            #     if labels.ndim == 1:
+            #         labels = labels[:, None]
+            # elif isinstance(labels, torch.Tensor):
+            #     if labels.dim() == 1:
+            #         labels = labels.unsqueeze(-1)
 
             # sample_rate==1.0 直接返回原数据
             if self.sample_rate >= 1.0:

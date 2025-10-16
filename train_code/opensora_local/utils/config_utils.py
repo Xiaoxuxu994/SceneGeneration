@@ -13,6 +13,7 @@ from glob import glob
 
 from mmengine.config import Config
 from torch.utils.tensorboard import SummaryWriter
+from tensorboard.backend.event_processing import event_accumulator
 
 
 def parse_args(training=False):
@@ -95,6 +96,58 @@ def create_experiment_workspace(cfg):
     os.makedirs(exp_dir, exist_ok=True)
     return exp_name, exp_dir
 
+def create_experiment_workspace_all(cfg,is_main_process):
+    """
+    This function creates a folder as follow (50000steps 64npu):
+    outputs/
+    └── exp_name/
+        ├── config.txt
+        ├── log.txt
+        
+        ├── model/
+        │   ├── zero_to_fp32.py
+        │   ├── latest
+        │   ├── global_step10000/
+        │   │   ├── model.pt
+        │   │   ├── zero_pp_0.pt
+        │   │   ├── zero_pp_1.pt
+        │   │   ├── ...
+        │   │   └── zero_pp_63.pt
+        │   ├── global_step20000/
+        │   │   ├── model.pt
+        │   │   ├── zero_pp_0.pt
+        │   │   ├── zero_pp_1.pt
+        │   │   ├── ...
+        │   │   └── zero_pp_63.pt
+        │   ├── ...
+        │   └── global_step50000/
+        │       ├── model.pt
+        │       ├── zero_pp_0.pt
+        │       ├── zero_pp_1.pt
+        │       ├── ...
+        │       └── zero_pp_63.pt
+        ├── monitor/
+        │   ├── rank0/
+        │   │   └── xxx.event
+        │   ├── ...
+        │   └── rank63/
+        │       └── xxx.event
+        └── tensorboard/
+            └── xxx.event
+    """
+    # Make outputs folder (holds all experiment subfolders)
+    if is_main_process:
+        os.makedirs(cfg.outputs, exist_ok=True)
+    exp_dir = f"{cfg.outputs}/{cfg.exp_name}"
+    if is_main_process:
+        os.makedirs(exp_dir, exist_ok=True)
+    model_dir = f"{exp_dir}/model"
+    if is_main_process:
+        os.makedirs(model_dir, exist_ok=True)
+    monitor_dir = f"{exp_dir}/monitor"
+    if is_main_process:
+        os.makedirs(monitor_dir, exist_ok=True)
+    return exp_dir, model_dir, monitor_dir
 
 def save_training_config(cfg, experiment_dir):
     with open(f"{experiment_dir}/config.txt", "w") as f:

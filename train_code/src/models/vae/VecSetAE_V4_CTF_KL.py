@@ -511,7 +511,7 @@ class VecSetAEV5CTFKL(nn.Module):
 
             if next_res is not None:
                 fine_grid = input_dict[f'pc_query_grid_{next_res}']
-                ## org one
+                # ## org one
                 # mask = get_fine_voxel_mask_from_coarse_labels(
                 #     coarse_label=label_c,
                 #     scale_factor=2,
@@ -555,6 +555,7 @@ class VecSetAEV4SINGLEKL(nn.Module):
                 kl_dim = 64,
                 chunk_size = 200000,
                 use_cpu_fps=False,
+                use_kernel_fps=False,
                 use_skip = False,
                 logvar_min = -30.0,
                 logvar_max = 20.0,                
@@ -594,8 +595,12 @@ class VecSetAEV4SINGLEKL(nn.Module):
         self.chunk_size = chunk_size
         self.use_skip = use_skip
         self.use_cpu_fps = use_cpu_fps
+        self.use_kernel_fps = use_kernel_fps
         if use_cpu_fps:
             print('Using fps_cpu kernel...')
+        if use_kernel_fps:
+            print('Using custom fps kernel...')
+
 
         ## training mode
         self.mode = 'coarse_to_fine'
@@ -646,8 +651,16 @@ class VecSetAEV4SINGLEKL(nn.Module):
         pos = flattened
         ratio = 1.0 * self.num_latent / N
 
+        if self.use_kernel_fps:
+            x = pc[0,:,0].contiguous()
+            y = pc[0,:,1].contiguous()
+            z = pc[0,:,2].contiguous()
+            seed_idx = np.random.randint(0, N-1)
+            torch.npu.synchronize()
+            idx,_ = cust_fps(x, y, z, N, self.num_latent, seed_idx)
+            torch.npu.synchronize() 
         # 120000为经验数值。最终版本应不添加此限制。
-        if self.use_cpu_fps and N <= 120000:
+        elif (self.use_cpu_fps) and (N <= 120000):
             idx = sample_farthest_points(pc.cpu(), lengths=torch.tensor([N], dtype=torch.long), K=self.num_latent, random_start_point=True).view(-1).to(pc.device)
         else:
             idx = fps_fallback(pos, batch, ratio=ratio, random_start=True)
@@ -737,6 +750,22 @@ class VecSetAEV4SINGLEKL(nn.Module):
 
         return logit_list
 
+    def forward_ctf_infer(self, input_dict, vs, latent=None, return_latent=False):
+        ## simple pe encoder + cross attention
+        if latent is None:
+            kl, latent = self.encode(input_dict)
+
+        # decoder vs128 train with
+        query_pts = input_dict[f'pc_query_{vs}'].unsqueeze(0)
+        target = input_dict[f'pc_query_sdf_{vs}']
+
+        logit,_ = self.decode(latent, query_pts,chunk_size=self.chunk_size)
+
+        if return_latent:
+            return logit.squeeze(-1).squeeze(0), target, latent
+        else:
+            return logit.squeeze(-1).squeeze(0), target
+    
 @MODELS.register_module()
 class VecSetAEV5SINGLEKL(nn.Module):
     def __init__(self, 
@@ -939,3 +968,200 @@ class VecSetAEV5SINGLEKL(nn.Module):
         logit_list.append(logit.squeeze(-1).squeeze(0))
 
         return logit_list
+    
+
+@MODELS.register_module()
+class VecSetAEV6SINGLEKL(nn.Module):
+    def __init__(self, 
+                num_latent = 512,
+                latent_dim = 512,
+                kl_dim = 64,
+                chunk_size = 200000,
+                use_cpu_fps=False,
+                use_kernel_fps=False,
+                use_skip = False,
+                logvar_min = -30.0,
+                logvar_max = 20.0,                
+                encoder_dict = dict(
+                    type = "VecSet",
+                ),
+                query_encoder_dict = dict(
+                    type = "VecSet",
+                ),
+                transformer_dict = dict(
+                    type = 'TransformerEncoderBlock',
+                    depth = 8,
+                    dim = 512,
+                    heads = 8,
+                    dim_head = 64,
+                    enable_flash = False,
+                    attn_dtype = 'fp16',
+                    drop_path_rate = 0.1,
+                ),
+                decoder_dict4 = dict(
+                    type = "VecSetDecoder",
+                    depth = 6,
+                    dim = 512,
+                    queries_dim = 512,
+                    enable_flash=True,
+                    attn_dtype='fp16',
+                    enable_ca_flash=False,
+                    output_dim = 1,
+                ),
+    ):
+        
+        super().__init__()
+        
+        self.num_latent = num_latent
+        self.logvar_min = logvar_min
+        self.logvar_max = logvar_max
+        self.chunk_size = chunk_size
+        self.use_skip = use_skip
+        self.use_cpu_fps = use_cpu_fps
+        self.use_kernel_fps = use_kernel_fps
+        if use_cpu_fps:
+            print('Using fps_cpu kernel...')
+        if use_kernel_fps:
+            print('Using custom fps kernel...')
+
+
+        ## training mode
+        self.mode = 'coarse_to_fine'
+        self.encoder_dict_type = encoder_dict.type
+        self.query_encoder_dict_type = query_encoder_dict.type
+
+        ## encoder
+        if encoder_dict.type in ["PE"]:
+            self.encoder = PointEmbed(dim=latent_dim)
+        else:
+            raise ValueError(f"Unknown mode: {encoder_dict.type}")
+
+        ## query encoder
+        if query_encoder_dict.type in ["PE"]:
+            self.query_encoder = PointEmbed(dim=latent_dim)
+        else:
+            raise ValueError(f"Unknown mode: {query_encoder_dict.type}")
+
+        ## encoder CA - not enable FA
+        self.cross_attend_blocks = nn.ModuleList([
+            PreNorm(latent_dim, Attention(latent_dim, latent_dim, heads = 1, dim_head = latent_dim), context_dim = latent_dim),
+            PreNorm(latent_dim, FeedForward(latent_dim))
+        ])     
+
+        ## encoder SA
+        self.self_attend_blocks = build_module(transformer_dict, MODELS) if transformer_dict else None
+
+
+        ## KL componet
+        self.mean_fc = nn.Linear(latent_dim, kl_dim)
+        self.logvar_fc = nn.Linear(latent_dim, kl_dim)
+        self.kl_proj = nn.Linear(kl_dim, latent_dim)       
+
+        # decoder
+        self.decoder4 = build_module(decoder_dict4, MODELS) if decoder_dict4 else None
+
+    def pc_fps(self,pc):
+        # input point cloud: B x N x 3
+        # use fps to get the initial learnable query points
+        pc = pc.unsqueeze(0) # b=1
+        B, N, D = pc.shape
+
+        # fps
+        flattened = pc.view(B * N, D)
+        batch = torch.arange(B).to(pc.device)
+        batch = torch.repeat_interleave(batch, N)
+
+        pos = flattened
+        ratio = 1.0 * self.num_latent / N
+
+        if self.use_kernel_fps:
+            x = pc[0,:,0].contiguous()
+            y = pc[0,:,1].contiguous()
+            z = pc[0,:,2].contiguous()
+            seed_idx = np.random.randint(0, N-1)
+            torch.npu.synchronize()
+            idx,_ = cust_fps(x, y, z, N, self.num_latent, seed_idx)
+            torch.npu.synchronize() 
+        # 120000为经验数值。最终版本应不添加此限制。
+        elif (self.use_cpu_fps) and (N <= 120000):
+            idx = sample_farthest_points(pc.cpu(), lengths=torch.tensor([N], dtype=torch.long), K=self.num_latent, random_start_point=True).view(-1).to(pc.device)
+        else:
+            idx = fps_fallback(pos, batch, ratio=ratio, random_start=True)
+
+        sampled_pc = pos[idx]
+        sampled_pc = sampled_pc.view(B, -1, 3)
+        return idx, sampled_pc
+    
+    def encode(self, input_dict):
+
+        ## pcd encoder
+        if self.encoder_dict_type in ['PE']:
+            pc_embeddings = self.encoder(input_dict['coord'].unsqueeze(0))
+
+        ## fps query encoder
+        _, sampled_pc = self.pc_fps(input_dict['coord'])
+        if self.query_encoder_dict_type in ['PE']:
+            sampled_pc_embeddings =  self.query_encoder(sampled_pc) # [1,num_latent,512]
+      
+        ## cross attn block
+        cross_attn, cross_ff = self.cross_attend_blocks
+        latent= cross_attn(sampled_pc_embeddings, context = pc_embeddings, mask = None, enable_flash = False) + sampled_pc_embeddings
+        latent = cross_ff(latent) + latent
+
+        ## self attn block
+        if self.self_attend_blocks is not None:
+            latent = self.self_attend_blocks(latent)
+
+        ## KL
+        mean = self.mean_fc(latent)
+        logvar = self.logvar_fc(latent)
+        
+        posterior = DiagonalGaussianDistribution(mean, logvar,logvar_min=self.logvar_min,logvar_max=self.logvar_max)
+        latent = posterior.sample()
+        kl = posterior.kl()
+
+        return kl, latent
+
+    def decode(self, latent, query_pts,chunk_size=None):
+        latent = self.kl_proj(latent)
+        logit,latent = self.decoder4(latent, query_pts,chunk_size)
+        return logit,latent
+    
+    def forward(self, input_dict, vs_list):
+
+        logit_list, targets_list = [], []
+
+        for vs in vs_list:
+            ## simple pe encoder + cross attention
+            kl, latent = self.encode(input_dict)
+            
+            query_pts = input_dict[f'pc_query_{vs}'].unsqueeze(0)
+            target = input_dict[f'pc_query_sdf_{vs}']
+
+            logit,_ = self.decode(latent, query_pts,chunk_size=self.chunk_size)
+            
+            C = logit.shape[-1]
+            if C == 1:
+                logit_list.append(logit.squeeze(-1).squeeze(0))                   
+            else:
+                logit_list.append(logit.squeeze(0))                          
+
+            targets_list.append(target)
+
+        return kl, logit_list, targets_list
+    
+    def forward_ctf_infer(self, input_dict, vs, latent=None, return_latent=False):
+        ## simple pe encoder + cross attention
+        if latent is None:
+            kl, latent = self.encode(input_dict)
+
+        # decoder vs128 train with
+        query_pts = input_dict[f'pc_query_{vs}'].unsqueeze(0)
+        target = input_dict[f'pc_query_sdf_{vs}']
+
+        logit,_ = self.decode(latent, query_pts,chunk_size=self.chunk_size)
+
+        if return_latent:
+            return logit.squeeze(-1).squeeze(0), target, latent
+        else:
+            return logit.squeeze(-1).squeeze(0), target
