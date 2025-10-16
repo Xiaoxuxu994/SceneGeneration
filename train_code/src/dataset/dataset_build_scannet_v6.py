@@ -341,6 +341,7 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
 
         self.data_root = data_root
         self.datatype = kwargs.get("datatype",'pth')
+        self.freequery_root = kwargs.get("freequery_root", None)
         with open(data_list_name, 'r') as f:
             if self.datatype == 'pth':
                 self.samples = [os.path.join(self.data_root, p.strip()) for p in f.readlines()] ## pth
@@ -348,8 +349,15 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
                 self.samples = [os.path.join(self.data_root, p.strip().replace('.pth','.npz')) for p in f.readlines()] ## npz
             else:
                 raise ValueError(f"[ERROR] Unrecognized datatype: {self.datatype}. Supported types are ['pth', 'npz'].")
-        
+            # free query 单独数据路径构建 只针对 20251015 数据版本
+            self.samples_freequery = []
+            if self.freequery_root is not None:
+                for p in f.readlines():
+                    sha256 = p.strip().split("/")[-1].split(".")[0]
+                    self.samples_freequery.append(os.path.join(self.freequery_root, sha256, 'queries_10000000.npz'))
         self.vs_res = kwargs.get("vs_res",[128])
+        merge = False # 指示是否合并decoder数据
+        
         aug_cfg = kwargs.get("transform",{})
         self.transforms = []
         # initialize data aug 
@@ -413,7 +421,15 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
                     vs_list = aug_cfg['DecodeQuerySampleSDF'].get('vs_list',[128]),
                     near_thresh = aug_cfg['DecodeQuerySampleSDF'].get('near_thresh',0.05),
                     near_ratio = aug_cfg['DecodeQuerySampleSDF'].get('near_ratio',0.8),
+                    sample_type = aug_cfg['DecodeQuerySampleSDF'].get('sample_type',['nearfar']),
                 ))
+
+            # Merge Decode Query
+            if aug_cfg.get('MergeDecodeQuery', {}).get('enabled', False):
+                self.transforms.append(MergeDecodeQuery(
+                    vs_list = aug_cfg['MergeDecodeQuery'].get('vs_list',[256, 512]),
+                ))
+                merge = True
 
             # To tensor
             if aug_cfg.get('ToTensor', {}).get('enabled', False):
@@ -431,10 +447,16 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
         self.grid_index_dict = {}
         self.grid_minbound_dict = {}
         vs_list = self.vs_res if isinstance(self.vs_res, list) else [self.vs_res]
+        # vs_res_actual 实际模型训推所用数据后缀
+        if merge:
+            self.vs_res_actual = ['merge']
+        else:
+            self.vs_res_actual = vs_list
         for vs in vs_list:
-            grid_idx, minbound = self._generate_dense_grid_index_and_minbound(vs)
-            self.grid_index_dict[vs] = grid_idx
-            self.grid_minbound_dict[vs] = minbound
+            if vs is not 'freequery': # 非query数据即按照分辨率定义的网格需要构建网格坐标
+                grid_idx, minbound = self._generate_dense_grid_index_and_minbound(vs)
+                self.grid_index_dict[vs] = grid_idx
+                self.grid_minbound_dict[vs] = minbound
 
     @staticmethod
     def _generate_dense_grid_index_and_minbound(resolution):
@@ -463,17 +485,31 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
         minbound_coords = origin + (grid_idx) * vs_size
 
         return grid_idx, minbound_coords.astype(np.float32)
-        
+
+    def index_to_coord(self,grid_idx, resolution):
+        grid_idx = grid_idx.reshape(-1, 3)
+        vs_size = 2.0 / resolution 
+        origin = np.array([-1.0] * 3, dtype=np.float32)
+        coords = origin + grid_idx * vs_size
+        return coords.astype(np.float32)
+
     def prepare_train_data(self, input_dict):
         
         ## get query center and grid idx online
         if isinstance(self.vs_res,list):
             for vs in self.vs_res:
-                input_dict[f'pc_query_grid_{vs}'] = self.grid_index_dict[vs]
-                input_dict[f'pc_query_{vs}'] = self.grid_minbound_dict[vs]
+                if vs is not 'freequery': #  非 freequery数据需要提取出pc_query_{vs} 和 pc_query_sdf_{vs}
+                    if f'pc_query_sdf_{vs}_oct' in input_dict.keys():
+                        input_dict[f'pc_query_sdf_{vs}'] = input_dict[f'pc_query_sdf_{vs}_oct']
+                        input_dict[f'pc_query_grid_{vs}'] = input_dict[f'pc_query_grid_{vs}_oct']
+                        input_dict[f'pc_query_{vs}'] = self.index_to_coord(input_dict[f'pc_query_grid_{vs}'], vs)
+                    else:
+                        input_dict[f'pc_query_grid_{vs}'] = self.grid_index_dict[vs]
+                        input_dict[f'pc_query_{vs}'] = self.grid_minbound_dict[vs]
         
         for transform in self.transforms:
             input_dict = transform(input_dict)
+  
         return input_dict
     
     def __getitem__(self, index):
@@ -484,9 +520,15 @@ class DatasetForScanNetV6DEBUGAUGSDF(Dataset):
             ## deal with npz
             input_dict = dict(np.load(self.samples[index]))
             input_dict['scene_id'] = input_dict['scene_id'].item()
+        
+        # 新增 free query 数据读取
+        if len(self.samples_freequery) > 0:
+            tmp = np.load(self.samples_freequery[index])
+            input_dict['pc_query_freequery'] = tmp["queries"]
+            input_dict['pc_query_sdf_freequery'] = tmp["distances"]
 
         result_dict = self.prepare_train_data(input_dict)
         return result_dict
 
     def __len__(self):
-        return len(self.samples)
+        return len(self.samples) 

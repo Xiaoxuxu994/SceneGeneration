@@ -7,6 +7,7 @@ from skimage.measure import marching_cubes
 import numpy as np
 from src.utils.misc import save_surface_as_mesh
 from torchmetrics.classification import BinaryJaccardIndex
+from typing import Union
 
 def occ_eval_metric_all(output_logit, label, occ_threshold=0.5):
     """
@@ -352,7 +353,7 @@ def sdf_eval_metric_all_TM(output_udf, udf_label,
 
     return metrics
 
-def init_running_metrics(levels: list[int] = None,
+def init_running_metrics(levels: list[Union[int,str]] = None,
                          class_keys: list[str] = ['cl1', 'cl0', 'wavg'],
                          base_metrics: list[str] = ['Precision', 'Recall', 'F1', 'IoU'],
                          include_per_level: bool = True) -> dict:
@@ -360,7 +361,7 @@ def init_running_metrics(levels: list[int] = None,
     初始化 running_metrics 结构，支持逐层 loss + per-class metrics + per-level metrics
 
     Args:
-        levels: 层级列表，如 [16, 32, 64, 128]
+        levels: 层级列表，如 [16, 32, 64, 128, 256, 512, freequery]
         class_keys: 类别指标后缀，例如 ['cl1', 'cl0', 'wavg']
         base_metrics: 基本评估指标名，例如 ['Precision', 'Recall', 'F1', 'IoU']
         include_per_level: 是否为每层记录所有指标

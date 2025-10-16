@@ -330,17 +330,20 @@ def main():
     # 3. build dataset and dataloader
     # ======================================================
     # DatasetForScanNet
-    scale_level = cfg.vs_res
+    
     train_dataset = DatasetForScanNetV6DEBUGAUGSDF(
         data_root=cfg.data_root,
         data_list_name=cfg.train_data_list_name,
         **build_dataset_kwargs(cfg.train_data_args)
     )
+    scale_level = train_dataset.vs_res_actual
+
     val_dataset_list = [DatasetForScanNetV6DEBUGAUGSDF(
         data_root=cfg.data_root,
         data_list_name=val_data_list_name,
         **build_dataset_kwargs(cfg.val_data_args)
     ) for val_data_list_name in cfg.val_data_list_name]
+    scale_level_val = [val_dataset.vs_res_actual for val_dataset in val_dataset_list]
 
     train_dataloader = prepare_dataloader(
         train_dataset,
@@ -436,7 +439,7 @@ def main():
     # else:
     #     import time; time.sleep(12000)
     val_dataloader_list.append(lr_scheduler)
-    model, optimizer, train_dataloader, val_dataloader_list = accelerator.prepare(model, optimizer, train_dataloader, val_dataloader_list)
+    model, optimizer, train_dataloader, *val_dataloader_list = accelerator.prepare(model, optimizer, train_dataloader, *val_dataloader_list)
     lr_scheduler = val_dataloader_list.pop()
     # train_dataloader = accelerator.prepare_data_loader(train_dataloader, device_placement=False)
     # val_dataloader = accelerator.prepare_data_loader(val_dataloader, device_placement=False)
@@ -638,12 +641,12 @@ def main():
                             print('End profiling...')
                             exit(-1)  
 
-                ## evaluation
+                ## metric
                 running_metrics['loss'] += loss.item()
                 for idx,(logit, target) in enumerate(zip(output_list,target_list)):
                     scale = scale_level[idx]
                     # metrics = occ_eval_metric_all(logit, target, occ_threshold=cfg.occ_threshold)
-                    metrics = calc_metric(logit, target, sdf_threshold=cfg.sdf_threshold, mask=None, truncatedist = cfg.truncatedist,compute_surface_metrics=False)
+                    metrics = calc_metric(logit, target, sdf_threshold=cfg.sdf_threshold, mask=None, truncatedist = cfg.truncatedist, compute_surface_metrics=False)
                     for name, score in metrics:
                         running_metrics[f'{name}_s{scale}'] += score
                     # running_metrics[f'logit_mean_s{scale}'] += logit.mean().item()
@@ -682,7 +685,7 @@ def main():
                     logger.info(f"Evaluating {epoch} step {step} global_step {global_step}......")
                     model.eval()
                     for val_index, (val_dataloader, num_steps_per_epoch_val) in enumerate(zip(val_dataloader_list, num_steps_per_epoch_val_list)):
-                        running_eval_metrics = init_running_metrics(levels=scale_level,
+                        running_eval_metrics = init_running_metrics(levels=scale_level_val[val_index],
                                                 class_keys=['cl1','cl0','wavg'],
                                                 base_metrics=['Precision','Recall','F1','IoU'],
                                                 include_per_level=True)
@@ -701,11 +704,11 @@ def main():
                                     #     core_model.set_mode('gt')
                                     # else:
                                     #     core_model.set_mode('coarse_to_fine')
-                                    eval_loss_kl, output_list, target_list = model(input_dict,vs=scale_level[-1])
+                                    eval_loss_kl, output_list, target_list = model(input_dict,vs=scale_level_val[val_index][-1])
 
                                 eval_loss = torch.tensor(0).to(device, dtype)
                                 for idx,(logit, target) in enumerate(zip(output_list,target_list)):
-                                    scale = scale_level[idx]
+                                    scale = scale_level_val[val_index][idx]
                                     if cfg.enable_occ_loss:
                                         eval_loss_occ = cfg.loss_weight_occ[idx] * occ_criterion(logit.detach(), target.detach())
                                         if (not torch.isnan(eval_loss_occ)) and (not torch.isinf(eval_loss_occ)):
@@ -745,7 +748,7 @@ def main():
                                 ## evaluation
                                 running_eval_metrics['loss'] += eval_loss.item()
                                 for idx,(logit, target) in enumerate(zip(output_list,target_list)):
-                                    scale = scale_level[idx]
+                                    scale = scale_level_val[val_index][idx]
                                     # metrics = occ_eval_metric_all(logit, target, occ_threshold=cfg.occ_threshold)
                                     metrics = calc_metric(logit, target, sdf_threshold=cfg.sdf_threshold, mask=None, truncatedist = cfg.truncatedist, compute_surface_metrics=False) 
                                     for name, score in metrics:
