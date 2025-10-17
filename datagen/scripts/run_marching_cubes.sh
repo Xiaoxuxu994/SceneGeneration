@@ -52,18 +52,18 @@
 #     --num_workers 1 \
 #     --force
 
-# Marching Cubes on octree
-python python/cube_to_mesh.py \
-    --in_dir data/datasets/scannetpp_results/20250902/ \
-    --mode octree \
-    --voxel_res 512 \
-    --oct_src_size 256 \
-    --oct_tar_size 512 \
-    --oct_thres 3 \
-    --engine mc \
-    --level 0.005 \
-    --num_workers 1 \
-    --force
+# # Marching Cubes on octree
+# python python/cube_to_mesh.py \
+#     --in_dir data/datasets/scannetpp_results/20250902/ \
+#     --mode octree \
+#     --voxel_res 512 \
+#     --oct_src_size 256 \
+#     --oct_tar_size 512 \
+#     --oct_thres 3 \
+#     --engine mc \
+#     --level 0.005 \
+#     --num_workers 1 \
+#     --force
 
 
 # # Marching Cubes on octree
@@ -261,3 +261,27 @@ python python/cube_to_mesh.py \
 #     --normal \
 #     --num_workers 1 \
 #     --force
+
+
+
+# Poisson Reconstruction - test xiaoxuxu
+python python/cube_to_mesh.py \
+    --in_dir data/datasets/tmp_result/exp0901_002/3f15a9266d/ \
+    --grad_dir data/datasets/tmp_result/exp0901_002/3f15a9266d/ \
+    --sign_dir data/datasets/tmp_result/exp0901_002/3f15a9266d/ \
+    --mode octree \
+    --voxel_res 512 \
+    --oct_src_size 256 \
+    --oct_tar_size 512 \
+    --oct_thres 1 \
+    --engine poisson \
+    --suffix ply \
+    --precise_grad \
+    --normal \
+    --trim \
+    --density_q 0.02 \
+    --poisson_depth 10 \
+    --poisson_scale 1.0 \
+    --poisson_linear_fit \
+    --num_workers 1 \
+    --force \

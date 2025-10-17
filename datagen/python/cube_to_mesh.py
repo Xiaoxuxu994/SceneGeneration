@@ -310,8 +310,8 @@ def grid_to_mesh(grid_path: str, mesh_path: str):
             
             # trim low density submesh
             if args.trim:
-                vertices_to_remove = densities < args.depth-1
-                # vertices_to_remove = densities < np.quantile(densities, 0.01)
+                # vertices_to_remove = densities < args.depth-1
+                vertices_to_remove = densities < np.quantile(densities, 0.01)
                 mesh.remove_vertices_by_mask(vertices_to_remove)
                 
                 # mesh_path = Path(mesh_path)
