@@ -1,0 +1,1 @@
+bash ./workspace/build.sh -r sim -v Ascend910B3

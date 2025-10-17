@@ -11,9 +11,9 @@ from pathlib import Path
 from skimage import measure
 from copy import deepcopy
 
-import sys
-sys.path.append(os.path.dirname(__file__))
-from lib.utils.hash import encode_coords, decode_coords, encode_coords_np, decode_coords_np
+# import sys
+# sys.path.append(os.path.dirname(__file__))
+# from lib.utils.hash import encode_coords, decode_coords, encode_coords_np, decode_coords_np
 
 VOLUME_FILE = "vs_{}.npy"
 OCTREE_FILE = "vs{}_to_vs{}_th{}"
@@ -108,171 +108,183 @@ def worker_job(input_dir):
     src_path = input_dir / VOLUME_FILE.format(args.src_size)
     tar_path = input_dir / VOLUME_FILE.format(args.tar_size)
     
+    src_flag = True
     if not src_path.exists():
-        print("{} doesn't exist.".format(str(src_path)))
+        print("{} doesn't exist, skipping...".format(str(src_path)))
+        src_flag = False
     
+    tar_flag = True
     if not tar_path.exists():
-        print("{} doesn't exist.".format(str(tar_path)))
+        print("{} doesn't exist, skipping...".format(str(tar_path)))
+        tar_flag = False
     
-    output_dir = out_dir / input_dir.name
-    output_dir.mkdir(exist_ok=True, parents=True)
-    output_name = OCTREE_FILE.format(args.src_size, args.tar_size, args.thres)
-    # if args.grad: output_name += "_grad"
-    output_path = output_dir / output_name 
-    output_path = output_path.with_suffix(OCTREE_SUFFIX)
+    if src_flag and tar_flag:
     
-    if output_path.exists() and not args.force:
-        print("found existing octree file {}, skipping...".format(str(output_path)))
-    else:
-        print("processing {}...".format(str(input_dir)))
+        output_dir = out_dir / input_dir.name
+        output_dir.mkdir(exist_ok=True, parents=True)
+        output_name = OCTREE_FILE.format(args.src_size, args.tar_size, args.thres)
+        # if args.grad: output_name += "_grad"
+        output_path = output_dir / output_name 
+        output_path = output_path.with_suffix(OCTREE_SUFFIX)
         
-        src_vol = np.load(src_path)
-        tar_vol = np.load(tar_path)
-        
-        '''
-            Follow the fine-to-coarse-to-fine strategy, i.e.
-            1. go to the finest resolution and select the valid voxel with a threshold;
-            2. merge the fine voxels to form the coarse voxels;
-            3. divide the coarse voxels again to fine voxels.
-            This strategy makes sure that all valid voxels are covered.
-        '''
-        
-        # fine-to-coarse
-        thres = (args.boxmax - args.boxmin) / args.tar_size * args.thres
-        tar_ids_1 = np.stack(np.where(tar_vol <= thres), axis=1) # Nf x 3
-        
-        rate = args.tar_size // args.src_size
-        src_ids_expanded = tar_ids_1 // rate
-        src_ids_masks = tar_ids_1 % rate == 0 # Nf x 3
-        src_ids_masks = np.sum(src_ids_masks, axis=1) == 3 # all true row should sum up to 3
-        src_ids = src_ids_expanded[src_ids_masks]
-        
-        # coarse-to-fine
-        offsets = np.meshgrid(np.arange(rate), np.arange(rate), np.arange(rate), indexing="ij")
-        offsets = np.stack([a.reshape(-1) for a in offsets], axis=1)
-        num_offsets = offsets.shape[0]
-        
-        origins = src_ids.copy()
-        num_origins = origins.shape[0]
-        
-        offsets = np.repeat(offsets[None, :, :], num_origins, axis=0)
-        origins = np.repeat(origins[:, None ,:], num_offsets, axis=1)
-        coords = origins * rate + offsets
-        
-        src_i, src_j, src_k = origins.reshape((-1, 3)).T
-        tar_i, tar_j, tar_k = coords.reshape((-1, 3)).T
-        
-        src_coords = np.stack([src_i, src_j, src_k], axis=1).astype(int)
-        tar_coords = np.stack([tar_i, tar_j, tar_k], axis=1).astype(int)
-        tar_values = tar_vol[tar_i, tar_j, tar_k].astype(float)
-        
-        entry_data = {
-            "src_coords": src_coords,
-            "tar_coords": tar_coords,
-            "tar_values": tar_values
-        }
+        if output_path.exists() and not args.force:
+            print("found existing octree file {}, skipping...".format(str(output_path)))
+        else:
+            print("processing {}...".format(str(input_dir)))
             
-        print("save to {}".format(str(output_path)))
-        # np.savez_compressed(output_path, src_coords=src_coords, tar_coords=tar_coords, tar_values=tar_values)
+            try:
+                src_vol = np.load(src_path, allow_pickle=True)
+                tar_vol = np.load(tar_path, allow_pickle=True)
+                
+                '''
+                    Follow the fine-to-coarse-to-fine strategy, i.e.
+                    1. go to the finest resolution and select the valid voxel with a threshold;
+                    2. merge the fine voxels to form the coarse voxels;
+                    3. divide the coarse voxels again to fine voxels.
+                    This strategy makes sure that all valid voxels are covered.
+                '''
+                
+                # fine-to-coarse
+                thres = (args.boxmax - args.boxmin) / args.tar_size * args.thres
+                tar_ids_1 = np.stack(np.where(tar_vol <= thres), axis=1) # Nf x 3
+                
+                rate = args.tar_size // args.src_size
+                src_ids_expanded = tar_ids_1 // rate
+                src_ids_masks = tar_ids_1 % rate == 0 # Nf x 3
+                src_ids_masks = np.sum(src_ids_masks, axis=1) == 3 # all true row should sum up to 3
+                src_ids = src_ids_expanded[src_ids_masks]
+                
+                # coarse-to-fine
+                offsets = np.meshgrid(np.arange(rate), np.arange(rate), np.arange(rate), indexing="ij")
+                offsets = np.stack([a.reshape(-1) for a in offsets], axis=1)
+                num_offsets = offsets.shape[0]
+                
+                origins = src_ids.copy()
+                num_origins = origins.shape[0]
+                
+                offsets = np.repeat(offsets[None, :, :], num_origins, axis=0)
+                origins = np.repeat(origins[:, None ,:], num_offsets, axis=1)
+                coords = origins * rate + offsets
+                
+                src_i, src_j, src_k = origins.reshape((-1, 3)).T
+                tar_i, tar_j, tar_k = coords.reshape((-1, 3)).T
+                
+                src_coords = np.stack([src_i, src_j, src_k], axis=1).astype(int)
+                tar_coords = np.stack([tar_i, tar_j, tar_k], axis=1).astype(int)
+                tar_values = tar_vol[tar_i, tar_j, tar_k].astype(float)
+                
+                entry_data = {
+                    "src_coords": src_coords,
+                    "tar_coords": tar_coords,
+                    "tar_values": tar_values
+                }
+                    
+                print("save to {}".format(str(output_path)))
+                # np.savez_compressed(output_path, src_coords=src_coords, tar_coords=tar_coords, tar_values=tar_values)
+                
+                np.savez_compressed(output_path, **entry_data)
+                
+                if args.check:
+                    X, Y, Z = tar_coords.T
+                    original_values = tar_vol[X, Y, Z]
+                    compressed_values = tar_values
+                    if not np.array_equal(original_values, compressed_values):
+                        raise ValueError("compressed volume are not consistent with the original volume.")
+                    
+            except ValueError as e:
+                print("captured error: {}, skipping...".format(e))
+                print(src_path)
+                print(tar_path)
         
-        np.savez_compressed(output_path, **entry_data)
+        if args.grad:
+            output_name += "_grad"
+            grad_path = output_dir / output_name 
+            grad_path = grad_path.with_suffix(OCTREE_SUFFIX)
+            
+            output_name += "_sign"
+            grad_sign_path = output_dir / output_name 
+            grad_sign_path = grad_sign_path.with_suffix(OCTREE_SUFFIX)
+                
+            if grad_path.exists() and grad_sign_path.exists() and not args.force:
+                print("found existing gradients file {}, skipping...".format(str(grad_path)))
+            else:    
+                print("computing gradients using octree {}...".format(str(output_path)))
+                
+                if output_path.exists():
+                    print("loading existing octree from {}".format(str(output_path)))
+                    entry_data = np.load(output_path)
+                    tar_coords = entry_data["tar_coords"]
+                
+                scene_name = input_dir.name
+                mesh_path = mesh_dir / scene_name / "normalized.obj"
+                tar_grads, tar_grad_signs = compute_grad(tar_coords, mesh_path)
+                
+                if not grad_path.exists():
+                    np.savez_compressed(grad_path, tar_grads=tar_grads)      
+            
+                # print("computing gradients using octree {}...".format(str(output_path)))
+                # scene_name = input_dir.name
+                # mesh_path = mesh_dir / scene_name / "normalized.obj"
+                # tar_grads, tar_grad_signs = compute_grad(tar_coords, mesh_path)
+                
+                # print("saving gradients to {}".format(str(grad_path)))
+                # np.savez_compressed(grad_path, tar_grads=tar_grads)
+            
+                if args.sign: # NOTE only enable this when gradients are enabled
+                    print("saving gradient signs to {}".format(str(grad_sign_path)))
+                    np.savez_compressed(grad_sign_path, tar_grad_signs=tar_grad_signs)
         
-        if args.check:
-            X, Y, Z = tar_coords.T
-            original_values = tar_vol[X, Y, Z]
-            compressed_values = tar_values
-            if not np.array_equal(original_values, compressed_values):
-                raise ValueError("compressed volume are not consistent with the original volume.")
-    
-    if args.grad:
-        output_name += "_grad"
-        grad_path = output_dir / output_name 
-        grad_path = grad_path.with_suffix(OCTREE_SUFFIX)
-        
-        output_name += "_sign"
-        grad_sign_path = output_dir / output_name 
-        grad_sign_path = grad_sign_path.with_suffix(OCTREE_SUFFIX)
-            
-        if grad_path.exists() and grad_sign_path.exists() and not args.force:
-            print("found existing gradients file {}, skipping...".format(str(grad_path)))
-        else:    
-            print("computing gradients using octree {}...".format(str(output_path)))
-            
-            if output_path.exists():
-                print("loading existing octree from {}".format(str(output_path)))
-                entry_data = np.load(output_path)
-                tar_coords = entry_data["tar_coords"]
-            
-            scene_name = input_dir.name
-            mesh_path = mesh_dir / scene_name / "normalized.obj"
-            tar_grads, tar_grad_signs = compute_grad(tar_coords, mesh_path)
-            
-            if not grad_path.exists():
-                np.savez_compressed(grad_path, tar_grads=tar_grads)      
-        
-            # print("computing gradients using octree {}...".format(str(output_path)))
-            # scene_name = input_dir.name
-            # mesh_path = mesh_dir / scene_name / "normalized.obj"
-            # tar_grads, tar_grad_signs = compute_grad(tar_coords, mesh_path)
-            
-            # print("saving gradients to {}".format(str(grad_path)))
-            # np.savez_compressed(grad_path, tar_grads=tar_grads)
-        
-            if args.sign: # NOTE only enable this when gradients are enabled
-                print("saving gradient signs to {}".format(str(grad_sign_path)))
-                np.savez_compressed(grad_sign_path, tar_grad_signs=tar_grad_signs)
-    
-    # copy to a separate secondary output directory
-    if len(args.out_dir_sec) > 0:
-        out_dir_sec = Path(args.out_dir_sec)
-        output_dir_sec = out_dir_sec / input_dir.name
-        output_dir_sec.mkdir(exist_ok=True, parents=True)
-        output_path_sec = output_dir_sec / OCTREE_FILE.format(args.src_size, args.tar_size, args.thres)
-        if not output_path_sec.exists():
-            print("copy to secondary output directory {}".format(args.out_dir_sec))
-            shutil.copy(output_path, output_path_sec)
+        # copy to a separate secondary output directory
+        if len(args.out_dir_sec) > 0:
+            out_dir_sec = Path(args.out_dir_sec)
+            output_dir_sec = out_dir_sec / input_dir.name
+            output_dir_sec.mkdir(exist_ok=True, parents=True)
+            output_path_sec = output_dir_sec / OCTREE_FILE.format(args.src_size, args.tar_size, args.thres)
+            if not output_path_sec.exists():
+                print("copy to secondary output directory {}".format(args.out_dir_sec))
+                shutil.copy(output_path, output_path_sec)
 
-    # convert a octree to a volume and run marching cubes
-    if len(args.mc_dir) > 0:
-        mc_dir = Path(args.mc_dir)
-        mc_dir = mc_dir / input_dir.name
-        mc_dir.mkdir(exist_ok=True, parents=True)
-        mc_path = (mc_dir / output_path.name).with_suffix(".obj")
-        
-        # recover volumes
-        octree = np.load(output_path)
-        voxel_size = (args.boxmax - args.boxmin) / args.tar_size
-        volume = np.full(shape=(args.tar_size, args.tar_size, args.tar_size), fill_value=octree["tar_values"].max())
-        
-        X, Y, Z = octree["tar_coords"].T
-        volume[X, Y, Z] = octree["tar_values"]
-        
-        level = voxel_size*args.mc_alpha
-        
-        print("exporting mesh data to {}".format(str(mc_path)))
-        verts, faces, _, _ = measure.marching_cubes(volume, 
-            level=level, 
-            spacing=(voxel_size, voxel_size, voxel_size)
-        )
-        verts -= abs(args.boxmin)
-        mesh = o3d.geometry.TriangleMesh()
-        mesh.vertices = o3d.utility.Vector3dVector(verts)
-        mesh.triangles = o3d.utility.Vector3iVector(faces)
-        mesh.paint_uniform_color([0.8, 0.8, 0.8])
-        o3d.io.write_triangle_mesh(str(mc_path), mesh)
-        
-        output_path = str(mc_dir / output_path.stem) + "_reference.obj"
-        print("exporting mesh data to {}".format(str(output_path)))
-        verts, faces, _, _ = measure.marching_cubes(tar_vol, 
-            level=level, 
-            spacing=(voxel_size, voxel_size, voxel_size)
-        )
-        verts -= abs(args.boxmin)
-        mesh = o3d.geometry.TriangleMesh()
-        mesh.vertices = o3d.utility.Vector3dVector(verts)
-        mesh.triangles = o3d.utility.Vector3iVector(faces)
-        mesh.paint_uniform_color([0.8, 0.8, 0.8])
-        o3d.io.write_triangle_mesh(str(output_path), mesh)
+        # convert a octree to a volume and run marching cubes
+        if len(args.mc_dir) > 0:
+            mc_dir = Path(args.mc_dir)
+            mc_dir = mc_dir / input_dir.name
+            mc_dir.mkdir(exist_ok=True, parents=True)
+            mc_path = (mc_dir / output_path.name).with_suffix(".obj")
+            
+            # recover volumes
+            octree = np.load(output_path)
+            voxel_size = (args.boxmax - args.boxmin) / args.tar_size
+            volume = np.full(shape=(args.tar_size, args.tar_size, args.tar_size), fill_value=octree["tar_values"].max())
+            
+            X, Y, Z = octree["tar_coords"].T
+            volume[X, Y, Z] = octree["tar_values"]
+            
+            level = voxel_size*args.mc_alpha
+            
+            print("exporting mesh data to {}".format(str(mc_path)))
+            verts, faces, _, _ = measure.marching_cubes(volume, 
+                level=level, 
+                spacing=(voxel_size, voxel_size, voxel_size)
+            )
+            verts -= abs(args.boxmin)
+            mesh = o3d.geometry.TriangleMesh()
+            mesh.vertices = o3d.utility.Vector3dVector(verts)
+            mesh.triangles = o3d.utility.Vector3iVector(faces)
+            mesh.paint_uniform_color([0.8, 0.8, 0.8])
+            o3d.io.write_triangle_mesh(str(mc_path), mesh)
+            
+            output_path = str(mc_dir / output_path.stem) + "_reference.obj"
+            print("exporting mesh data to {}".format(str(output_path)))
+            verts, faces, _, _ = measure.marching_cubes(tar_vol, 
+                level=level, 
+                spacing=(voxel_size, voxel_size, voxel_size)
+            )
+            verts -= abs(args.boxmin)
+            mesh = o3d.geometry.TriangleMesh()
+            mesh.vertices = o3d.utility.Vector3dVector(verts)
+            mesh.triangles = o3d.utility.Vector3iVector(faces)
+            mesh.paint_uniform_color([0.8, 0.8, 0.8])
+            o3d.io.write_triangle_mesh(str(output_path), mesh)
 
 if __name__ == "__main__":
     in_dir_list = list(sorted(in_dir.iterdir()))
@@ -295,15 +307,22 @@ if __name__ == "__main__":
             output_dir = out_dir / in_dir.name
             output_path = output_dir / OCTREE_FILE.format(args.src_size, args.tar_size, args.thres)
             output_path = output_path.with_suffix(OCTREE_SUFFIX)
+            print(output_path)
             
-            original_size = os.path.getsize(tar_path)
-            compressed_size = os.path.getsize(output_path)
-            sizes.append([original_size, compressed_size])
+            try:
+                original_size = os.path.getsize(tar_path)
+                compressed_size = os.path.getsize(output_path)
+                sizes.append([original_size, compressed_size])
+            except:
+                pass
             
         sizes = np.array(sizes) / (1024*1024) # convert to MB
         rates = (sizes[:, 0] - sizes[:, 1]) / sizes[:, 0] * 100
         
         print("\nstats:")
+        print("found {} valid data".format(len(sizes)))
         print("original size: min -> {:.2f} MB, max -> {:.2f} MB, avg -> {:.2f} MB".format(sizes[:, 0].min(), sizes[:, 0].max(), sizes[:, 0].mean()))
         print("compress size: min -> {:.2f} MB, max -> {:.2f} MB, avg -> {:.2f} MB".format(sizes[:, 1].min(), sizes[:, 1].max(), sizes[:, 1].mean()))
         print("compress rate: min -> {:.2f} %, max -> {:.2f} %, avg -> {:.2f} %".format(rates.min(), rates.max(), rates.mean()))
+        
+    print("done!!!")

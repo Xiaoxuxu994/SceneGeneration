@@ -1,0 +1,13 @@
+# Target labels
+ ascendc_kernels_npu_host
+# Source files and their labels
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_host
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_host.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_host-complete.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-install.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-mkdir.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-download.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-update.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-patch.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-configure.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-build.rule

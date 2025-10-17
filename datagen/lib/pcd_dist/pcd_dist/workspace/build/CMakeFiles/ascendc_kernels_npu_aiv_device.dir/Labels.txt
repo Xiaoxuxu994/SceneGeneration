@@ -1,0 +1,13 @@
+# Target labels
+ ascendc_kernels_npu_aiv_device
+# Source files and their labels
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_aiv_device
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_aiv_device.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_aiv_device-complete.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_aiv_device-prefix/src/ascendc_kernels_npu_aiv_device-stamp/ascendc_kernels_npu_aiv_device-install.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_aiv_device-prefix/src/ascendc_kernels_npu_aiv_device-stamp/ascendc_kernels_npu_aiv_device-mkdir.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_aiv_device-prefix/src/ascendc_kernels_npu_aiv_device-stamp/ascendc_kernels_npu_aiv_device-download.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_aiv_device-prefix/src/ascendc_kernels_npu_aiv_device-stamp/ascendc_kernels_npu_aiv_device-update.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_aiv_device-prefix/src/ascendc_kernels_npu_aiv_device-stamp/ascendc_kernels_npu_aiv_device-patch.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_aiv_device-prefix/src/ascendc_kernels_npu_aiv_device-stamp/ascendc_kernels_npu_aiv_device-configure.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_aiv_device-prefix/src/ascendc_kernels_npu_aiv_device-stamp/ascendc_kernels_npu_aiv_device-build.rule

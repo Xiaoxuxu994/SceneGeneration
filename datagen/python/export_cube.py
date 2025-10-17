@@ -111,7 +111,10 @@ def main():
         else:
             src_ply_list = list(map(lambda x: x / "scans/mesh_aligned_0.05.ply", sorted(list(in_dir.iterdir()))))
     elif args.dataset == "arkitscenes":
-        src_ply_list = list(map(lambda x: x / "{}_3dod_mesh.ply".format(str(x.name)), sorted(list(in_dir.iterdir()))))
+        if args.is_norm:
+            src_ply_list = list(map(lambda x: x / "normalized.ply", sorted(list(norm_dir.iterdir()))))
+        else:
+            src_ply_list = list(map(lambda x: x / "{}_3dod_mesh.ply".format(str(x.name)), sorted(list(in_dir.iterdir()))))
     elif args.dataset == "custom":
         src_ply_list = list(map(lambda x: x / "mesh.ply", sorted(list(in_dir.iterdir()))))
     

@@ -1,0 +1,4 @@
+/home/yyx/code/pcd_dist/pcd_dist/workspace/out/lib64/libascendc_kernels_npu.so
+/home/yyx/code/pcd_dist/pcd_dist/workspace/out/include/ascendc_kernels_npu/aclrtlaunch_kernel_cust_dist.h
+/home/yyx/code/pcd_dist/pcd_dist/workspace/out/include/ascendc_kernels_npu/aclrtlaunch_triple_chevrons_func.h
+/home/yyx/code/pcd_dist/pcd_dist/workspace/out/bin/ascendc_kernels_bbit

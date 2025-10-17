@@ -1,0 +1,4 @@
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_aic_device-prefix/src/ascendc_kernels_npu_aic_device-build/CMakeFiles/edit_cache.dir
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_aic_device-prefix/src/ascendc_kernels_npu_aic_device-build/CMakeFiles/rebuild_cache.dir
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_aic_device-prefix/src/ascendc_kernels_npu_aic_device-build/CMakeFiles/device_obj.dir
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_aic_device-prefix/src/ascendc_kernels_npu_aic_device-build/CMakeFiles/merge_device_obj.dir

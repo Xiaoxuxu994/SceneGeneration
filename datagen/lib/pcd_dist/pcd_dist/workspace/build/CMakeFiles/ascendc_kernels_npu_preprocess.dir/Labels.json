@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_preprocess"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_preprocess.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_preprocess-complete.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-install.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-mkdir.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-download.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-update.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-patch.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-configure.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-build.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"ascendc_kernels_npu_preprocess"
+		],
+		"name" : "ascendc_kernels_npu_preprocess"
+	}
+}

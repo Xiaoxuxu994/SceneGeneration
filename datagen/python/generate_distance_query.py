@@ -17,22 +17,14 @@ QUERY_FILE_SUFFIX = ".npz"
 parser = argparse.ArgumentParser()
 parser.add_argument("--in_dir", type=str, required=True)
 parser.add_argument("--out_dir", type=str, required=True)
-# parser.add_argument("--out_dir_sec", type=str, default="", help="secondary output directory.")
-# parser.add_argument("--mc_dir", type=str, default="", help="marching cubes output directory.")
-# parser.add_argument("--mc_alpha", type=float, default=1)
-# parser.add_argument("--src_size", type=int, required=True)
-# parser.add_argument("--tar_size", type=int, required=True)
+
 parser.add_argument("--num_queries", type=int, default=10000000)
 parser.add_argument("--chunk_size", type=int, default=2000000)
 parser.add_argument("--boxmin", type=float, default=-1)
 parser.add_argument("--boxmax", type=float, default=1)
-# parser.add_argument("--thres", type=int, required=True, help="number of voxel in the finest resolution.")
-# parser.add_argument("--check", action="store_true", help="check octree.")
-# parser.add_argument("--stats", action="store_true", help="check compression stats.")
-# parser.add_argument("--grad", action="store_true", help="generate octree with gradients, \
-#                     i.e. unit vectors to the mesh surface.")
-# parser.add_argument("--sign", action="store_true", help="generate octree with gradient signs, \
-#                     i.e. whether the gradients are pointing at the same direction as the triangle normals.")
+
+parser.add_argument("--fast", action="store_true", help="use the faster but less accurate distance implementation.")
+
 parser.add_argument("--force", action="store_true", help="generate octree even if target exists.")
 parser.add_argument("--num_workers", type=int, default=1)
 args = parser.parse_args()
@@ -68,37 +60,20 @@ def compute_angle(A, B):
 
 def compute_grad(query_coords, mesh):
     print("computing gradients for {} query points".format(query_coords.shape[0]))
-    
-    # # slow implementation
-    # closest_points, distance, triangle_id = trimesh.proximity.closest_point(mesh, query_coords)
-    # query_grads = (closest_points - query_coords) / np.stack([distance]*3, axis=1)
 
-    mesh_o3d = o3d.geometry.TriangleMesh(
-        vertices=o3d.utility.Vector3dVector(np.asarray(mesh.vertices)),
-        triangles=o3d.utility.Vector3iVector(np.asarray(mesh.faces))
-    )
-    mesh_o3d.compute_triangle_normals()
-    scene = o3d.t.geometry.RaycastingScene()
-    scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh_o3d))
-    
-    # return_dict = scene.compute_closest_points(o3d.core.Tensor.from_numpy(query_coords.astype(np.float32)))
-    # closest_points = return_dict["points"].numpy()
-    # closest_triangle_ids = [e.item() for e in return_dict["primitive_ids"]]
-    
-    # distance = np.linalg.norm(closest_points - query_coords, axis=1) + 1e-16
-    # query_grads = (closest_points - query_coords) / np.stack([distance]*3, axis=1)
-    
-    # # signs
-    # triangle_normals = np.array(mesh_o3d.triangle_normals)
-    # closest_triangle_normals = triangle_normals[closest_triangle_ids]
-    # grad_normal_angles = compute_angle(query_grads, closest_triangle_normals)
-    # grad_normal_signs = (grad_normal_angles <= 90).astype(int) # 0 ~ 1
-    # grad_normal_signs = grad_normal_signs * 2 - 1 # -1 ~ 1
-    
-    # return query_grads, grad_normal_signs
-    
-    query_point = o3d.core.Tensor.from_numpy(query_coords.astype(np.float32))
-    query_grads = scene.compute_distance(query_point)
+    if args.fast:
+        pass
+    else:
+        mesh_o3d = o3d.geometry.TriangleMesh(
+            vertices=o3d.utility.Vector3dVector(np.asarray(mesh.vertices)),
+            triangles=o3d.utility.Vector3iVector(np.asarray(mesh.faces))
+        )
+        mesh_o3d.compute_triangle_normals()
+        scene = o3d.t.geometry.RaycastingScene()
+        scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh_o3d))
+        
+        query_point = o3d.core.Tensor.from_numpy(query_coords.astype(np.float32))
+        query_grads = scene.compute_distance(query_point)
     
     return query_grads
 
@@ -121,20 +96,8 @@ def worker_job(input_dir):
         print("processing {}...".format(str(input_dir)))
         
         print("loading mesh {}".format(mesh_path))
-        # mesh = trimesh.load_mesh(mesh_path) # obj file
         mesh = trimesh.load_mesh(mesh_path, validate=False, process=False) # obj file
-        query_coords, chunk_query_coords = create_query_coords(args.num_queries)
-        # list_distances, list_signs = [], []
-        # for cur_query_coords in chunk_query_coords:
-        #     distances, signs = compute_grad(cur_query_coords, mesh)
-        #     list_distances.append(distances)
-        #     list_signs.append(signs)
-        # array_distances = np.stack(list_distances, axis=0)
-        # array_signs = np.stack(list_signs, axis=0)
-        
-        # assert query_coords.shape[0] == array_distances.shape[0] and query_coords.shape[0] == array_signs.shape[0]
-        
-        # np.savez_compressed(output_path, distances=array_distances, signs=array_signs)      
+        query_coords, chunk_query_coords = create_query_coords(args.num_queries)  
         
         list_queries, list_distances = [], []
         for cur_query_coords in chunk_query_coords:

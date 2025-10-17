@@ -1,0 +1,13 @@
+# Target labels
+ ascendc_kernels_npu_preprocess
+# Source files and their labels
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_preprocess
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_preprocess.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_preprocess-complete.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-install.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-mkdir.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-download.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-update.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-patch.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-configure.rule
+/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_preprocess-prefix/src/ascendc_kernels_npu_preprocess-stamp/ascendc_kernels_npu_preprocess-build.rule

@@ -1,0 +1,24 @@
+ninja_required_version = 1.3
+cxx = /home/ma-user/anaconda3/envs/PyTorch-2.1.0/bin/aarch64-conda-linux-gnu-c++
+
+cflags = -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O3 -Wall -fPIC -O3 -isystem /home/ma-user/anaconda3/envs/PyTorch-2.1.0/include -fPIC -O3 -isystem /home/ma-user/anaconda3/envs/PyTorch-2.1.0/include -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O3 -pipe -isystem /home/ma-user/anaconda3/envs/PyTorch-2.1.0/include -DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/ma-user/anaconda3/envs/PyTorch-2.1.0/include -fPIC -I/home/ma-user/anaconda3/envs/PyTorch-2.1.0/lib/python3.10/site-packages/torch_npu/include -I/home/ma-user/anaconda3/envs/PyTorch-2.1.0/lib/python3.10/site-packages/torch/include -I/home/ma-user/anaconda3/envs/PyTorch-2.1.0/lib/python3.10/site-packages/torch/include/torch/csrc/api/include -I/home/ma-user/anaconda3/envs/PyTorch-2.1.0/lib/python3.10/site-packages/torch/include/TH -I/home/ma-user/anaconda3/envs/PyTorch-2.1.0/lib/python3.10/site-packages/torch/include/THC -I/home/ma-user/anaconda3/envs/PyTorch-2.1.0/include/python3.10 -c
+post_cflags = -DTORCH_API_INCLUDE_EXTENSION_H '-DPYBIND11_COMPILER_TYPE="_gcc"' '-DPYBIND11_STDLIB="_libstdcpp"' '-DPYBIND11_BUILD_ABI="_cxxabi1016"' -DTORCH_EXTENSION_NAME=kernel_custom_dist -D_GLIBCXX_USE_CXX11_ABI=1 -std=c++17
+cuda_dlink_post_cflags = 
+ldflags = 
+
+rule compile
+  command = $cxx -MMD -MF $out.d $cflags -c $in -o $out $post_cflags
+  depfile = $out.d
+  deps = gcc
+
+
+
+
+
+build /home/yyx/code/pcd_dist/ops/build/temp.linux-aarch64-cpython-310/kernel_custom_dist.o: compile /home/yyx/code/pcd_dist/ops/kernel_custom_dist.cpp
+
+
+
+
+
+

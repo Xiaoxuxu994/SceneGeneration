@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_host"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_host.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/CMakeFiles/ascendc_kernels_npu_host-complete.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-install.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-mkdir.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-download.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-update.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-patch.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-configure.rule"
+		},
+		{
+			"file" : "/home/yyx/code/pcd_dist/pcd_dist/workspace/build/ascendc_kernels_npu_host-prefix/src/ascendc_kernels_npu_host-stamp/ascendc_kernels_npu_host-build.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"ascendc_kernels_npu_host"
+		],
+		"name" : "ascendc_kernels_npu_host"
+	}
+}

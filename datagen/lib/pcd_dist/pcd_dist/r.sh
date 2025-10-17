@@ -1,0 +1,1 @@
+bash ./workspace/run.sh -r npu -v Ascend910B3
