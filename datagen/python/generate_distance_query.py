@@ -91,26 +91,30 @@ def worker_job(input_dir):
     output_path = output_path.with_suffix(QUERY_FILE_SUFFIX)
     
     if output_path.exists() and not args.force:
-        print("found existing query file {}, skipping...".format(str(output_path)))
+        print("found existing query file, skipping...")
     else:
-        print("processing {}...".format(str(input_dir)))
-        
-        print("loading mesh {}".format(mesh_path))
-        mesh = trimesh.load_mesh(mesh_path, validate=False, process=False) # obj file
-        query_coords, chunk_query_coords = create_query_coords(args.num_queries)  
-        
-        list_queries, list_distances = [], []
-        for cur_query_coords in chunk_query_coords:
-            distances = compute_grad(cur_query_coords, mesh)
+        if mesh_path.exists():
+            print("loading mesh {}".format(mesh_path))
+            mesh = trimesh.load_mesh(mesh_path, validate=False, process=False) # obj file
+            query_coords, chunk_query_coords = create_query_coords(args.num_queries)  
             
-            distances = distances.numpy().tolist()
-            list_distances += distances
-        
-        array_queries = query_coords.astype(np.float16)
-        array_distances = np.array(list_distances).astype(np.float16)
-        assert array_queries.shape[0] == array_distances.shape[0]
-        
-        np.savez_compressed(output_path, queries=array_queries, distances=array_distances)
+            try:
+                list_queries, list_distances = [], []
+                for cur_query_coords in chunk_query_coords:
+                    distances = compute_grad(cur_query_coords, mesh)
+                    
+                    distances = distances.numpy().tolist()
+                    list_distances += distances
+                
+                array_queries = query_coords.astype(np.float16)
+                array_distances = np.array(list_distances).astype(np.float16)
+                assert array_queries.shape[0] == array_distances.shape[0]
+                
+                np.savez_compressed(output_path, queries=array_queries, distances=array_distances)
+            except IndexError:
+                print("invalid query or mesh data, skipping...")
+        else:
+            print("mesh file doesn't exist, skipping...")
 
 if __name__ == "__main__":
     in_dir_list = list(sorted(in_dir.iterdir()))

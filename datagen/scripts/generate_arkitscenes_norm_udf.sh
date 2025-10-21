@@ -57,12 +57,24 @@
 python python/export_cube.py \
     --mode udf \
     --dataset arkitscenes \
-    --in_dir data/nvme2/share/datasets/arkitscenes_mesh_norm_-1_1_0.95/val/ \
+    --in_dir data/efs-mi-east4-2/datasets/arkitscenes_processed/arkitscenes_mesh_norm_-1_1_0.95/val/ \
     --is_norm \
-    --norm_dir data/nvme2/share/datasets/arkitscenes_mesh_norm_-1_1_0.95/val/ \
-    --out_dir data/nvme2/share/datasets/arkitscenes_volume_norm_-1_1_0.95/val/ \
+    --norm_dir data/efs-mi-east4-2/datasets/arkitscenes_processed/arkitscenes_mesh_norm_-1_1_0.95/val/ \
+    --out_dir data/efs-mi-east4-2/datasets/arkitscenes_processed/arkitscenes_volume_norm_-1_1_0.95/val/ \
     --voxel_res 256 \
+    --force \
     --num_workers 16
+
+python python/export_cube.py \
+    --mode udf \
+    --dataset arkitscenes \
+    --in_dir data/efs-mi-east4-2/datasets/arkitscenes_processed/arkitscenes_mesh_norm_-1_1_0.95/val/ \
+    --is_norm \
+    --norm_dir data/efs-mi-east4-2/datasets/arkitscenes_processed/arkitscenes_mesh_norm_-1_1_0.95/val/ \
+    --out_dir data/efs-mi-east4-2/datasets/arkitscenes_processed/arkitscenes_volume_norm_-1_1_0.95/val/ \
+    --voxel_res 512 \
+    --force \
+    --num_workers 4
 
 # python python/export_cube.py \
 #     --mode udf \
