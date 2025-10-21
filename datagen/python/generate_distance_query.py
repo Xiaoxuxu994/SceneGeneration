@@ -1,4 +1,5 @@
 import os
+import sys
 import shutil
 import argparse
 import trimesh
@@ -27,6 +28,7 @@ parser.add_argument("--fast", action="store_true", help="use the faster but less
 
 parser.add_argument("--force", action="store_true", help="generate octree even if target exists.")
 parser.add_argument("--num_workers", type=int, default=1)
+
 args = parser.parse_args()
 
 assert args.num_queries >= args.chunk_size, "number of queries must be greater than the chunk size, \
@@ -117,7 +119,7 @@ def worker_job(input_dir):
             print("mesh file doesn't exist, skipping...")
 
 if __name__ == "__main__":
-    in_dir_list = list(sorted(in_dir.iterdir()))
+    in_dir_list = list(sorted(in_dir.iterdir(), reverse=True))
     assert len(in_dir_list) > 0, "empty input data list"
     
     if args.num_workers > 1:
