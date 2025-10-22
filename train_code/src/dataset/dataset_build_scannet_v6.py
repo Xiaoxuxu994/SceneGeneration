@@ -783,9 +783,12 @@ class DatasetForScanNetV6TESTSDF(Dataset):
         self.grid_minbound_dict = {}
         vs_list = self.vs_res if isinstance(self.vs_res, list) else [self.vs_res]
         for vs in vs_list:
-            grid_idx, minbound = self._generate_dense_grid_index_and_minbound(vs)
-            self.grid_index_dict[vs] = grid_idx
-            self.grid_minbound_dict[vs] = minbound
+            if vs == 256:
+                grid_idx, minbound = self._generate_dense_grid_index_and_minbound(vs)
+                self.grid_index_dict[vs] = grid_idx
+                self.grid_minbound_dict[vs] = minbound
+            else:
+                continue
 
     @staticmethod
     def _generate_dense_grid_index_and_minbound(resolution):
@@ -820,9 +823,11 @@ class DatasetForScanNetV6TESTSDF(Dataset):
         ## get query center and grid idx online
         if isinstance(self.vs_res,list):
             for vs in self.vs_res:
-                input_dict[f'pc_query_grid_{vs}'] = self.grid_index_dict[vs]
-                input_dict[f'pc_query_{vs}'] = self.grid_minbound_dict[vs]
-        
+                if vs == 256:
+                    input_dict[f'pc_query_grid_{vs}'] = self.grid_index_dict[vs]
+                    input_dict[f'pc_query_{vs}'] = self.grid_minbound_dict[vs]
+                else:
+                    continue
         for transform in self.transforms:
             input_dict = transform(input_dict)
         return input_dict

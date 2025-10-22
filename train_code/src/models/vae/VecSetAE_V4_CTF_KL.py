@@ -757,7 +757,11 @@ class VecSetAEV4SINGLEKL(nn.Module):
 
         # decoder vs128 train with
         query_pts = input_dict[f'pc_query_{vs}'].unsqueeze(0)
-        target = input_dict[f'pc_query_sdf_{vs}']
+
+        if f'pc_query_sdf_{vs}' in input_dict.keys():
+            target = input_dict[f'pc_query_sdf_{vs}']
+        else:
+            target = []
 
         logit,_ = self.decode(latent, query_pts,chunk_size=self.chunk_size)
 

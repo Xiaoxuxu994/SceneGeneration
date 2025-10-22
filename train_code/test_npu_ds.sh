@@ -43,5 +43,8 @@ export LD_LIBRARY_PATH=/home/ma-user/anaconda3/envs/PyTorch-2.1.0/lib/python3.9/
 # ASCEND_RT_VISIBLE_DEVICES=3 python test_npu_single_new_metricTM_datactf_eval_ds.py \
 #     --config configs/val/exp1015_008_vs256_vs512_fq1e7_mix_8enc_datactf.py
 
-ASCEND_RT_VISIBLE_DEVICES=3 python test_npu_single_new_metricTM_datactf_eval_ds.py \
-    --config configs/val/exp1015_009_vs256_vs512_fq1e7_mix_8enc_dim1024_datactf.py
+#ASCEND_RT_VISIBLE_DEVICES=3 python test_npu_single_new_metricTM_datactf_eval_ds.py \
+#    --config configs/val/exp1015_009_vs256_vs512_fq1e7_mix_8enc_dim1024_datactf.py
+
+ASCEND_RT_VISIBLE_DEVICES=1 python test_npu_single_new_metricTM_datactf_infer_ds.py \
+    --config configs/test/exp1015_008_vs256_vs512_fq1e7_mix_8enc_datactf.py
