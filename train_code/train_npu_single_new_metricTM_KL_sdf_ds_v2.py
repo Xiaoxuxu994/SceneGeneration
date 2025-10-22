@@ -377,6 +377,9 @@ def reduce_metrics(metrics_dict, device):
             metrics_dict[k] = all_reduce_mean(t)
     return metrics_dict
 
+def _to_list(x):
+    return x if isinstance(x, (list, tuple)) else [x]
+
 def main():
     # ======================================================
     # 1. args & cfg
@@ -439,11 +442,7 @@ def main():
         data_list_name=cfg.train_data_list_name,
         **build_dataset_kwargs(cfg.train_data_args)
     )
-    val_dataset = DatasetForScanNetV6DEBUGAUGSDF(
-        data_root=cfg.data_root,
-        data_list_name=cfg.val_data_list_name,
-        **build_dataset_kwargs(cfg.val_data_args)
-    )
+
     train_dataloader = prepare_dataloader(
         train_dataset,
         batch_size=cfg.batch_size,
@@ -456,20 +455,38 @@ def main():
         rank=accelerator.process_index
     )
 
-    val_dataloader = prepare_dataloader(
-        val_dataset,
-        batch_size=1,
-        num_workers=cfg.num_workers,
-        shuffle=False,
-        drop_last=False,
-        pin_memory=True,
-        process_group=get_data_parallel_group(),
-        world_size=accelerator.num_processes,
-        rank=accelerator.process_index
-    )
+    ## construct multiple val dataset
+    val_list_names = _to_list(cfg.val_data_list_name)
+    val_names_cfg  = getattr(cfg, 'val_names', None)
+    if val_names_cfg is not None:
+        val_names = _to_list(val_names_cfg)
+        assert len(val_names) == len(val_list_names), "len(val_names) must match len(val_data_list_name)"
+    else:
+        val_names = [os.path.splitext(os.path.basename(p))[0] for p in val_list_names]
+
+    val_loaders = []
+    for vname, vfile in zip(val_names, val_list_names):
+        v_dataset = DatasetForScanNetV6DEBUGAUGSDF(
+            data_root=cfg.data_root,
+            data_list_name=vfile,
+            **build_dataset_kwargs(cfg.val_data_args)
+        )
+        v_loader = prepare_dataloader(
+            v_dataset,
+            batch_size=1,
+            num_workers=cfg.num_workers,
+            shuffle=False,
+            drop_last=False,
+            pin_memory=True,
+            process_group=get_data_parallel_group(),
+            world_size=accelerator.num_processes,
+            rank=accelerator.process_index
+        )
+        val_loaders.append((vname, v_loader))
 
     logger.info(f"Train Dataset contains {len(train_dataset)} data: ({cfg.train_data_list_name})")
-    logger.info(f"Val Dataset contains {len(val_dataset)} data: ({cfg.val_data_list_name})")
+    for (vname, vloader), vfile in zip(val_loaders, val_list_names):
+        logger.info(f"Val Dataset[{vname}] contains {len(vloader.dataset)} data: ({vfile})")
 
     total_batch_size = cfg.batch_size * dist.get_world_size() // cfg.sp_size
     logger.info(f"Total batch size: {total_batch_size}")
@@ -536,7 +553,22 @@ def main():
     #     import pdb; pdb.set_trace()
     # else:
     #     import time; time.sleep(12000)
-    model, optimizer, train_dataloader, val_dataloader,lr_scheduler = accelerator.prepare(model, optimizer, train_dataloader, val_dataloader, lr_scheduler)
+
+    # ## orig
+    # model, optimizer, train_dataloader, val_dataloader,lr_scheduler = accelerator.prepare(model, optimizer, train_dataloader, val_dataloader, lr_scheduler)
+
+    ### support for multi val dataset
+    ## prepare training related
+    model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
+        model, optimizer, train_dataloader, lr_scheduler
+    )
+    ## prepare for val dataloader
+    prepared_val_loaders = []
+    for vname, vloader in val_loaders:
+        vloader_prep = accelerator.prepare_data_loader(vloader, device_placement=False)
+        prepared_val_loaders.append((vname, vloader_prep))
+    val_loaders = prepared_val_loaders
+
     # train_dataloader = accelerator.prepare_data_loader(train_dataloader, device_placement=False)
     # val_dataloader = accelerator.prepare_data_loader(val_dataloader, device_placement=False)
     # print(train_dataloader.sampler, len(train_dataloader), '*************AFter')
@@ -551,7 +583,8 @@ def main():
     
     torch.set_default_dtype(torch.float)
     num_steps_per_epoch = len(train_dataloader)
-    num_steps_per_epoch_val = len(val_dataloader)
+    val_steps_info = ", ".join(f"{vname}:{len(vloader)}" for vname, vloader in val_loaders) \
+                    if len(val_loaders) > 0 else "none"
     logger.info("Boost model for distributed training")
 
     # =======================================================
@@ -570,7 +603,8 @@ def main():
         start_epoch = last_epoch if last_step < num_steps_per_epoch - 1 else last_epoch + 1
         # start_epoch, start_step, sampler_start_idx = load(None, model, optimizer, lr_scheduler, cfg.resume) 
     logger.info(f"Training for {cfg.epochs} epochs with {num_steps_per_epoch} steps per epoch")
-    logger.info(f"Evaluating every {cfg.ckpt_every} interval with {num_steps_per_epoch_val} steps per epoch")
+    logger.info(f"Evaluating every {cfg.ckpt_every} steps; val steps per epoch -> [{val_steps_info}]")
+
   
     # train_dataloader.sampler.set_start_index(sampler_start_idx)
     # val_dataloader.sampler.set_start_index(0)
@@ -774,93 +808,95 @@ def main():
                     ### Eval Set
                     logger.info(f"Evaluating {epoch} step {step} global_step {global_step}......")
                     model.eval()
-                    running_eval_metrics = init_running_metrics(levels=cfg.vs_res_valkey,
-                                               class_keys=['cl1','cl0','wavg'],
-                                               base_metrics=['IoU'],
-                                               include_per_level=True)
-                    eval_log_step = 0
-                    # val_dataloader.sampler.set_epoch(epoch)
-                    valdataloader_iter = iter(val_dataloader)
-                    with tqdm(range(start_step_eval, num_steps_per_epoch_val),desc=f"Epoch {epoch}",
-                            disable=not accelerator.local_process_index==0,total=num_steps_per_epoch_val,initial=start_step_eval,) as pbar_val:
-                        for _ in pbar_val:
-                            input_dict = next(valdataloader_iter)
-                            input_dict = {k: v[0].to(device) if isinstance(v, torch.Tensor) else v for k, v in input_dict.items()}
 
-                            with torch.no_grad():
-                                # core_model = model.module if hasattr(model, 'module') else model
-                                # if epoch < cfg.gt_warmup_epochs:
-                                #     core_model.set_mode('gt')
-                                # else:
-                                #     core_model.set_mode('coarse_to_fine')
-                                eval_loss_kl, output_list, target_list = model(input_dict,vs_list=cfg.vs_res_valkey)
+                    for vname, vloader in val_loaders:
+                        running_eval_metrics = init_running_metrics(levels=cfg.vs_res_valkey,
+                                                class_keys=['cl1','cl0','wavg'],
+                                                base_metrics=['IoU'],
+                                                include_per_level=True)
+                        eval_log_step = 0
+                        num_steps_per_epoch_val = len(vloader)
+                        valdataloader_iter = iter(vloader)
+                        with tqdm(range(start_step_eval, num_steps_per_epoch_val),desc=f"Epoch {epoch}",
+                                disable=not accelerator.local_process_index==0,total=num_steps_per_epoch_val,initial=start_step_eval,) as pbar_val:
+                            for _ in pbar_val:
+                                input_dict = next(valdataloader_iter)
+                                input_dict = {k: v[0].to(device) if isinstance(v, torch.Tensor) else v for k, v in input_dict.items()}
 
-                            eval_loss = torch.tensor(0).to(device, dtype)
-                            for idx,(logit, target) in enumerate(zip(output_list,target_list)):
-                                scale = cfg.vs_res_valkey[idx]
-                                if cfg.enable_occ_loss:
-                                    eval_loss_occ = cfg.loss_weight_occ[idx] * occ_criterion(logit.detach(), target.detach())
-                                    if (not torch.isnan(eval_loss_occ)) and (not torch.isinf(eval_loss_occ)):
-                                        eval_loss += eval_loss_occ 
-                                        running_eval_metrics[f'loss_occ_s{scale}'] += eval_loss_occ.item()      
-                                        running_eval_metrics['loss_occ'] += eval_loss_occ.item()  # accumulate all occ loss across all level                              
+                                with torch.no_grad():
+                                    # core_model = model.module if hasattr(model, 'module') else model
+                                    # if epoch < cfg.gt_warmup_epochs:
+                                    #     core_model.set_mode('gt')
+                                    # else:
+                                    #     core_model.set_mode('coarse_to_fine')
+                                    eval_loss_kl, output_list, target_list = model(input_dict,vs_list=cfg.vs_res_valkey)
 
-                                ## enable_sdf_loss
-                                if cfg.enable_sdf_loss:
-                                    if cfg.truncatedist_train[idx]  != 0.0:
-                                        if not cfg.softclip:
-                                            eval_loss_sdf = cfg.loss_weight_SDF[idx] * \
-                                            (sdf_criterion(
-                                                torch.clip(logit, 0.0, cfg.truncatedist_train[idx]), 
-                                                torch.clip(target, 0.0, cfg.truncatedist_train[idx]))                            
-                                            )
+                                eval_loss = torch.tensor(0).to(device, dtype)
+                                for idx,(logit, target) in enumerate(zip(output_list,target_list)):
+                                    scale = cfg.vs_res_valkey[idx]
+                                    if cfg.enable_occ_loss:
+                                        eval_loss_occ = cfg.loss_weight_occ[idx] * occ_criterion(logit.detach(), target.detach())
+                                        if (not torch.isnan(eval_loss_occ)) and (not torch.isinf(eval_loss_occ)):
+                                            eval_loss += eval_loss_occ 
+                                            running_eval_metrics[f'loss_occ_s{scale}'] += eval_loss_occ.item()      
+                                            running_eval_metrics['loss_occ'] += eval_loss_occ.item()  # accumulate all occ loss across all level                              
+
+                                    ## enable_sdf_loss
+                                    if cfg.enable_sdf_loss:
+                                        if cfg.truncatedist_train[idx]  != 0.0:
+                                            if not cfg.softclip:
+                                                eval_loss_sdf = cfg.loss_weight_SDF[idx] * \
+                                                (sdf_criterion(
+                                                    torch.clip(logit, 0.0, cfg.truncatedist_train[idx]), 
+                                                    torch.clip(target, 0.0, cfg.truncatedist_train[idx]))                            
+                                                )
+                                            else:
+                                                eval_loss_sdf = cfg.loss_weight_SDF[idx] * \
+                                                (sdf_criterion(
+                                                    softclip(logit, cfg.truncatedist_train[idx], type=cfg.softcliptype, alpha=cfg.softclipalpha),
+                                                    torch.clip(target, 0.0, cfg.truncatedist_train[idx]))
+                                                )
                                         else:
-                                            eval_loss_sdf = cfg.loss_weight_SDF[idx] * \
-                                            (sdf_criterion(
-                                                softclip(logit, cfg.truncatedist_train[idx], type=cfg.softcliptype, alpha=cfg.softclipalpha),
-                                                torch.clip(target, 0.0, cfg.truncatedist_train[idx]))
-                                            )
-                                    else:
-                                        eval_loss_sdf = cfg.loss_weight_SDF[idx] * sdf_criterion(logit, target)
+                                            eval_loss_sdf = cfg.loss_weight_SDF[idx] * sdf_criterion(logit, target)
 
 
-                                    if (not torch.isnan(eval_loss_sdf)) and (not torch.isinf(eval_loss_sdf)):
-                                        eval_loss +=  eval_loss_sdf
-                                        running_eval_metrics[f'loss_sdf_s{scale}'] += eval_loss_sdf.item()
-                                        running_eval_metrics['loss_sdf'] += eval_loss_sdf.item()
+                                        if (not torch.isnan(eval_loss_sdf)) and (not torch.isinf(eval_loss_sdf)):
+                                            eval_loss +=  eval_loss_sdf
+                                            running_eval_metrics[f'loss_sdf_s{scale}'] += eval_loss_sdf.item()
+                                            running_eval_metrics['loss_sdf'] += eval_loss_sdf.item()
 
-                            # kl loss
-                            if (not torch.isnan(eval_loss_kl)) and (not torch.isinf(eval_loss_kl)):
-                                eval_loss_kl = torch.sum(eval_loss_kl) / eval_loss_kl.shape[0]
-                                eval_loss += cfg.loss_weight_KL * eval_loss_kl 
-                                running_eval_metrics['loss_kl'] += eval_loss_kl.item()
+                                # kl loss
+                                if (not torch.isnan(eval_loss_kl)) and (not torch.isinf(eval_loss_kl)):
+                                    eval_loss_kl = torch.sum(eval_loss_kl) / eval_loss_kl.shape[0]
+                                    eval_loss += cfg.loss_weight_KL * eval_loss_kl 
+                                    running_eval_metrics['loss_kl'] += eval_loss_kl.item()
 
-                            ## evaluation
-                            running_eval_metrics['loss'] += eval_loss.item()
-                            for idx,(logit, target) in enumerate(zip(output_list,target_list)):
-                                scale = cfg.vs_res_valkey[idx]
-                                metrics = sdf_eval_metric_all_TM(logit, target, sdf_threshold=cfg.sdf_threshold[idx], 
-                                                                mask=None, truncatedist = cfg.truncatedist[idx])
-                                for name, score in metrics:
-                                    running_eval_metrics[f'{name}_s{scale}'] += score
-                            eval_log_step += 1
+                                ## evaluation
+                                running_eval_metrics['loss'] += eval_loss.item()
+                                for idx,(logit, target) in enumerate(zip(output_list,target_list)):
+                                    scale = cfg.vs_res_valkey[idx]
+                                    metrics = sdf_eval_metric_all_TM(logit, target, sdf_threshold=cfg.sdf_threshold[idx], 
+                                                                    mask=None, truncatedist = cfg.truncatedist[idx])
+                                    for name, score in metrics:
+                                        running_eval_metrics[f'{name}_s{scale}'] += score
+                                eval_log_step += 1
 
-                            # 清理本 step 显存
-                            # del input_dict, output_list, target_list,eval_loss, eval_loss_occ, eval_loss_kl
-                            del input_dict, output_list, target_list,eval_loss, eval_loss_sdf, eval_loss_kl
-                            # cleanup_memory()
+                                # 清理本 step 显存
+                                # del input_dict, output_list, target_list,eval_loss, eval_loss_occ, eval_loss_kl
+                                del input_dict, output_list, target_list,eval_loss, eval_loss_sdf, eval_loss_kl
+                                # cleanup_memory()
 
-                    # all readuce mean         
-                    running_eval_metrics = reduce_metrics(running_eval_metrics, device)    
-                    if dist.get_rank() == 0:
-                        log_metrics(writer, logger, running_eval_metrics, eval_log_step, global_step, optimizer, step, mode='eval',
-                                    include_prefixes=['loss','loss_kl','IoU_cl1','IoU_cl0','IoU_wavg','SDF_L1','SDF_L2'],
-                                    level_list=cfg.vs_res_valkey)
-                        log_memory_usage()
-                        # cleanup_memory() 
+                        # all readuce mean         
+                        running_eval_metrics = reduce_metrics(running_eval_metrics, device)    
+                        if dist.get_rank() == 0:
+                            log_metrics(writer, logger, running_eval_metrics, eval_log_step, global_step, optimizer, step, mode=f'eval/{vname}',
+                                        include_prefixes=['loss','loss_kl','IoU_cl1','IoU_cl0','IoU_wavg','SDF_L1','SDF_L2'],
+                                        level_list=cfg.vs_res_valkey)
+                            log_memory_usage()
+                            # cleanup_memory() 
 
-                    # val_dataloader.sampler.set_start_index(0)
-                    start_step_eval = 0                       
+                        # val_dataloader.sampler.set_start_index(0)
+                        start_step_eval = 0                       
             
         # the continue epochs are not resumed, so we need to reset the sampler start index and start step
         # train_dataloader.sampler.set_start_index(0)
