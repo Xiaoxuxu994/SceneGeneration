@@ -266,6 +266,12 @@ class Dataset(Dataset):
             return None
         start_frame = random.randint(0, len(frames) - frame_dist - 1)
         end_frame = start_frame + frame_dist
+        while end_frame-start_frame-1 < self.config.training.num_views-2:
+            frame_dist -= 1
+            if frame_dist < min_frame_dist:
+                return None
+            start_frame = random.randint(0, len(frames) - frame_dist - 1)
+            end_frame = start_frame + frame_dist
         sampled_frames = random.sample(range(start_frame + 1, end_frame), self.config.training.num_views-2)
         image_indices = [start_frame, end_frame] + sampled_frames
         return image_indices

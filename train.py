@@ -54,7 +54,7 @@ elif 'VGGT' in module:
     collate_fn = VGGT_collate
 elif 'MapAnything' in module:
     collate_fn = MapAnything_collate
-elif 'MA' in module:
+elif ('MA' in module) or ('dual' in module):
     collate_fn = MA_collate
 else:
     collate_fn = None

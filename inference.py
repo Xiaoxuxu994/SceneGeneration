@@ -46,7 +46,7 @@ elif 'VGGT' in module:
     collate_fn = VGGT_collate
 elif 'MapAnything' in module:
     collate_fn = MapAnything_collate
-elif 'MA' in module:
+elif ('MA' in module) or ('dual' in module):
     collate_fn = MA_collate
 else:
     collate_fn = None
@@ -102,7 +102,7 @@ with torch.no_grad(), torch.autocast(
         if config.inference.get("render_video", False):
             result= model.module.render_video(result, **config.inference.render_video_config)
         export_results(result, config.inference_out_dir, compute_metrics=config.inference.get("compute_metrics"), save_img=False)
-    torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
 
 
 dist.barrier()
