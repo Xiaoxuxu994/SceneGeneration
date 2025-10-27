@@ -254,7 +254,7 @@ class ProcessData(nn.Module):
         # randomize input views if dynamic_input_view_num is True and not in inference mode
         if (self.config.training.get("dynamic_input_view_num", False) 
             and (not self.config.inference.get("if_inference", False))):
-            self.config.training.num_input_views = np.random.randint(2, 5)
+            self.config.training.num_input_views = np.random.choice([2, 4, 8, 16, 32])
         
 
         input_dict, target_dict = {}, {}
@@ -262,6 +262,14 @@ class ProcessData(nn.Module):
 
         num_target_views, num_views, bs = self.config.training.num_target_views, data_batch["c2w"].size(1), data_batch["image"].size(0)
         assert num_target_views < num_views, f"We have {num_views} views, but we want to select {num_target_views} target views. This is more than the total number of views we have."
+        
+        # Special case of ScanNet++: v_input = v_target and non-constant num_views
+        if (self.config.training.num_target_views == self.config.training.num_input_views) \
+            & (data_batch["c2w"].size(1) != self.config.training.num_views):
+                self.config.training.num_views = min(self.config.training.num_views, data_batch["c2w"].size(1))
+                self.config.training.num_input_views = self.config.training.num_views // 2
+                self.config.training.num_target_views = self.config.training.num_views // 2
+                num_target_views = self.config.training.num_target_views
         
         # Decide the target view indices
         if target_has_input: 
@@ -671,7 +679,7 @@ def MA_collate(batch):
     is_metric_scale = torch.stack([b["is_metric_scale"] for b in batch], dim=0)
     norm_type = [b["norm_type"] for b in batch]
     
-    return {
+    collated_batch = {
         "image": images,
         "c2w": c2w,
         "fxfycxcy": fxfycxcy,
@@ -680,6 +688,14 @@ def MA_collate(batch):
         "is_metric_scale": is_metric_scale,
         "norm_type": norm_type,
     }
+    
+    # In case of dual encoder, images will already be square -> no need to pad
+    if "image_LVSM" in batch[0]:
+        collated_batch['image_LVSM'] = torch.stack([b["image_LVSM"] for b in batch], dim=0)
+        collated_batch['fxfycxcy_LVSM'] = torch.stack([b["fxfycxcy_LVSM"] for b in batch], dim=0)
+        collated_batch['c2w_LVSM'] = torch.stack([b["c2w_LVSM"] for b in batch], dim=0)
+    
+    return collated_batch
 
 
 def PRoPE_collate(batch):

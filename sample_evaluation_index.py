@@ -6,10 +6,10 @@ from tqdm import tqdm
 random.seed(42)
 
 # Parameters
-V_INPUT = 32
+V_INPUT = 16
 V_TARGET = 3
-txt_path = "/storage/datasets/nargenziano/re10k_LVSM/test/full_list.txt"
-output_json = f"data/evaluation_index_re10k_i{V_INPUT}_t{V_TARGET}.json"
+txt_path = "/storage/datasets/nargenziano/scannetpp/splits/hq_lvsm_val.txt"
+output_json = f"data/scannetpp/evaluation_index_scannetpp_i{V_INPUT}_t{V_TARGET}.json"
 
 result = {}
 
@@ -25,6 +25,7 @@ for metadata_path in tqdm(metadata_paths):
     
     if num_frames < V_INPUT + V_TARGET:
         # if too few frames, skip this scene or adjust sampling
+        print(f'Skipping scene {scene_name} with {num_frames} frames < {V_INPUT + V_TARGET} selected views')
         continue
     
     # Sample unique frame indices
