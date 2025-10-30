@@ -101,8 +101,15 @@ with torch.no_grad(), torch.autocast(
         result = model(batch)
         if config.inference.get("render_video", False):
             result= model.module.render_video(result, **config.inference.render_video_config)
+        if hasattr(result.input, 'image_LVSM'):
+            result.input.image = result.input.image_LVSM
+            result.target.image = result.target.image_LVSM
         export_results(result, config.inference_out_dir, compute_metrics=config.inference.get("compute_metrics"), save_img=False)
+        # Free memory
+        del result
+        del batch
         torch.cuda.empty_cache()
+        torch.cuda.synchronize()
 
 
 dist.barrier()

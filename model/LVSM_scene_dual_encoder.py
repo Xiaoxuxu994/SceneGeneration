@@ -1,5 +1,6 @@
 # Copyright (c) 2025 Haian Jin. Created for the LVSM project (ICLR 2025).
 
+from tqdm import tqdm
 import gc
 import os
 import torch
@@ -371,9 +372,9 @@ class Images2LatentScene(nn.Module):
                 rendered_images,
                 target.image_LVSM
             )
-            # For visualization
-            input.image = input.image_LVSM
-            target.image = target.image_LVSM
+            # # For visualization
+            # input.image = input.image_LVSM
+            # target.image = target.image_LVSM
         else:
             loss_metrics = None
 
@@ -404,21 +405,67 @@ class Images2LatentScene(nn.Module):
         """
     
         if data_batch.input is None:
-            input, target = self.process_data(data_batch, has_target_image=False, target_has_input=self.config.training.target_has_input, compute_rays=True)
+            input, target = self.process_data(data_batch, has_target_image=False, target_has_input = self.config.training.target_has_input, 
+                                              compute_rays=True, compute_rays_camera_frame=True, pose_to_quat=True)
             data_batch = edict(input=input, target=target)
         else:
             input, target = data_batch.input, data_batch.target
         
-        images = input.images
+        checkpoint_every = self.config.training.grad_checkpoint_every
+
+        # Encode input images and poses with MapAnything
+        aggregated_tokens_list = self.mapanything_encoder.forward_feats(
+            input.image,
+            input.ray_d_camera_frame,
+            input.camera_pose_quats,
+            input.camera_pose_trans,
+            input.is_metric_scale
+        )
+        _, _, patch_h, patch_w = aggregated_tokens_list[0].shape
+        n_patches = patch_h * patch_w
         
-        # Encode images with VGGT
-        aggregated_tokens_list, _ = self.vggt_encoder(images)
+        # # Fuse MapAnything tokens
+        # b, v_input, _, _, _ = input.image.shape
+        # aggregated_tokens_list = [t.view(b, v_input, t.size(1), -1).permute(0, 1, 3, 2) for t in aggregated_tokens_list]
+        # latent_tokens = self.feature_fusion(aggregated_tokens_list, input.image, patch_start_idx=0)  # [b, v_input, d, scratch_patch_h, scratch_patch_w]
+        # b, v_input, d, scratch_patch_h, scratch_patch_w = latent_tokens.shape
+        # latent_tokens = latent_tokens.permute(0, 1, 3, 4, 2).contiguous()  # [b, v_input, scratch_patch_h, scratch_patch_w, d]
+        # n_latent_vectors = v_input*scratch_patch_h*scratch_patch_w
+        # latent_tokens = latent_tokens.reshape(b, n_latent_vectors, d).contiguous()  # treat n_patches and v_input as sequence length (n_latent_vectors)
         
-        latent_tokens = None  # TODO: feature fusing from VGGT DPT      
+        # Fuse MapAnything tokens (simple Conv feature fusion)
+        latent_tokens_ma = torch.cat(aggregated_tokens_list, dim=1)  # [b*v_input, embed_dim*4, patch_h, patch_w]
+        latent_tokens_ma = latent_tokens_ma.flatten(2)  # [b*v_input, embed_dim*4, n_patches] for Conv1d
+        latent_tokens_ma = self.feature_fusion(latent_tokens_ma)  # [b*v_input, d, n_patches]
+        b = self.config.training.batch_size_per_gpu
+        v_input = self.config.training.num_input_views
+        latent_tokens_ma = latent_tokens_ma.reshape(b, v_input, -1, n_patches).permute(0, 1, 3, 2).contiguous()  # [b, v_input, n_patches, d]
+        b, v_input, n_patches, d = latent_tokens_ma.shape
+        n_latent_vectors_ma = v_input*n_patches
+        latent_tokens_ma = latent_tokens_ma.reshape(b, n_latent_vectors_ma, d).contiguous()  # treat n_patches and v_input as sequence length (n_latent_vectors)
+        
+        n_latent_vectors = self.config.model.transformer.n_latent_vectors
+        
+        # Encode input images and poses with LVSM
+        ray_o_LVSM, ray_d_LVSM = self.process_data.compute_rays(c2w=input.c2w_LVSM, fxfycxcy=input.fxfycxcy_LVSM)        
+        posed_input_images = self.get_posed_input(images=input.image_LVSM, ray_o=ray_o_LVSM, ray_d=ray_d_LVSM)
+        b, v_input, c, h, w = posed_input_images.size()
+        input_img_tokens = self.image_tokenizer(posed_input_images)  # [b*v, n_patches, d]
+        _, n_patches, d = input_img_tokens.size()  # [b*v, n_patches, d]
+        input_img_tokens = input_img_tokens.reshape(b, v_input * n_patches, d)  # [b, v*n_patches, d]
+        latent_vector_tokens = self.n_light_field_latent.expand(b, -1, -1) # [b, n_latent_vectors, d]
+        encoder_input_tokens = torch.cat((latent_vector_tokens, input_img_tokens), dim=1) # [b, n_latent_vectors + v*n_patches, d]
+        intermediate_tokens = self.pass_layers(self.transformer_encoder, encoder_input_tokens, gradient_checkpoint=True, checkpoint_every=checkpoint_every)
+        latent_tokens_lvsm, input_img_tokens = intermediate_tokens.split(
+            [self.config.model.transformer.n_latent_vectors, v_input * n_patches], dim=1
+        ) # [b, n_latent_vectors, d], [b, v*n_patches, d]
+        
+        # Combine latent tokens from both encoders
+        latent_tokens = self.latent_fusion(query_tokens=latent_tokens_lvsm, context_tokens=latent_tokens_ma)  # [b, n_latent_vectors, d]
 
         if traj_type == "interpolate":
-            c2ws = input.c2w # [b, v, 4, 4]
-            fxfycxcy = input.fxfycxcy #  [b, v, 4]
+            c2ws = input.c2w_LVSM # [b, v, 4, 4]
+            fxfycxcy = input.fxfycxcy_LVSM #  [b, v, 4]
             device = input.c2w.device
 
             # Create intrinsics from fxfycxcy
@@ -465,18 +512,18 @@ class Images2LatentScene(nn.Module):
         target_pose_cond = self.get_posed_input(
             ray_o=rendering_ray_o.to(input.image.device), 
             ray_d=rendering_ray_d.to(input.image.device)
-        )
+        )  # [b, v_target, c, resize_h, resize_w]
                 
-        _, num_views, c, h, w = target_pose_cond.size()
+        b, num_views, c, LVSM_h, LVSM_w = target_pose_cond.size()
     
-        target_pose_tokens = self.target_pose_tokenizer(target_pose_cond) # [bs*v_target, n_patches, d]
+        target_pose_tokens = self.target_pose_tokenizer(target_pose_cond) # [b*v_target, n_patches, d]
         _, n_patches, d = target_pose_tokens.size()  # [b*v_target, n_patches, d]
-        target_pose_tokens = target_pose_tokens.reshape(bs, num_views * n_patches, d)  # [b, v_target*n_patches, d]
+        target_pose_tokens = target_pose_tokens.reshape(b, num_views * n_patches, d)  # [b, v_target*n_patches, d]
 
-        view_chunk_size = 4
+        view_chunk_size = 1
         video_rendering_list = []
         
-        for cur_chunk in range(0, num_views, view_chunk_size):
+        for cur_chunk in tqdm(range(0, num_views, view_chunk_size)):
             cur_view_chunk_size = min(view_chunk_size, num_views - cur_chunk)
             
             # Get current chunk of target pose tokens
@@ -505,15 +552,14 @@ class Images2LatentScene(nn.Module):
             )
 
             # Decode to images
-            height, width = target.image_h_w
             patch_size = self.config.model.target_pose_tokenizer.patch_size
             
             video_rendering = self.image_token_decoder(target_image_tokens)
             video_rendering = rearrange(
                 video_rendering, "(b v) (h w) (p1 p2 c) -> b v c (h p1) (w p2)",
                 v=cur_view_chunk_size,
-                h=height // patch_size, 
-                w=width // patch_size, 
+                h=LVSM_h // patch_size, 
+                w=LVSM_w // patch_size, 
                 p1=patch_size, 
                 p2=patch_size, 
                 c=3

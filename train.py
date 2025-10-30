@@ -150,6 +150,9 @@ while cur_train_step <= total_train_steps:
         dtype=amp_dtype_mapping[config.training.amp_dtype],
     ):
         ret_dict = model(batch)
+        if hasattr(ret_dict.input, 'image_LVSM'):
+            ret_dict.input.image = ret_dict.input.image_LVSM
+            ret_dict.target.image = ret_dict.target.image_LVSM
 
     update_grads = (cur_train_step + 1) % grad_accum_steps == 0 or cur_train_step == total_train_steps
     if update_grads:
