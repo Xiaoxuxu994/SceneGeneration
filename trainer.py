@@ -436,13 +436,13 @@ def main():
                 loss, log_dict = model(input_dict, mode='train')
                 accelerator.backward(loss)
                 optimizer.step()
+                scheduler.step()
                 log_step += 1
                 log_dict = accelerator.reduce(log_dict, 'mean')
                 if rank0:
                     log_dict = {k: v.item() for k, v in log_dict.items()}
                     pbar.set_postfix(log_dict)
                     accelerator.log(log_dict, log_step)
-            scheduler.step()
 
             # 4.2 Save checkpoint
             if rank0 and not ((epoch + 1) % int(opt.trainer.save_img_every_epoch)):

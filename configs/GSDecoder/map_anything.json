@@ -51,7 +51,7 @@
     },
 
     "trainer":{
-        "max_epochs": 800,
+        "max_epochs": 500,
         "batch_size": 1,
         "gradient_clip_val": 1.0,
         
@@ -96,8 +96,8 @@
             "name": "cosine_scheduler_with_warmup",
             "args": {
                 "base_lr": 1e-4,
-                "warmup_steps": 20,
-                "total_steps": 800,
+                "warmup_steps": 50,
+                "total_steps": 500,
                 "min_lr": 1e-5
             }
         }

@@ -11,6 +11,5 @@ accelerate launch \
     --config_path configs/GSDecoder/debug.json \
     --output_dir /mnt/nvme/yyx/outputs \
     --use_depth_mask \
-    --opt trainer.num_rend_views 8 \
     --select_scene 8013901416 \
     > >(awk '{sub(/npu gs_sort kernel donot support, using cpu radix sort instead!$/, ""); if (length) print }')
