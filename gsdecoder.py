@@ -19,10 +19,9 @@ import torch_npu
 from torchvision.utils import save_image
 import csv
 
-import src.modules.sparse as sp
 from src.representations.gaussian import Gaussian
 from src.utils.demo_utils import gen_demo
-# from src.models.GSdecoder.decoder_gs_query_newVox_sepAttr_decOnly_RGBcnnCamDepthIn_irregularSample import SLatQueryRGBCNNCamDepthInIrregSampSepMLPGaussianDecoderOnly
+from src.models.GSdecoder.decoder_RGBcnnCamDepthV1 import DecoderOnlyRGBCNNCamDepthInV1
 
 
 from train.baseModel import BaseModel
@@ -34,8 +33,8 @@ class GSDecoderModel(BaseModel):
         # 指定在哪些 epoch 做 inference
         self.infer_epochs = [59, 119, 199] + list(range(199, self.opt.trainer.max_epochs, 200))
         self.if_fix_xyz = False
-        # self.model: SLatQueryRGBCNNCamDepthInIrregSampSepMLPGaussianDecoderOnly
-    
+        self.model: DecoderOnlyRGBCNNCamDepthInV1
+
     def compute_log_loss(self, outputs, 
                          rand_img_lst, rand_depths_lst, 
                          rand_extrinsics_lst, rand_intrinsics_lst, SCALE,

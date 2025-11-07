@@ -1,0 +1,2 @@
+from .decoder_RGBcnnCamDepthV0 import DecoderOnlyRGBCNNCamDepthInV0
+from .decoder_RGBcnnCamDepthV1 import DecoderOnlyRGBCNNCamDepthInV1

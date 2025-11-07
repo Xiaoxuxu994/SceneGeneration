@@ -9,6 +9,6 @@ accelerate launch \
     --num_processes 1 \
     trainer.py \
     --config_path configs/Refiner/gt_geo.json \
-    --output_dir outputs/ \
+    --output_dir /mnt/nvme/yyx/outputs \
     --use_depth_mask \
     > >(awk '{sub(/npu gs_sort kernel donot support, using cpu radix sort instead!$/, ""); if (length) print }')

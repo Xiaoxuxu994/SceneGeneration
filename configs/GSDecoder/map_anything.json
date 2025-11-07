@@ -10,7 +10,7 @@
     "frame_step": 10,
 
     "models": {
-        "name": "SLatQueryRGBCNNCamDepthInIrregSampSepMLPGaussianDecoderOnly",
+        "name": "DecoderOnlyRGBCNNCamDepthInV1",
         "args": {
             "img_resolution": [584, 876],
             "model_channels": 512,
