@@ -21,7 +21,7 @@ This is the codebase of Reliev3R.
 
 ### Dependencies
 * In the default conda environment (PyTorch-2.1.0) of the specified docker above, run `pip install -r requirements.txt`.
-* Download DINOv2 checkpoints into directory `ckpt`, 
+* Download DINOv2 checkpoints into directory `ckpt` (https://github.com/facebookresearch/dinov2), 
     ```
     |- ckpt
         |- dinov2-small
