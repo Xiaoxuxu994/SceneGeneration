@@ -1,0 +1,17 @@
+einops
+gradio
+h5py
+huggingface-hub
+imageio
+matplotlib
+opencv-python
+pandas
+pillow
+protobuf
+scipy
+tables
+tabulate
+termcolor
+timm
+tqdm
+trimesh
