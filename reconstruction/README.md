@@ -12,11 +12,25 @@ This is the codebase of Reliev3R.
 ## Environment Setup
 
 ### Docker
-* Local (7.242.99.245): Use docker IMAGE ID `87cecfa4a7d6`.
+* Local (7.242.99.245): Use docker IMAGE ID `87cecfa4a7d6`. To start a docker container from the docker image, run:
+    ```
+    docker run -it --name $CONTAINER_NAME --user root --entrypoint /bin/bash --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --device=/dev/davinci0 --device=/dev/davinci1 --device=/dev/davinci2 --device=/dev/davinci3 --device=/dev/davinci4 --device=/dev/davinci5 --device=/dev/davinci6 --device=/dev/davinci7 --device=/dev/davinci_manager --device=/dev/devmm_svm --device=/dev/hisi_hdc --privileged=true -v /usr/local/Ascend/driver:/usr/local/Ascend/driver -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi -v /usr/local/dcmi:/usr/local/dcmi 87cecfa4a7d6
+    ```
+
 * Online (ModelArts): `euleros_pytorch-2.6.0_cann8.2.rc1-gcc-9.5.0`.
 
 ### Dependencies
 * In the default conda environment (PyTorch-2.1.0) of the specified docker above, run `pip install -r requirements.txt`.
+* Download DINOv2 checkpoints into directory `ckpt`, 
+    ```
+    |- ckpt
+        |- dinov2-small
+            |- dinov2_vits14_reg4_pretrain.pth
+        |- dinov2-base
+            |- dinov2_vitb14_reg4_pretrain.pth
+        |- dinov2-large
+            |- dinov2_vitl14_reg4_pretrain.pth
+    ```
 
 ## Quick Start
 
