@@ -1,7 +1,7 @@
 # run this script in the project root folder
 
 local_dir=.
-BUCKET_PATH=c00894105/project/reconstruction/
+BUCKET_PATH=c00894105/code/reconstruction/
 APP_TOKEN=7e9dedd1-c231-cb5c-d86a-471869623324
 REGION=cn-east-4
 BUCKET_NAME=bucket-mi-east4-sf
