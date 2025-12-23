@@ -341,10 +341,10 @@ class LossFunction(torch.nn.Module):
                 # raise NotImplementedError("Online matching pseudo labeling has been deprecated, please first generate pseudo matching offline.")
                 layer_matching_info = procoss_matching_for_images(layer_image, self.matching_model) # b*(v/s) s k 2
             else:
-                layer_matching_info = data["matching_infos"]["layer{}".format(logV - 1)]
-                # layer_matching_info = data["matching_infos"]["layer{}".format(logV)]
-                # layer_matching_info["matches"] = layer_matching_info["matches"][:, ::2, ...]
-                # layer_matching_info["visibilities"] = layer_matching_info["visibilities"][:, ::2, ...]
+                # layer_matching_info = data["matching_infos"]["layer{}".format(logV - 1)]
+                layer_matching_info = data["matching_infos"]["layer{}".format(logV)]
+                layer_matching_info["matches"] = layer_matching_info["matches"][:, ::2, ...]
+                layer_matching_info["visibilities"] = layer_matching_info["visibilities"][:, ::2, ...]
             matching_infos.append(layer_matching_info)
             
             depths_flatten = torch.cat([depths_src[:, idx * (segment_length // 2): idx * (segment_length // 2) + segment_length] \
