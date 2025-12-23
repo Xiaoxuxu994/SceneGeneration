@@ -9,7 +9,7 @@ from .depth_aligner import DepthAligner
 from utils.platform import DEVICE_NAME
 from utils.embedder import AtomicAttnPEHelper
 from .blocks.mono_depth_models import MonoDepthModel
-
+from torch.utils.checkpoint import checkpoint
 
 class Reliev3R(nn.Module):
     def __init__(self, cfg, depth_preprocessed=True):
@@ -137,3 +137,42 @@ class Reliev3R(nn.Module):
         else:
             raise NotImplementedError("Not implemented depth aligner type: {}".format(self.cfg.depth_aligner.type))
         return output_dict
+    
+    def enable_checkpoint(self, 
+                          enc_skip_first=4,
+                          enc_skip_last=4,
+                          dec_skip_first=4,
+                          dec_skip_last=3):
+        def _apply_ckpt(module):
+            # safe enable checkpoint on each module
+            if hasattr(module, "_orig_forward"):
+                return 
+            module._orig_forward = module.forward
+            def forward(*args, module=module, **kwargs):
+                if module.training:
+                    return checkpoint(
+                        module._orig_forward,
+                        *args,
+                        use_reentrant=False,
+                        **kwargs
+                    )
+                return module._orig_forward(*args, **kwargs)
+            module.forward = forward
+
+        # DinoV2 encoder blocks
+        enc_blocks = self.depth_aligner.encoder.blocks
+        n_enc = len(enc_blocks)
+        print(f"encoder has {n_enc} layers")
+        start_enc = min(enc_skip_first, n_enc)
+        end_enc = max(start_enc, n_enc - enc_skip_last)
+        for i in range(start_enc, end_enc):
+            _apply_ckpt(enc_blocks[i])
+
+        # Decoder blocks
+        dec_blocks = self.depth_aligner.decoder
+        n_dec = len(dec_blocks)
+        print(f"decoder has {n_dec} layers")
+        start_dec = min(dec_skip_first, n_dec)
+        end_dec = max(start_dec, n_dec - dec_skip_last)
+        for i in range(start_dec, end_dec):
+            _apply_ckpt(dec_blocks[i])

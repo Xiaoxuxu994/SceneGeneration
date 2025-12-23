@@ -130,6 +130,9 @@ def run(rank, cfg):
     """Load models. """
     model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
     
+    """Enable Checkpoint. """
+    model.enable_checkpoint()
+
     """Create loss functions. """
     loss_func = make_loss_func(cfg.loss)
     
