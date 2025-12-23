@@ -26,11 +26,11 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         #        Encoder
         # ----------------------
         if cfg.decoder_size == "large":
-            self.encoder = dinov2_vitl14_reg(pretrained=True, model_dir="checkpoints/dinov2-large")
+            self.encoder = dinov2_vitl14_reg(pretrained=True, model_dir="ckpt/dinov2-large")
         elif cfg.decoder_size == "base":
-            self.encoder = dinov2_vitb14_reg(pretrained=True, model_dir="checkpoints/dinov2-base")
+            self.encoder = dinov2_vitb14_reg(pretrained=True, model_dir="ckpt/dinov2-base")
         elif cfg.decoder_size == "small":
-            self.encoder = dinov2_vits14_reg(pretrained=True, model_dir="checkpoints/dinov2-small")
+            self.encoder = dinov2_vits14_reg(pretrained=True, model_dir="ckpt/dinov2-small")
         else:
             raise NotImplementedError("Not implemented decode size: '{}'".format(cfg.decoder_size))
         self.patch_size = 14
