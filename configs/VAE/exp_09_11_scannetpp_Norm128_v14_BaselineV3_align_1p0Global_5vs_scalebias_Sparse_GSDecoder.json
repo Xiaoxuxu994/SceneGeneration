@@ -1,0 +1,136 @@
+{
+    "dataset_dir": "/efs-mi-east4-1/z84301856/datasets/scannetpp_v2_opencv_pinhole",
+    "feats_folder_name": "features_norm128_v14_fix32",
+    "feat_model_name": "dinov2_vitl14_reg",
+    "pts_folder_name": "irregular_pts_align_unipts_1p0globalFPS",
+    "ckpt": null,
+    "img_resolution": [1752, 1168],
+    "shrinked_frames": 0,
+
+    "models": {
+        "encoder": {
+            "name": "FeatVolSparseEncoder",
+            "args": {
+                "in_channels": 1024,
+                "model_channels": 1024,
+                "latent_channels": 1024,
+                "isDownsample": false,
+                "num_blocks_encMSA": 6,
+                "num_blocks_encDsMSA": 0, 
+                "num_blocks_MCA": 0,
+                "num_heads": 32,
+                "num_head_channels": 32,
+                "num_latent": 4096,                
+                "mlp_ratio": 4,
+                "attn_mode": "shift_order",
+                "window_size": 128,
+                "pe_mode": "ptv3pe",
+                "use_fp16": false,
+                "use_bf16": false,
+                "num_hidden_dims": 1,
+                "use_checkpoint": true,
+                "dropout": 0.1
+            }
+        },
+        "decoder": {
+            "name": "FeatVolSparseDecoder",
+            "args": {
+                "model_channels": 1024,
+                "latent_channels": 1024,
+                "num_blocks_encLat": 6,
+                "num_blocks_encOut": 0,                
+                "num_blocks_encQ": 0,
+                "num_blocks_MCA": 0,
+                "num_heads": 32,
+                "num_head_channels": 32,
+                "mlp_ratio": 4,
+                "attn_mode": "shift_order",
+                "window_size": 128,
+                "pe_mode": "ptv3pe",
+                "use_fp16": false,
+                "use_bf16": false,
+                "num_hidden_dims": 2,
+                "use_checkpoint": true,
+                "dropout": 0.1
+            }
+        }
+    },
+
+    "GSDecoder": {
+        "name": "SLatQueryRGBCNNCamDepthInIrregSampSepMLPGaussianDecoderOnly",
+        "args": {
+            "model_channels": 1024,
+            "latent_channels": 1024,
+            "num_blocks_enc": 20,
+            "num_heads": 4,
+            "mlp_ratio": 4,
+            "attn_mode": "full",
+            "window_size": 1024,
+            "pe_mode": "ptv3pe",
+            "use_fp16": false,
+            "use_bf16": true,
+            "num_hidden_dims": 4,
+            "representation_config": {
+                "lr": {
+                    "_xyz": 1.0,
+                    "_features_dc": 1.0,
+                    "_opacity": 1.0,
+                    "_scaling": 1.0,
+                    "_rotation": 0.1
+                },
+                "sh_degree": 0,
+                "perturb_offset": "none",
+                "voxel_size": 0.078125,
+                "num_gaussians": 4,
+                "2d_filter_kernel_size": 0.1,
+                "3d_filter_kernel_size": 9e-4,
+                "scaling_bias": [4e-3,1e-3,8e-3],
+                "opacity_bias": 0.1,
+                "scaling_activation": "softplus"
+            },
+            "enc_infos": ["rgbOri", "camRay", "depth"],
+            "dropout": 0.1
+        },
+        "voxel_align_ratio": 1
+    },
+
+    "trainer":{
+        "max_epochs": 1500,
+        "batch_size": 1,
+        "gradient_clip_val": 1.0,
+        
+        "render_option": "meta_gauss_render",
+        "save_img_every_epoch": 4,
+
+        "sv_option": "fixed",
+
+        "lr": 4e-5,
+        "decay": 0.01,
+        "use_fp16": false,
+        "use_bf16": true,
+
+        "loss_weight_rec_mse": 10,
+        "loss_weight_rec_l1": 10,
+        "loss_weight_rec_cos": 10,
+        "loss_weight_kl": 1e-5,      
+
+        "optimizer": {
+                "name": "AdamW",
+                "args": {
+                    "lr": 4e-5,
+                    "weight_decay": 0.01
+                }
+            },
+
+        "lr_scheduler": {
+            "name": "WarmupCosineAnnealingLR",
+            "args": {
+                "warmup_epochs": 30,
+                "max_epochs": 1500,
+                "base_lr": 1e-6,
+                "max_lr": 4e-5,
+                "T_max": 100
+            }
+        }
+    }   
+}

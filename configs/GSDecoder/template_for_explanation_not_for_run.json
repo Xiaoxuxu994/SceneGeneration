@@ -1,0 +1,105 @@
+{
+    "metadata_dir": "metadata",
+    "viewInfo_dir": "/efs-mi-east4-2/datasets/scannetpp_v2_opencv_pinhole/supervise_view_fix32_viewInfo_normV14",
+    "pts_dir": "/efs-mi-east4-2/datasets/scannetpp_v2_opencv_pinhole/geometry_priors/irregular_pts_align_unipts_normV14/irregular_pts_align_unipts_1p0globalFPS",
+    "ckpt": null,
+    "rank": 0,
+    "world_size": 1,
+    "img_resolution": [1752, 1168],  // 输入图像的分辨率, 当下保持和原图一样
+    "shrinked_frames": 0,
+    "frame_step": 10,
+
+    "models": {
+        "name": "DecoderOnlyRGBCNNCamDepthInV2",
+        "args": {
+            "img_resolution": [1168, 1752], // 输入图像的分辨率, 当下保持和原图一样
+            "model_channels": 768,
+            "latent_channels": 1024, // 因为要load GPU ckpt，所以设置了1024，不动。动了不能load pretrained ckpt
+            "num_blocks_enc": 20,
+            "num_heads": 4,
+            "mlp_ratio": 4,
+            "attn_mode": "full",
+            "window_size": 1024,
+            "pe_mode": "ptv3pe",
+            "use_fp16": false,
+            "use_bf16": true,
+            "use_checkpoint": true,
+            "num_hidden_dims": 4,
+            "representation_config": {
+                "lr": {
+                    "_xyz": 1.0,
+                    "_features_dc": 1.0,
+                    "_opacity": 1.0,
+                    "_scaling": 1.0,
+                    "_rotation": 0.1
+                },
+                "sh_degree": 0,
+                "perturb_offset": "none",
+                "voxel_size": 0.015625,
+                "num_gaussians": 4,
+                "2d_filter_kernel_size": 0.1,
+                "3d_filter_kernel_size": 9e-4,
+                "scaling_bias": [4e-3,8e-3,4e-3],
+                "opacity_bias": 0.1,
+                "scaling_activation": "softplus"
+            },
+            "enc_infos": ["rgbOri", "camRay", "depth"],
+            "dropout": 0.1
+        },
+        "voxel_align_ratio": 5
+    },
+
+    "trainer":{
+        "max_epochs": 800,
+        "batch_size": 1,
+        "gradient_clip_val": 1.0,
+        
+        "render_option": "meta_gauss_render",
+        "rend_sv_res": [438, 657], // 监督图像的分辨率，和anysplat保持一致
+        "AbsGrad": false,
+        "num_rend_views": 8, // 监督视角的数量
+        "ckpt_every": 10,
+        "eval_every": 10,
+        "save_img_every_epoch": 10,
+        "sv_option": "fixed",
+
+        "lr": 1e-4,
+        "decay": 0.01,
+        "use_fp16": false,
+        "use_bf16": true,
+
+        "loss_weight_img_rec_l1": 200,
+        "loss_weight_img_rec_ssim": 40,
+        "loss_weight_img_rec_lpips": 40,
+        "loss_weight_kl": 1e-4,
+        "loss_weight_opacity": 0.1,
+        "loss_weight_scale": 1e6,    
+        "loss_weight_depth_l1": 100,
+
+        "out_mlp_lr":{
+            "lr_xyz": 1e-4,
+            "lr_fdc": 1e-4,
+            "lr_sca": 1e-4,
+            "lr_rot": 1e-4,
+            "lr_opa": 1e-4
+        },
+
+        "optimizer": {
+                "name": "AdamW",
+                "args": {
+                    "lr": 1e-4,
+                    "weight_decay": 0.01
+                }
+            },
+
+        "lr_scheduler": {
+            "name": "cosine_scheduler_with_warmup",
+            "args": {
+                "base_lr": 1e-4,
+                "warmup_steps": 20,
+                "total_steps": 800,
+                "min_lr": 1e-5
+            }
+        }
+    }   
+}

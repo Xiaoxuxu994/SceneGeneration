@@ -1,0 +1,112 @@
+{
+    "train_metadata": "metadata/train_metadata_604.csv",
+    "val_metadata": "metadata/val_metadata_27.csv",
+    "viewInfo_dir": "/efs-mi-east4-2/datasets/scannetpp_v2_opencv_pinhole/supervise_view_fix64_viewInfo_normV14",
+    "pts_dir": null,
+    "depth_dir": "/efs-mi-east4-2/datasets/scannetpp_v2_opencv_pinhole/geometry_priors/irregular_pts_align_unipts_normV14/mapanything_pcd_normext_imgonly_64view_v2_edgepreserve_csv/mapanything_imgonly_v2_32view/depth_pred",
+    "ckpt": null,
+    "rank": 0,
+    "world_size": 1,
+    "img_resolution": [1752, 1168], 
+    "shrinked_frames": 0,
+    "frame_step": 10,
+    "view_select": 32,
+    "shard_data": false,
+    "anchor_sampler": "voxel",
+
+    "models": {
+        "name": "DecoderOnlyRGBCNNCamDepthInV2",
+        "args": {
+            "img_resolution": [1168, 1752],
+            "model_channels": 640,
+            "latent_channels": 1024,
+            "num_blocks_enc": 16,
+            "num_heads": 10,
+            "mlp_ratio": 4,
+            "attn_mode": "full",
+            "window_size": 1024,
+            "pe_mode": "ptv3pe",
+            "use_fp16": false,
+            "use_bf16": true,
+            "use_checkpoint": true,
+            "num_hidden_dims": 1,
+            "representation_config": {
+                "lr": {
+                    "_xyz": 1.0,
+                    "_features_dc": 1.0,
+                    "_opacity": 1.0,
+                    "_scaling": 1.0,
+                    "_rotation": 0.1
+                },
+                "sh_degree": 0,
+                "perturb_offset": "none",
+                "voxel_size": 0.015625,
+                "num_gaussians": 4,
+                "2d_filter_kernel_size": 0.1,
+                "3d_filter_kernel_size": 9e-4,
+                "scaling_bias": [4e-3,8e-3,4e-3],
+                "opacity_bias": 0.1,
+                "scaling_activation": "softplus"
+            },
+            "enc_infos": ["rgbOri", "camRay", "depth"],
+            "dropout": 0.1,
+            "backend": "nsa_npu"
+        },
+        "voxel_align_ratio": 5
+    },
+
+    "trainer":{
+        "max_epochs": 500,
+        "batch_size": 1,
+        "gradient_clip_val": 2.5,
+        
+        "render_option": "meta_gauss_render",
+        "rend_sv_res": [672, 448],
+        "AbsGrad": false,
+        "num_rend_views": 8,
+        "num_rend_views_val": 16,
+        "ckpt_every": 10,
+        "eval_every": 10,
+        "save_img_every_epoch": 10,
+        "sv_option": "fixed",
+
+        "lr": 5e-4,
+        "decay": 0.01,
+        "use_fp16": false,
+        "use_bf16": true,
+
+        "loss_weight_img_rec_l1": 200,
+        "loss_weight_img_rec_ssim": 40,
+        "loss_weight_img_rec_lpips": 0,
+        "loss_weight_kl": 1e-4,
+        "loss_weight_opacity": 0.1,
+        "loss_weight_scale": 1e6,    
+        "loss_weight_depth_l1": 100,
+
+        "out_mlp_lr":{
+            "lr_xyz": 5e-4,
+            "lr_fdc": 5e-4,
+            "lr_sca": 5e-4,
+            "lr_rot": 5e-4,
+            "lr_opa": 5e-4
+        },
+
+        "optimizer": {
+                "name": "AdamW",
+                "args": {
+                    "lr": 5e-4,
+                    "weight_decay": 0.01
+                }
+            },
+
+        "lr_scheduler": {
+            "name": "WarmupConstLR",
+            "args": {
+                "max_lr": 5e-4,
+                "warmup_steps": 200,
+                "max_epochs": 2000,
+                "base_lr": 1e-5
+            }
+        }
+    }
+}

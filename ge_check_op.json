@@ -1,0 +1,49 @@
+{
+    "graph_id": 7,
+    "op": [
+        {
+            "error_type": "infer_shape_error",
+            "input0": {
+                "data_type": "DT_BFLOAT16",
+                "layout": "NCHW",
+                "shape": [
+                    8,
+                    320,
+                    292,
+                    438
+                ]
+            },
+            "input1": {
+                "data_type": "DT_BFLOAT16",
+                "layout": "NCHW",
+                "shape": [
+                    768,
+                    512,
+                    1,
+                    1
+                ]
+            },
+            "input2": {
+                "data_type": "DT_BFLOAT16",
+                "layout": "NCHW",
+                "shape": [
+                    768
+                ]
+            },
+            "name": "Conv2D8",
+            "output0": {
+                "data_type": "DT_BFLOAT16",
+                "layout": "NCHW",
+                "shape": [
+                    8,
+                    768,
+                    292,
+                    438
+                ]
+            },
+            "reason": "InferShapeFailed!",
+            "type": "Conv2D"
+        }
+    ],
+    "session_id": 7
+}

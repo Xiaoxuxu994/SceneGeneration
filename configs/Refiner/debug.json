@@ -1,0 +1,115 @@
+{
+    "metadata_dir": "metadata",
+    "feats_dir": "/home/yyx/data/debug_data",
+    "viewInfo_dir": "/home/yyx/data/debug_data",
+    "voxelGS_feats_dir": "/home/yyx/data/debug_data",
+    "ckpt": null,
+    "img_resolution": [876, 548],
+    "shrinked_frames": 0,
+    "frame_step": 10,
+
+    "models": {
+        "name": "RefinerV7",
+        "args": {
+            "g_dim": 14,
+            "g_enc_dim": 128,
+            "z_dim": 1024,
+            "e_dim": 192,
+            "k": 16,
+            "model_channels_e": 256,
+            "model_channels_knn": 512,
+            "num_blocks_knn_attn": 4,
+            "num_blocks_glb_attn": 1,
+            "num_heads": 8,
+            "num_head_channels": 64,
+            "mlp_ratio": 4,
+            "attn_mode": "full",
+            "window_size": 1024,
+            "pe_mode": "ptv3pe",
+            "use_fp16": false,
+            "use_bf16": true,
+            "use_checkpoint": true,
+            "representation_config": {
+                "lr": {
+                    "_xyz": 1.0,
+                    "_features_dc": 1.0,
+                    "_opacity": 1.0,
+                    "_scaling": 1.0,
+                    "_rotation": 0.1
+                },
+                "sh_degree": 0,
+                "perturb_offset": "none",
+                "voxel_size": 0.015625,
+                "num_gaussians": 4,
+                "2d_filter_kernel_size": 0.1,
+                "3d_filter_kernel_size": 9e-4,
+                "scaling_bias": [4e-3,1e-3,8e-3],
+                "opacity_bias": 0.1,
+                "scaling_activation": "softplus"
+            },
+            "max_delta":{
+                "max_delta_xyz": 0.02,
+                "max_delta_opa": 0.05,
+                "max_delta_rgb": 0.05,
+                "max_delta_sca": 0.03
+            },
+            "dropout": 0.1
+        }
+    },
+
+    "trainer":{
+        "max_epochs": 800,
+        "batch_size": 1,
+        "gradient_clip_val": 1.0,
+        
+        "render_option": "meta_gauss_render",
+        "AbsGrad": false,
+        "log_every": 1,
+        "ckpt_every": 1,
+        "eval_every": 1,
+        "save_img_every_epoch": 1,
+        "num_rend_views": 1,
+        "sv_option": "fixed",
+
+        "lr": 4e-5,
+        "decay": 0.01,
+        "use_fp16": false,
+        "use_bf16": true,
+
+        "loss_weight_img_rec_l1": 200,
+        "loss_weight_img_rec_ssim": 40,
+        "loss_weight_img_rec_lpips": 0,
+        "loss_weight_kl": 1e-4,
+        "loss_weight_opacity": 0.1,
+        "loss_weight_scale": 1000000,    
+        "loss_weight_depth_l1": 100,
+
+        "out_mlp_lr":{
+            "lr_xyz": 1e-4,
+            "lr_fdc": 1e-4,
+            "lr_sca": 1e-4,
+            "lr_rot": 1e-4,
+            "lr_opa": 1e-4
+        },
+
+        "optimizer": {
+                "name": "AdamW",
+                "args": {
+                    "lr": 4e-5,
+                    "weight_decay": 0.01,
+                    "betas": [0.9, 0.98]
+                }
+            },
+
+        "lr_scheduler": {
+            "name": "WarmupCosineAnnealingLR",
+            "args": {
+                "warmup_steps": 25,
+                "max_epochs": 800,
+                "base_lr": 1e-6,
+                "max_lr": 4e-5,
+                "T_max": 800
+            }
+        }  
+    }   
+}

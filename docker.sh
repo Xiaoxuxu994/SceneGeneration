@@ -1,0 +1,29 @@
+docker run -it -u 0 --name yyx-roma --privileged \
+    --ipc=host --net=host --pid=host \
+    --entrypoint /bin/bash \
+    --device=/dev/davinci0 --device=/dev/davinci1 \
+    --device=/dev/davinci2 --device=/dev/davinci3 \
+    --device=/dev/davinci4 --device=/dev/davinci5 \
+    --device=/dev/davinci6 --device=/dev/davinci7 \
+    --device=/dev/davinci_manager \
+    --device=/dev/devmm_svm \
+    --device=/dev/hisi_hdc \
+    -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+    -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+    -v /usr/local/dcmi:/usr/local/dcmi \
+    -v /mnt/nvme1/:/mnt/nvme1/ \
+    -v /mnt/nvme2/:/mnt/nvme2/ \
+    -v /mnt/nvme3/:/mnt/nvme3/ \
+    -v /mnt/nvme4/:/mnt/nvme4/ \
+    -v /etc/ascend_install.info:/etc/ascend_install.info \
+    -v /root/.cache:/root/.cache \
+    -v /efs:/efs \
+    -v /efs-large-spatial-model:/efs-large-spatial-model \
+    -v /efs-large-spatial-model-2:/efs-large-spatial-model-2 \
+    -v /efs-mi-east4-1/:/efs-mi-east4-1/ \
+    -v /efs-mi-east4-2/:/efs-mi-east4-2/ \
+    -v /efs-long-context-dataset:/efs-long-context-dataset \
+    -v /efs-visual-representations:/efs-visual-representations \
+    -v /home/z84301856:/home/z84301856 \
+    -v /home/yyx:/home/yyx \
+    swr.cn-east-4.myhuaweicloud.com/modelarts-roma/yyx-3dgs:0.0.3

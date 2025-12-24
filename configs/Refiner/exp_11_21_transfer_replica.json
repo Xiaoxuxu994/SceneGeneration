@@ -1,0 +1,118 @@
+{
+    "train_metadata": "metadata/replica_train_32.csv",
+    "val_metadata": "metadata/replica_val.csv",
+    "viewInfo_dir": "/efs-mi-east4-2/datasets/replica_processed_full/supervise_view_fix64_viewInfo_normV14",
+    "depth_dir": "/efs-mi-east4-2/datasets/replica_processed_full/mapanything_imgonly_v2_64view/depth_pred",
+    "voxelGS_feats_dir": "/efs-mi-east4-2/datasets/scannetpp_v2_opencv_pinhole/GSandVoxel_feats_normV14/scannet_infer_replica",
+    "ckpt": "ckpts/refiner-transfer/replica-base.ckpt",
+    "img_resolution": [597, 448],
+    "shrinked_frames": 0,
+    "frame_step": 10,
+    "view_select": 64,
+    "shard_data": true,
+
+    "models": {
+        "name": "RefinerV7",
+        "args": {
+            "g_dim": 14,
+            "g_enc_dim": 128,
+            "z_dim": 640,
+            "e_dim": 192,
+            "k": 16,
+            "model_channels_e": 256,
+            "model_channels_knn": 768,
+            "num_blocks_knn_attn": 4,
+            "num_blocks_glb_attn": 1,
+            "num_heads": 16,
+            "num_head_channels": 40,
+            "mlp_ratio": 4,
+            "attn_mode": "full",
+            "window_size": 1024,
+            "pe_mode": "ptv3pe",
+            "use_fp16": false,
+            "use_bf16": true,
+            "use_checkpoint": true,
+            "representation_config": {
+                "lr": {
+                    "_xyz": 1.0,
+                    "_features_dc": 1.0,
+                    "_opacity": 1.0,
+                    "_scaling": 1.0,
+                    "_rotation": 0.1
+                },
+                "sh_degree": 0,
+                "perturb_offset": "none",
+                "voxel_size": 0.015625,
+                "num_gaussians": 4,
+                "2d_filter_kernel_size": 0.1,
+                "3d_filter_kernel_size": 9e-4,
+                "scaling_bias": [4e-3,1e-3,8e-3],
+                "opacity_bias": 0.1,
+                "scaling_activation": "softplus"
+            },
+            "max_delta":{
+                "max_delta_xyz": 0.02,
+                "max_delta_opa": 0.05,
+                "max_delta_rgb": 0.05,
+                "max_delta_sca": 0.03
+            },
+            "dropout": 0.0
+        }
+    },
+
+    "trainer":{
+        "max_epochs": 1000,
+        "batch_size": 1,
+        "gradient_clip_val": 1.0,
+
+        "render_option": "meta_gauss_render",
+        "rend_sv_res": [597, 448],
+        "AbsGrad": false,
+        "ckpt_every": 10,
+        "eval_every": 10,
+        "save_img_every_epoch": 10,
+        "num_rend_views": 8,
+        "num_rend_views_val": 16,
+        "sv_option": "fixed",
+
+        "lr": 1e-5,
+        "decay": 0.01,
+        "use_fp16": false,
+        "use_bf16": true,
+
+        "loss_weight_img_rec_l1": 200,
+        "loss_weight_img_rec_ssim": 40,
+        "loss_weight_img_rec_lpips": 0,
+        "loss_weight_kl": 1e-4,
+        "loss_weight_opacity": 0.1,
+        "loss_weight_scale": 1000000,    
+        "loss_weight_depth_l1": 100,
+
+        "out_mlp_lr":{
+            "lr_xyz": 1e-5,
+            "lr_fdc": 1e-5,
+            "lr_sca": 1e-5,
+            "lr_rot": 1e-5,
+            "lr_opa": 1e-5
+        },
+
+        "optimizer": {
+                "name": "AdamW",
+                "args": {
+                    "lr": 1e-5,
+                    "weight_decay": 0.01,
+                    "betas": [0.9, 0.98]
+                }
+            },
+
+        "lr_scheduler": {
+            "name": "cosine_scheduler_with_warmup",
+            "args": {
+                "base_lr": 1e-5,
+                "warmup_steps": 50,
+                "total_steps": 1000,
+                "min_lr": 1e-6
+            }
+        }
+    }    
+}
