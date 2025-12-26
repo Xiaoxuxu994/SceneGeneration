@@ -159,7 +159,10 @@ def run(rank, cfg):
         lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations)
     
     """Wrap model with ddp. """
-    model = DDP(model, device_ids=[rank])
+    model = DDP(model, 
+                device_ids=[rank], 
+                bucket_cap_mb=100,
+                gradient_as_bucket_view=True)
     
     model.train()
     dist.barrier()
@@ -207,7 +210,9 @@ def run(rank, cfg):
                 forward_start.record()
             
             model.train()
-            pred = model(data)
+
+            with torch.autocast(device_type='npu', dtype=torch.bfloat16):
+                pred = model(data)
 
             if enable_time_profiling:
                 forward_end.record()
@@ -216,9 +221,9 @@ def run(rank, cfg):
             loss_dict = loss_func(pred, data)
             if torch.isnan(loss_dict["total"]):
                 print("[ WARNING ] loss nan found! skipping step {} !".format(step))
-                del pred
-                del loss_dict
-                torch_device_lib.empty_cache()
+                # del pred
+                # del loss_dict
+                # torch_device_lib.empty_cache()
                 continue
                 
             if enable_time_profiling:
@@ -297,9 +302,9 @@ def run(rank, cfg):
                     }
                     torch.save(checkpoint, ckpt_name)
             
-            del pred
-            del loss_dict
-            torch_device_lib.empty_cache()
+            # del pred
+            # del loss_dict
+            # torch_device_lib.empty_cache()
     
     else:
         """Visualize evaluation results on eval set, not for metric computation, implemented for single GPU. """
