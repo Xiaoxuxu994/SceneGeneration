@@ -3,19 +3,18 @@ import torch.nn as nn
 
 from utils.platform import DEVICE_NAME
 
-from lightglue import LightGlue, SuperPoint
-from lightglue.utils import rbd
-from cotracker.predictor import CoTrackerPredictor
-
 class MatchingModel(nn.Module):
     
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
         if cfg.name == "LightGlue":
+            from lightglue import LightGlue, SuperPoint
+            from lightglue.utils import rbd
             self.feat_extractor = SuperPoint(ckpt_path=cfg.ckpt_path.lightglue.superpoint, max_num_keypoints=None)
             self.feat_matcher   = LightGlue(ckpt_path=cfg.ckpt_path.lightglue.lightglue, features='superpoint')
         elif cfg.name == "CoTracker":
+            from cotracker.predictor import CoTrackerPredictor
             self.tracker = CoTrackerPredictor(checkpoint=cfg.ckpt_path.cotracker, v2=False, offline=True, window_len=60)
         else:
             raise NotImplementedError(f"Matching model type {cfg.name} is not implemented.")

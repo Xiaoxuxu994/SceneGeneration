@@ -12,11 +12,11 @@ ours:
 
     image_tokenizer:
       enabled: true
-      type: dinov2_large
+      type: dinov2_small
       d_in: 3
-      d_token: 1024
+      d_token: 384
       # patch_size: 14
-      ckpt_path: ./ckpt/dinov2-large
+      ckpt_path: ./ckpt/dinov2-small
 
     depth_tokenizer:
       enabled: false

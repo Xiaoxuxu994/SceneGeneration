@@ -45,7 +45,7 @@ ours:
 
 pi3:
   pos_type: rope100
-  decoder_size: large
+  decoder_size: base
   depth_scaler:
     enabled: false
   point_head:

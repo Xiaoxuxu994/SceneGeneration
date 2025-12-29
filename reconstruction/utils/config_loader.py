@@ -41,7 +41,7 @@ def MergeDicts(default_cfg: DottedDict, custom_cfg: DottedDict) -> DottedDict:
         if custom_cfg.get(k) is not None:
             # Attribute found in default setting, check class consistency for further merge.
             assert default_cfg[k].__class__ == custom_cfg[k].__class__, \
-                "The same attribute of custom and default config must be the same class for merge."
+                "The same attribute of custom and default config must be the same class for merge, bad key is {}.".format(k)
             # Merge if the attribute is a dict, otherwise keep the default value unchanged. 
             if isinstance(default_cfg[k], DottedDict) and isinstance(custom_cfg[k], DottedDict):
                 merged_cfg[k] = MergeDicts(default_cfg[k], custom_cfg[k])

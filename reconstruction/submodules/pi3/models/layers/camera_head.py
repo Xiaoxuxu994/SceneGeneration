@@ -72,8 +72,8 @@ class CameraHead(nn.Module):
             pose  = rearrange(pose, "(b v) n m -> b v n m", v=v)          # b v 4 4
             out_r = rearrange(out_r, "(b v) n m -> b v n m", v=v)         # b v 3 3
             out_t = rearrange(out_t, "(b v) n -> b v n", v=v)             # b v 3
-            # out_t_magnitude = out_t.norm(dim=-1).mean(dim=-1)[..., None, None] # b 1 1
-            # out_t = out_t / (out_t_magnitude + 1e-8)
+            out_t_magnitude = out_t.norm(dim=-1).mean(dim=-1)[..., None, None] # b 1 1
+            out_t = out_t / (out_t_magnitude + 1e-8)
         pose[..., :3, :3] = out_r
         pose[..., :3, 3]  = out_t
         pose[..., 3, 3]   = 1.

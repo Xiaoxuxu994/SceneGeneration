@@ -431,3 +431,75 @@ def plucker_map_from_camera(camera_list: list[CustomCamera], device="cuda"):
     plucker_map = plucker_map_from_vector(ray_o, ray_d)
     
     return plucker_map.squeeze()
+
+
+def preprocess_images_for_encode(images, intrs=None, cbox=None, out_shape=None, max_size=518, patch_size=14, interp_method="nearest"):
+    """
+    Resize image-like maps to fit for transformer input.
+    Args:
+        images (torch.Tensor): Any image-like maps, tensor of shape (N, C, H, W)
+        intrs (torch.Tensor, optional): Adjust intrinsics along resizing if given, tensor of shape (N, 3, 3). Defaults to None.
+        cbox (tuple, optional): Cropping box, (i_0, i_1, j_0, j_1), meaning to crop [i_0: i_1, j_0, j_1]. Defaults to None.
+        out_shape (tuple, optional): Resize image-like maps to a given target shape if given. Defaults to None.
+        max_size (int, optional): Max of image size dimension. Defaults to 518.
+        patch_size (int, optional): Patch size to adapt image-like maps to. Defaults to 14.
+    Returns:
+        out_images, out_intrs, cbox
+    """
+    assert max_size % patch_size == 0, "'max_size' must be devided with 'patch_size', but now max_size={} and patch_size={}".format(max_size, patch_size)
+    assert intrs is None or images.shape[:-3] == intrs.shape[:-2], \
+        "image shape {} is not compatible with intrinsic shape {}".format(images.shape, intrs.shape)
+    assert intrs is not None or cbox is not None, \
+        "At least one of intrinsics and cropping box is required."
+    assert images.ndim == 4, "Illegal image shape: {}".format(images.shape)
+    
+    C, H, W = images.shape[-3:]
+    
+    if out_shape is not None:
+        ## If out_shape is given, resize image-like maps to the shape.
+        assert isinstance(out_shape, tuple)
+        assert out_shape[0] % patch_size == 0 and out_shape[1] % patch_size == 0, \
+            "Incompatible output_shape {} with patch_size {}".format(out_shape, patch_size)
+    else:
+        ## Otherwise, adjust shape of image-like maps by max_size and patch_size.
+        ## Downsample image-like maps first to fit to max_size.
+        if H > W:
+            out_H = min(max_size, H) // patch_size * patch_size
+            out_W = W * out_H // H // patch_size * patch_size
+        else:
+            out_W = min(max_size, W) // patch_size * patch_size
+            out_H = H * out_W // W // patch_size * patch_size
+        out_shape = (out_H, out_W)
+    # print("[ DEBUG - INFO ] preprocess shape {} -> {}".format((H, W), out_shape))
+    
+    ## Perform resize of the same scale along height and width, and then crop the redundant part. 
+    if out_shape[0] == H and out_shape[1] == W:
+        ## No need to resize.
+        return images, intrs, (0, H, 0, W)
+    if out_shape[0] / H > out_shape[1] / W: # width will be preserved and then cropped.
+        scale_factor = out_shape[0] / H
+        scale_shape = (out_shape[0], int(W * scale_factor + 1))
+    else:                                   # height will be preserved and then cropped.
+        scale_factor = out_shape[1] / W
+        scale_shape = (int(H * scale_factor + 1), out_shape[1])
+    out_images = torch.nn.functional.interpolate(images, size=scale_shape, mode=interp_method)
+    
+    ## Intrinsics provided, scale intrinsics and crop out_images.
+    if intrs is not None:
+        out_intrs = intrs.clone()
+        if out_shape[0] / H > out_shape[1] / W:
+            out_intrs[..., 0, 0] *= scale_shape[1] / out_shape[1]
+        else:
+            out_intrs[..., 1, 1] *= scale_shape[0] / out_shape[0]
+        top_left_row = int(np.round((scale_shape[0] - out_shape[0]) / 2))
+        top_left_col = int(np.round((scale_shape[1] - out_shape[1]) / 2))
+        bottom_right_row = top_left_row + out_shape[0]
+        bottom_right_col = top_left_col + out_shape[1]
+        cbox = (top_left_row, bottom_right_row, top_left_col, bottom_right_col)
+        out_images = out_images[..., cbox[0]: cbox[1], cbox[2]: cbox[3]]
+        return out_images, out_intrs, cbox
+    
+    ## Intrinsics not give, meaning that other modalities are processed ahead. Crop by the given crop box.
+    out_images = out_images[..., cbox[0]: cbox[1], cbox[2]: cbox[3]]
+    return out_images, None, None
+    
