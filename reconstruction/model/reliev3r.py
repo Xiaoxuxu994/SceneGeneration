@@ -110,9 +110,11 @@ class Reliev3R(nn.Module):
     def infer_aligned_depth(self, imgs, pseudo_depth=None, pe_helper_global=None, pe_helper_local=None, f_px=None):
         B, V, C, H, W = imgs.shape
         output_dict = {}
-        with torch.no_grad():
-            depth_model_output = self.depth_model.infer(imgs, f_px=f_px) if pseudo_depth is None else pseudo_depth # (BxV, 1, H, W)
-        output_dict["mono_depth"] = depth_model_output.reshape(B, V, 1, H, W)
+        # with torch.no_grad():
+        #     depth_model_output = self.depth_model.infer(imgs, f_px=f_px) if pseudo_depth is None else pseudo_depth # (BxV, 1, H, W)
+        # output_dict["mono_depth"] = depth_model_output.reshape(B, V, 1, H, W)
+        print("output_dict-mono_depth = None")
+        output_dict["mono_depth"] = None
         
         if self.cfg.depth_aligner.type == "ours":
             depth_aligner_outputs = self.depth_aligner(imgs, pe_helper_global=pe_helper_global, pe_helper_local=pe_helper_local)

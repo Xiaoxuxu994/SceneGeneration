@@ -20,3 +20,21 @@ data-dump
 
 datagen/data
 datagen/lib/AdaptiveSolvers*
+
+# ROMA
+roma/roma/code_upload.sh
+roma/roma/code_download.sh
+
+# benchmark
+# data
+benchmark/data/
+benchmark/samples/
+
+benchmark/.vscode/
+benchmark/checkpoints/
+benchmark/debug/
+benchmark/outputs/
+
+# NPU-related
+benchmark/extra-info/
+benchmark/kernel_meta/

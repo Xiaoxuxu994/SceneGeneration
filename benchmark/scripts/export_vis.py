@@ -15,15 +15,27 @@ import _bootstrap  # noqa: F401
 from vggt.utils.camera import export_cam_as_ply
 
 
-def iter_seq_dirs(root: Path) -> Iterator[Tuple[Path, Path]]:
-    """遍历 root/<scene>/<seq> 结构，返回 (seq_dir, rel_path=scene/seq)."""
-    for scene_dir in sorted(root.iterdir()):
-        if not scene_dir.is_dir():
-            continue
-        for seq_dir in sorted(scene_dir.iterdir()):
-            if seq_dir.is_dir():
-                yield seq_dir, seq_dir.relative_to(root)
+# def iter_seq_dirs(root: Path) -> Iterator[Tuple[Path, Path]]:
+#     """遍历 root/<scene>/<seq> 结构，返回 (seq_dir, rel_path=scene/seq)."""
+#     for scene_dir in sorted(root.iterdir()):
+#         if not scene_dir.is_dir():
+#             continue
+#         for seq_dir in sorted(scene_dir.iterdir()):
+#             if seq_dir.is_dir():
+#                 yield seq_dir, seq_dir.relative_to(root)
 
+
+def iter_seq_dirs(root: Path) -> Iterator[Tuple[Path, Path]]:
+    def _walk(d: Path) -> Iterator[Path]:
+        entries = list(d.iterdir())
+        if any(not e.is_dir() for e in entries):
+            yield d
+            return
+        for sub in sorted([e for e in entries if e.is_dir()]):
+            yield from _walk(sub)
+
+    for seq_dir in _walk(root):
+        yield seq_dir, seq_dir.relative_to(root)
 
 def to_4x4_batch(T: np.ndarray) -> np.ndarray:
     """
@@ -143,14 +155,14 @@ def main() -> None:
     ap.add_argument(
         "--dir",
         type=str,
-        default='./outputs/7scenes/test_dense_stride40/vggt',
+        default='outputs/dtu/test_dense_stride5/reliev3r',
         help="dump 根目录，例如 .../test_dense_stride40/gt 或 .../test_dense_stride40/vggt",
     )
     ap.add_argument(
         "--is_gt",
         type=int,
         default=0,
-        help="1: 按 GT 文件名读取；0: 按 VGGT(pred_*) 文件名读取",
+        help="0: 按 GT 文件名读取；0: 按 VGGT(pred_*) 文件名读取",
     )
     ap.add_argument("--depth_vmin", type=float, default=0.0)
     ap.add_argument("--depth_vmax", type=float, default=10.0)

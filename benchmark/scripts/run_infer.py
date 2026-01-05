@@ -1,0 +1,324 @@
+import os
+import os.path as osp
+from pathlib import Path
+
+import numpy as np
+import torch
+import torch_npu  
+from tqdm import tqdm
+
+from _bootstrap import BENCH_ROOT 
+
+# -----------------------------------------------
+# VGGT imports 
+# -----------------------------------------------
+from vggt.models.vggt import VGGT
+from vggt.utils.pose_enc import pose_encoding_to_extri_intri
+from vggt.utils.geometry import unproject_depth_map_to_point_map, closed_form_inverse_se3
+
+# -----------------------------------------------
+# Reliev3R imports 
+# -----------------------------------------------
+from models.reliev3r.utils.config_loader import LoadConfig
+from models.reliev3r.model import Reliev3R
+
+# -----------------------------------------------
+# dataset related
+# -----------------------------------------------
+from datasets import get_dataset
+
+# -----------------------------------------------
+# utils
+# -----------------------------------------------
+from lib.utils import save_npy, build_gt_geometry_data
+from lib.utils import strip_ddp_prefix
+from lib.normalization import normalize_camera_extrinsics_and_points_batch
+
+# -----------------------------
+# Config
+# -----------------------------
+GT_OUTPUT_WIDTH = 518
+DEPTH_FAR = 10.0
+DEPTH_NEAR = 1e-3
+
+# ---------------------- running vggt infer ------------------------------------------------
+def load_model_vggt(ckpt):
+    model = VGGT.from_pretrained(ckpt)
+    model.eval()
+    num_params = sum(p.numel() for p in model.parameters())
+    print(f"    [VGGT] #params = {num_params/1e6:.2f} M")
+    return model
+
+def run_vggt_infer(model, images_cpu, device: torch.device, autocast_dtype: torch.dtype):
+    images = images_cpu.unsqueeze(0).to(device)  # (B=1,...)
+
+    with torch.autocast(device_type=device.type, dtype=autocast_dtype):
+        tokens_list, ps_idx = model.aggregator(images)
+
+        pose_enc = model.camera_head(tokens_list)[-1]
+        pred_w2c, pred_K = pose_encoding_to_extri_intri(
+            pose_enc, images.shape[-2:], is_se3=True
+        )
+
+        pred_depth, _ = model.depth_head(tokens_list, images, ps_idx)
+        pred_point, _ = model.point_head(tokens_list, images, ps_idx)
+
+        pred_unproj = unproject_depth_map_to_point_map(
+            pred_depth.squeeze(0),
+            pred_w2c.squeeze(0),
+            pred_K.squeeze(0),
+        )
+
+    return pred_w2c, pred_K, pred_depth, pred_point, pred_unproj
+
+# ---------------------- running reliev3r infer ------------------------------------------
+def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, strict: bool = True):
+    cfg = LoadConfig(config_path)
+    cfg.eval = True
+    model = Reliev3R(cfg.model).to(device).eval()
+
+    ckpt = torch.load(ckpt_path, map_location="cpu")
+    state = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
+    state = strip_ddp_prefix(state)
+    model.load_state_dict(state, strict=strict)
+    print(f"    [OK] Reliev3R loaded ckpt: {ckpt_path} (strict={strict})")
+
+    num_params = sum(p.numel() for p in model.parameters())
+    print(f"    [Reliev3R] #params = {num_params/1e6:.2f} M")
+    return model
+
+def run_reliev3r_infer(
+    model,
+    images_cpu: torch.Tensor,          # (V,3,H,W) from load_and_preprocess_images, on CPU
+    gt_intrinsics_rs: np.ndarray,       # (V,3,3) from build_gt_geometry_data first return
+    gt_extrinsics: np.ndarray,
+    device: torch.device,
+    autocast_dtype: torch.dtype,
+    image_paths=None,
+    scene_name="7scenes",
+    unproj_with_gt=False,
+):
+    """
+    Returns:
+      pred_c2w: torch.Tensor (V,4,4)
+      pred_depth_maps: torch.Tensor (V,H,W)    # meters
+      pred_unproj: torch.Tensor (V,H,W,3)      # world points
+    """
+    if not torch.is_tensor(images_cpu) or images_cpu.ndim != 4:
+        raise ValueError(f"images_cpu must be (V,3,H,W), got {type(images_cpu)} {getattr(images_cpu,'shape',None)}")
+
+    V = images_cpu.shape[0]
+
+    # -----------------------
+    # build minimal batch
+    # -----------------------
+    if image_paths is not None:
+        names = [osp.basename(p) for p in image_paths]
+    else:
+        names = ["frame"] * V
+
+    data = {
+        "scene_names":       [scene_name],
+        "input_images":      images_cpu.to(device=device, dtype=torch.float32).unsqueeze(0),  # (1,V,3,H,W)
+        "input_depths":      None,
+        "sample_indices":    [list(range(V))],
+        "input_viewmats":    None,
+        "input_Ks":          None,
+        "input_image_names": [names],
+        "data_idxs":         [0],
+        "matching_infos":    None,
+    }
+
+    with torch.autocast(device_type=device.type, dtype=autocast_dtype):
+        pred = model.forward(data)
+
+    pred_depth = pred["scaled_depths"].permute(0, 1, 3, 4, 2).contiguous()
+    pred_w2c = pred["camera_extrs"]
+
+    ##
+    print(f"    [Reliev3R] normalize_camera_extrinsics")
+    pred_w2c, _, _, _ = normalize_camera_extrinsics_and_points_batch(
+        extrinsics=pred_w2c[:,:,:3].cpu(),
+        scale_by_points = False,
+    )
+    pred_w2c = pred_w2c.to(device.type)
+    # GT intrinsics (V,3,3)
+    pred_K = torch.from_numpy(gt_intrinsics_rs.astype(np.float32)).to(device=device, dtype=torch.float32)  # (V,3,3)
+
+    # unprojection 
+    if unproj_with_gt:
+        pred_unproj = unproject_depth_map_to_point_map(
+            pred_depth.squeeze(0),
+            gt_extrinsics.squeeze(0),
+            pred_K,
+        )  # (V,H,W,3) typically
+    else:
+        pred_unproj = unproject_depth_map_to_point_map(
+            pred_depth.squeeze(0),
+            pred_w2c.squeeze(0),
+            pred_K,
+        )  # (V,H,W,3) typically
+
+    return pred_w2c, pred_depth, pred_unproj
+
+def dump_one_seq(model, 
+                 model_type,
+                 batch,
+                 pred_seq_dir: Path,
+                 gt_seq_dir: Path,
+                 dump_gt: bool,
+                 device: torch.device, 
+                 autocast_dtype: torch.dtype):
+    
+    # --- build GT (resized + normalized) ---
+    gt_intrinsics_rs, gt_extrinsics, _, gt_point_maps, gt_depth_maps, gt_depth_masks, gt_images = build_gt_geometry_data(
+        image_pils=batch.image_pils, 
+        depths=batch.depths, 
+        raw_w2c=batch.raw_w2c,
+        raw_K=batch.raw_K,
+        output_width=GT_OUTPUT_WIDTH,
+        depth_far=DEPTH_FAR,
+        depth_near=DEPTH_NEAR,
+        )
+
+    gt_c2w = closed_form_inverse_se3(gt_extrinsics.squeeze(0))
+    
+    if dump_gt:
+        gt_seq_dir.mkdir(parents=True, exist_ok=True)
+        save_npy(gt_seq_dir, "gt_extrinsics.npy", gt_c2w)
+        save_npy(gt_seq_dir, "gt_depth_maps.npy", gt_depth_maps.squeeze(0))
+        save_npy(gt_seq_dir, "gt_point_maps.npy", gt_point_maps.squeeze(0))
+        save_npy(gt_seq_dir, "gt_depth_masks.npy", gt_depth_masks)
+        save_npy(gt_seq_dir, "gt_images.npy", gt_images) 
+
+    pred_seq_dir.mkdir(parents=True, exist_ok=True)
+
+    # ---- infer
+    with torch.inference_mode():
+        if model_type == "vggt":
+            pred_w2c, _, pred_depth_maps, pred_point_maps, pred_unproj = run_vggt_infer(
+                model, batch.images_cpu, device=device, autocast_dtype=autocast_dtype
+            )
+            pred_c2w = closed_form_inverse_se3(pred_w2c.squeeze(0))
+
+            save_npy(pred_seq_dir, "pred_extrinsics.npy", pred_c2w)
+            save_npy(pred_seq_dir, "pred_depth_maps.npy", pred_depth_maps.squeeze(0).squeeze(-1))
+            save_npy(pred_seq_dir, "pred_point_maps.npy", pred_point_maps.squeeze(0))
+            save_npy(pred_seq_dir, "pred_point_maps_by_unprojection.npy", pred_unproj)
+
+        elif model_type == "reliev3r":
+            pred_w2c, pred_depth_maps, pred_unproj = run_reliev3r_infer(
+                model=model,
+                images_cpu=batch.images_cpu,                  # (V,3,H,W) from load_and_preprocess_images
+                gt_intrinsics_rs=gt_intrinsics_rs,  # GT内参
+                gt_extrinsics=gt_extrinsics,
+                device=device,
+                autocast_dtype=autocast_dtype,
+                image_paths=batch.image_paths,
+                scene_name=batch.seq,
+            )
+            pred_c2w = closed_form_inverse_se3(pred_w2c.squeeze(0))
+
+            save_npy(pred_seq_dir, "pred_extrinsics.npy", pred_c2w)         # (V,4,4)
+            save_npy(pred_seq_dir, "pred_depth_maps.npy", pred_depth_maps.squeeze(0).squeeze(-1))  # (V,H,W)
+            save_npy(pred_seq_dir, "pred_point_maps_by_unprojection.npy", pred_unproj)
+
+        else:
+            raise ValueError(f"Unknown model_type={model_type}")
+
+
+def main():
+    import argparse
+    p = argparse.ArgumentParser()
+    # dataset
+    ## 7scenes
+    # p.add_argument("--dataset", type=str, default="7scenes")
+    # p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "7scenes" / "data"))
+    # ## dtu
+    # p.add_argument("--dataset", type=str, default="dtu")
+    # p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "DTU" / "spann3r_version"/ "dtu_test_mvsnet_release"))
+    ## nrgbd
+    p.add_argument("--dataset", type=str, default="nrgbd")
+    p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "NRGBD" / "data"))
+
+    p.add_argument("--split", type=str, default="test", choices=["train", "test"])
+    p.add_argument("--view", type=str, default="dense", choices=["dense", "sparse"])
+    p.add_argument("--stride", type=int, default=500)  # 
+    p.add_argument("--seq", type=str, default="")    # chess/seq-01
+
+    # model
+    p.add_argument("--model", type=str, default="vggt", choices=["vggt", "reliev3r"])
+    # vggt ckpt
+    p.add_argument("--ckpt", type=str, default=str(BENCH_ROOT / "checkpoints" / "VGGT-1B"))
+    # reliev3r config/ckpt
+    p.add_argument("--reliev3r_config", type=str, default="/efs-mi-east4-2/exp/ssff3d/251213-450M-pi3Base-s32v8-MoGe2/config.json")
+    p.add_argument("--reliev3r_ckpt", type=str, default="/efs-mi-east4-2/exp/ssff3d/251213-450M-pi3Base-s32v8-MoGe2/ckpt/60000.ckpt")
+
+    # p.add_argument("--reliev3r_config", type=str, default="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-251228/exp/Reliev3R_251231_stg1_v8c32s1_p50/config.json")
+    # p.add_argument("--reliev3r_ckpt", type=str, default="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-251228/exp/Reliev3R_251231_stg1_v8c32s1_p50/ckpt/50000.ckpt")
+
+    p.add_argument("--device", type=str, default="npu:5")
+    p.add_argument("--dtype", type=str, default="fp32", choices=["fp32", "bf16"])
+
+    p.add_argument("--out_root", type=str, default=str(BENCH_ROOT / "outputs"))
+    p.add_argument("--dump_gt", type=int, default=1)
+    args = p.parse_args()
+
+    # ------------------------------------------------------------------------------------------------------
+    device = torch.device(args.device)
+    autocast_dtype = torch.float32 if args.dtype == "fp32" else torch.bfloat16
+    dump_gt = (args.dump_gt != 0)
+
+    # dataset
+    ds = get_dataset(args.dataset, args.data_root)
+    stride = args.stride or ds.default_stride(args.view)
+    sequences = [args.seq] if args.seq else ds.list_sequences(args.split)
+
+    # outdir
+    setting_dir = Path(args.out_root) / args.dataset / f"{args.split}_{args.view}_stride{stride}"
+    setting_dir.mkdir(parents=True, exist_ok=True)
+
+    # load model by branch
+    if args.model == "vggt":
+        model = load_model_vggt(args.ckpt).to(device)
+    else:
+        if not args.reliev3r_ckpt:
+            raise ValueError("--reliev3r_ckpt is required when --model reliev3r")
+        model = load_model_reliev3r(args.reliev3r_config, args.reliev3r_ckpt, device=device, strict=True)
+
+    print(f"[INFO] dataset={args.dataset} split={args.split} view={args.view} model={args.model} "
+            f"num_seqs={len(sequences)} stride={stride} dump_gt={dump_gt} device={device} out={setting_dir}")
+
+    pbar = tqdm(sequences, desc=args.dataset, unit="seq")
+    for seq in pbar:
+        seq_len = ds.count_seq_len(seq)
+        frame_ids = list(range(0, seq_len, stride))
+        if not frame_ids:
+            pbar.set_postfix_str(f"{seq}: empty")
+            continue
+        batch = ds.load_sequence(seq, frame_ids)
+
+        pred_seq_dir = setting_dir / args.model / seq   #
+        gt_seq_dir   = setting_dir / "gt" / seq
+
+        frame_id_dir = setting_dir / "frame_ids" / seq
+        frame_id_dir.mkdir(parents=True, exist_ok=True)
+        np.save(frame_id_dir / "frame_ids.npy", np.array(frame_ids, dtype=np.int32))
+
+        dump_one_seq(
+            model = model, 
+            model_type = args.model,
+            batch = batch,
+            pred_seq_dir=pred_seq_dir,
+            gt_seq_dir=gt_seq_dir,
+            dump_gt=dump_gt,
+            device=device,
+            autocast_dtype=autocast_dtype,
+        )
+
+        pbar.set_postfix_str(f"{seq} K={len(frame_ids)}")
+        tqdm.write(f"[OK] {seq}  K={len(frame_ids)}")
+
+
+if __name__ == "__main__":
+    main()
