@@ -1,0 +1,12 @@
+## Image file format
+image_format: .jpg
+## Depth range lower bound
+depth_lowerbound: 0.001
+## Depth range upper bound
+depth_upperbound: 65535.0
+## Minimal views to sample for a batch
+sample_min: 2
+## Maximum views to sample for a batch
+sample_max: 24
+
+depth_is_z: True
