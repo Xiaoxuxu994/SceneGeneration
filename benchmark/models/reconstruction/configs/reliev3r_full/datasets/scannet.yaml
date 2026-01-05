@@ -1,0 +1,4 @@
+data_root: /mnt/diskb/chenyouyu/workspace/code/Reliev3R-251125/Reliev3R_data_sample/Scannetv2_Sample
+
+sample_min: 8
+sample_max: 8

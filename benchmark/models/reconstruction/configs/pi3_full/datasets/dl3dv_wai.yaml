@@ -1,0 +1,4 @@
+# Path to the dataset
+data_root: /efs_data/datasets/DL3DV_WAI
+train_data_list_file: ./data_split/dl3dv_wai_train_list_full.json
+eval_data_list_file: ./data_split/dl3dv_wai_eval_list_full.json
