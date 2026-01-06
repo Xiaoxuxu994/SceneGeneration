@@ -137,7 +137,7 @@ def export_pcds_and_cam_as_ply(path_prefix: str, point_maps: torch.Tensor, image
         o3d.io.write_point_cloud(path_prefix + "_cam" + "_batch{}.ply".format(b), merged_cameras)
 
 
-def depth2pointmap(depths: torch.Tensor, extrs: torch.Tensor, intrs: torch.Tensor, device=DEVICE_NAME):
+def depth2pointmap(depths: torch.Tensor, extrs: torch.Tensor, intrs: torch.Tensor, device=DEVICE_NAME, is_intr_normalized=True):
     """Back-project depth maps into 3D point maps with given cameras. 
 
     Args:
@@ -152,8 +152,9 @@ def depth2pointmap(depths: torch.Tensor, extrs: torch.Tensor, intrs: torch.Tenso
     B, C, H, W = depths.shape
     assert depths.ndim == 4 and C == 1
     
-    intr_normalizer = torch.tensor([W, H, 1], dtype=torch.float32, device=device).reshape(1, 3, 1)
-    intrs = intrs / intr_normalizer
+    if not is_intr_normalized:
+        intr_normalizer = torch.tensor([W, H, 1], dtype=torch.float32, device=device).reshape(1, 3, 1)
+        intrs = intrs / intr_normalizer
     
     grids = torch.cartesian_prod((torch.arange(W, device=device) + 0.5) / W, (torch.arange(H, device=device) + 0.5) / H)
     grids = grids.reshape(1, W, H, 2).permute(0, 2, 1, 3).expand(B, -1, -1, -1) # B H W 2

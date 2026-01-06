@@ -1,5 +1,5 @@
 import torch
-
+import numpy as np
 
 def concat_data_by_view(data):
     images = torch.cat([data["input_images"], data["output_images"]], dim=1)

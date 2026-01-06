@@ -1,0 +1,13 @@
+## Root folder of the dataset
+data_root: /efs-mi-east4-3/c50041401/datasets/reliev3r_synth_data/BlendedMVS
+
+## Scale of depth maps
+depth_scale: 1.0
+
+## EPS for pixel matching reprojection
+match_eps: 0.01
+
+## Length of data clip
+clip_length: 16
+## Interval of frame sampling
+samp_interval: 1

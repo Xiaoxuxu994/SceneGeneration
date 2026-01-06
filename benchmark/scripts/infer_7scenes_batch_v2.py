@@ -9,7 +9,6 @@ import torch_npu  # noqa: F401
 import imageio
 from PIL import Image
 from tqdm import tqdm
-from datetime import datetime
 
 from _bootstrap import BENCH_ROOT  # noqa
 
@@ -233,7 +232,7 @@ def run_reliev3r_infer(
     model,
     images_cpu: torch.Tensor,          # (V,3,H,W) from load_and_preprocess_images, on CPU
     gt_intrinsics_rs: np.ndarray,       # (V,3,3) from build_gt_geometry_data first return
-    gt_extrinsics, # only ofr debugging
+    gt_extrinsics, # only for debugging
     device: torch.device,
     autocast_dtype: torch.dtype,
     image_paths=None,
@@ -365,10 +364,10 @@ def make_paths(sevenscenes_dir: str, seq: str, frame_ids):
     depths = [osp.join(seq_dir, f"frame-{i:06d}.depth.proj.png") for i in frame_ids]
     return images, poses, depths
 
-def check_gt_data_dump(gt_seq_dir: Path):
+def check_gt_data_dump(gt_seq_dir: Path, gt_files: list):
     flag = False # do not dump new GT data
     
-    for file in GT_FILES:
+    for file in gt_files:
         if not (gt_seq_dir / file).exists():
             flag = True # dump new GT data
     

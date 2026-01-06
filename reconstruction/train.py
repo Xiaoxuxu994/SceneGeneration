@@ -24,7 +24,7 @@ from utils.image_utils import visualize_prediction
 from utils.optim_utils import create_optimizer, create_lr_scheduler
 from utils.log_utils import export_pcds_and_cam_as_ply, depth2pointmap, localpoint2global
 from utils import make_loss_func
-from dataset import create_mixed_dataloader, load_data_to_device
+from dataset.dataloaders import create_mixed_dataloader, load_data_to_device
 
 from model import Reliev3R
 
@@ -55,7 +55,7 @@ def create_dataloaders(rank, cfg):
     return dataloader, data_iter, dataloader_eval, data_eval_iter
 
 
-def dataloader_step(data_iter, dataloader):
+def dataloader_step(data_iter, dataloader, train_proc):
     """Sample a data sample from dataloader. """
     epoch_ends = False
     while True:
@@ -67,9 +67,12 @@ def dataloader_step(data_iter, dataloader):
                 break
             print("[ WARNING ] Error data found!")
         except StopIteration:
+            if train_proc is not None:
+                for ds_idx in range(len(dataloader.dataset.datasets)):
+                    dataloader.dataset.datasets[ds_idx].update_train_proc(train_proc)
             data_iter = iter(dataloader)
             epoch_ends = True
-    return data, epoch_ends
+    return data, data_iter, epoch_ends
 
 
 def export_image_samples(cfg, step, subfolder, data, pred, loss_dict):
@@ -83,7 +86,7 @@ def export_image_samples(cfg, step, subfolder, data, pred, loss_dict):
     print("[ INFO ] Images saved successfully.")
 
 
-def export_point_cloud(cfg, step, subfolder, data, pred, thre=1.0):
+def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
     """Visualize point maps. """
     is_pred_points = pred["scaled_depths"].shape[-3] == 3
     os.makedirs(os.path.join(cfg.output_dir, subfolder), exist_ok=True)
@@ -104,6 +107,10 @@ def export_point_cloud(cfg, step, subfolder, data, pred, thre=1.0):
         export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}".format(step)), 
                                     pred_points, data["input_images"], cam_poses, data["input_Ks"], 
                                     pred_points_conf, conf_thre=thre)
+        if data.get("input_points", None) is not None:
+            export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}_GT".format(step)), 
+                                       data["input_points"], data["input_images"], data["input_viewmats"], data["input_Ks"], 
+                                       data["input_depth_masks"], conf_thre=thre)
     else:
         export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}".format(step)), 
                                     pred_points, data["input_images"], cam_poses, data["input_Ks"], 
@@ -129,6 +136,9 @@ def run(rank, cfg):
     
     """Load models. """
     model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
+    
+    """Enable checkpoint. """
+    model.enable_checkpoint()
     
     """Create loss functions. """
     loss_func = make_loss_func(cfg.loss)
@@ -156,7 +166,7 @@ def run(rank, cfg):
         lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations)
     
     """Wrap model with ddp. """
-    model = DDP(model, device_ids=[rank])
+    model = DDP(model, device_ids=[rank], bucket_cap_mb=100, gradient_as_bucket_view=True)
     
     model.train()
     dist.barrier()
@@ -191,7 +201,7 @@ def run(rank, cfg):
                 step_start.record()
                 data_start.record()
             
-            data, _ = dataloader_step(data_iter, dataloader)
+            data, data_iter, _ = dataloader_step(data_iter, dataloader, step / cfg.training.iterations)
             step += 1
             
             if enable_time_profiling:
@@ -204,7 +214,8 @@ def run(rank, cfg):
                 forward_start.record()
             
             model.train()
-            pred = model(data)
+            with torch.autocast(device_type=DEVICE_NAME, dtype=torch.bfloat16):
+                pred = model(data)
 
             if enable_time_profiling:
                 forward_end.record()
@@ -213,9 +224,9 @@ def run(rank, cfg):
             loss_dict = loss_func(pred, data)
             if torch.isnan(loss_dict["total"]):
                 print("[ WARNING ] loss nan found! skipping step {} !".format(step))
-                del pred
-                del loss_dict
-                torch_device_lib.empty_cache()
+                # del pred
+                # del loss_dict
+                # torch_device_lib.empty_cache()
                 continue
                 
             if enable_time_profiling:
@@ -251,10 +262,11 @@ def run(rank, cfg):
             
             if global_rank == 0:
                 """Log training loss information"""
-                print("[ INFO ] Step {}; Loss: {:.5f}; Depth range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]".format(
+                print("[ INFO ] Step {}; Loss: {:.5f}; Depth range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]".format(
                     step, loss_dict["total"].item(), 
                     pred["depths"].min().item(), pred["depths"].max().item(), 
-                    pred["depths_conf"].min().item(), pred["depths_conf"].max().item()))
+                    pred["depths_conf"].min().item(), pred["depths_conf"].max().item(), 
+                    pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item()))
                 for loss_name, loss_value in loss_dict.items():
                     if loss_name == "matching_info":
                         continue
@@ -268,7 +280,7 @@ def run(rank, cfg):
                 
                 """Validation, only performed on global rank 0"""
                 if step % cfg.training.eval_interval == 0 and global_rank == 0:
-                    data, _ = dataloader_step(data_eval_iter, dataloader_eval)
+                    data, data_eval_iter, _ = dataloader_step(data_eval_iter, dataloader_eval, step / cfg.training.iterations)
                     with torch.no_grad():
                         pred = model.module._forward(data)
                         loss_dict = loss_func(pred, data)
@@ -294,9 +306,9 @@ def run(rank, cfg):
                     }
                     torch.save(checkpoint, ckpt_name)
             
-            del pred
-            del loss_dict
-            torch_device_lib.empty_cache()
+            # del pred
+            # del loss_dict
+            # torch_device_lib.empty_cache()
     
     else:
         """Visualize evaluation results on eval set, not for metric computation, implemented for single GPU. """
@@ -305,7 +317,7 @@ def run(rank, cfg):
         eval_ends = False
         step_begins = step
         while True:
-            data, eval_ends = dataloader_step(data_eval_iter, dataloader_eval)
+            data, data_eval_iter, eval_ends = dataloader_step(data_eval_iter, dataloader_eval, None)
             step += 1
             if eval_ends or step - step_begins > 100:
                 break
@@ -327,6 +339,7 @@ def run(rank, cfg):
 def main(cfg):
     run(int(os.environ["LOCAL_RANK"]), cfg)
 
+
 if __name__ == '__main__':
     parser = ArgumentParser("Argument parser for feed-forward training.")
     parser.add_argument("--config", type=str, default=os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs", "main.yaml"), 
@@ -342,6 +355,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     cfg = LoadConfig(args.config)
+    # print("[ DEBUG ] config: {}".format(cfg))
+    # import time
+    # time.sleep(2000)
     
     if args.data_url is not None:
         cfg.datasets.dl3dv.data_root = args.data_url

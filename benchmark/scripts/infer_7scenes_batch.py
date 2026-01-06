@@ -45,8 +45,8 @@ def save_npy(root: Path, name: str, x) -> None:
     np.save(str(root / name), to_numpy(x))
 
 
-def load_model(model_class, ckpt):
-    model = model_class.from_pretrained(ckpt)
+def load_model(ckpt):
+    model = VGGT.from_pretrained(ckpt)
     model.eval()
     return model
 
@@ -270,7 +270,6 @@ def main():
     p.add_argument("--stride", type=int, default=0)  # 0 -> paper default
     p.add_argument("--seq", type=str, default="")    # chess/seq-01
 
-    p.add_argument("--model", type=str, default="VGGT", choices=["VGGT", "Pi3", "reliev3r"])
     p.add_argument("--ckpt", type=str, default=str(BENCH_ROOT / "checkpoints" / "VGGT-1B"))
     p.add_argument("--device", type=str, default="npu:0")
     p.add_argument("--dtype", type=str, default="fp32", choices=["fp32", "bf16"])
@@ -292,9 +291,7 @@ def main():
     setting_dir = Path(args.out_root) / f"{args.split}_{args.view}_stride{stride}"
     setting_dir.mkdir(parents=True, exist_ok=True)
 
-    model = load_model(args.model, args.ckpt).to(device)
-    print(model)
-    exit()
+    model = load_model(args.ckpt).to(device)
 
     print(f"[INFO] num_seqs={len(sequences)}, stride={stride}, dump_gt={dump_gt}, device={device}, out={setting_dir}")
 

@@ -1,4 +1,4 @@
-output_dir: exp/overfit_debug_moge2depth
+output_dir: exp/overfit_bbours
 
 model:
   depth_model: !include models/depth_model.yaml

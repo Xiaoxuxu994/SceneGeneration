@@ -3,7 +3,7 @@
 This is the codebase of Reliev3R.
 
 ## TODO List
-- [ ] Update dataloaders to fit multiple datasets. 
+- [x] Update dataloaders to fit multiple datasets. 
 - [ ] Integrate benchmark code. 
 - [ ] Support for camera pose input. 
 - [ ] Support for camera intrinsic estimation. 
