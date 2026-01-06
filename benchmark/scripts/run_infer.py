@@ -19,7 +19,7 @@ from vggt.utils.geometry import unproject_depth_map_to_point_map, closed_form_in
 # -----------------------------------------------
 # Pi3 imports 
 # -----------------------------------------------
-# from models.pi3_official.pi3.models.pi3 import Pi3
+from models.pi3_official.pi3.models.pi3 import Pi3
 
 # -----------------------------------------------
 # Reliev3R imports 
@@ -335,7 +335,7 @@ def main():
     p.add_argument("--reuse_frame_ids", type=int, default=1)
 
     # model
-    p.add_argument("--model", type=str, default="vggt", choices=list(MODEL_DEFAULTS.keys()))
+    p.add_argument("--model", type=str, default="pi3", choices=list(MODEL_DEFAULTS.keys()))
     p.add_argument("--ckpt", type=str, default=None, help="(vggt/pi3/reliev3r) checkpoint path/dir. If not set, inferred from --model.")
     p.add_argument("--config", type=str, default=None, help="(reliev3r) config.json. If not set, inferred from --model.")
 
