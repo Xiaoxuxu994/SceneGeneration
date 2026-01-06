@@ -17,6 +17,11 @@ from vggt.utils.pose_enc import pose_encoding_to_extri_intri
 from vggt.utils.geometry import unproject_depth_map_to_point_map, closed_form_inverse_se3
 
 # -----------------------------------------------
+# Pi3 imports 
+# -----------------------------------------------
+from models.pi3_official.pi3.models.pi3 import Pi3
+
+# -----------------------------------------------
 # Reliev3R imports 
 # -----------------------------------------------
 from models.reliev3r.utils.config_loader import LoadConfig
@@ -39,7 +44,16 @@ from lib.normalization import normalize_camera_extrinsics_and_points_batch
 # -----------------------------
 GT_OUTPUT_WIDTH = 518
 DEPTH_FAR = 10.0
-DEPTH_NEAR = 1e-3
+DEPTH_NEAR = 0.1
+
+GT_FILES = [
+    "gt_intrinsics.npy", 
+    "gt_extrinsics.npy", 
+    "gt_depth_maps.npy", 
+    "gt_point_maps.npy", 
+    "gt_depth_masks.npy", 
+    "gt_images.npy"
+]
 
 # ---------------------- running vggt infer ------------------------------------------------
 def load_model_vggt(ckpt):
@@ -70,6 +84,31 @@ def run_vggt_infer(model, images_cpu, device: torch.device, autocast_dtype: torc
         )
 
     return pred_w2c, pred_K, pred_depth, pred_point, pred_unproj
+
+# ---------------------- running p3 infer ------------------------------------------------
+def load_model_pi3(ckpt):
+    model = Pi3.from_pretrained(ckpt)
+    model.eval()
+    return model
+
+def run_pi3_infer(model, images_cpu, device: torch.device, autocast_dtype: torch.dtype):
+    images = images_cpu.unsqueeze(0).to(device)  # (B=1,...)
+
+    with torch.autocast(device_type=device.type, dtype=autocast_dtype):        
+        results = model(images)
+        pred_depth = results["local_points"][..., -1].cpu().squeeze(0).numpy()
+        pred_points = results["points"].cpu()
+        pred_c2w = results["camera_poses"].cpu()
+
+        # align to the first frame
+        pred_w2c = closed_form_inverse_se3(pred_c2w.squeeze(0)).unsqueeze(0) # (1,V,4,4)
+        pred_w2c_aligned, _, pred_points_aligned, _ = normalize_camera_extrinsics_and_points_batch(
+            extrinsics=pred_w2c[:,:,:3],
+            world_points=pred_points,
+            scale_by_points=False,
+        )
+        
+    return pred_w2c_aligned.squeeze(0).numpy(), pred_depth, pred_points_aligned.squeeze(0).numpy()
 
 # ---------------------- running reliev3r infer ------------------------------------------
 def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, strict: bool = True):
@@ -166,32 +205,45 @@ def dump_one_seq(model,
                  batch,
                  pred_seq_dir: Path,
                  gt_seq_dir: Path,
-                 dump_gt: bool,
+                #  dump_gt: bool,
                  device: torch.device, 
                  autocast_dtype: torch.dtype):
     
-    # --- build GT (resized + normalized) ---
-    gt_intrinsics_rs, gt_extrinsics, _, gt_point_maps, gt_depth_maps, gt_depth_masks, gt_images = build_gt_geometry_data(
-        image_pils=batch.image_pils, 
-        depths=batch.depths, 
-        raw_w2c=batch.raw_w2c,
-        raw_K=batch.raw_K,
-        output_width=GT_OUTPUT_WIDTH,
-        depth_far=DEPTH_FAR,
-        depth_near=DEPTH_NEAR,
-        )
-
-    gt_c2w = closed_form_inverse_se3(gt_extrinsics.squeeze(0))
+    def check_gt_data_dump(gt_seq_dir: Path, gt_files: list):
+        flag = False # do not dump new GT data
+        
+        for file in gt_files:
+            if not (gt_seq_dir / file).exists():
+                flag = True # dump new GT data
+        
+        return flag
     
-    if dump_gt:
-        gt_seq_dir.mkdir(parents=True, exist_ok=True)
+    # check if the GTs are already there
+    dump_gt_flag = check_gt_data_dump(gt_seq_dir, GT_FILES)
+    
+    if dump_gt_flag:
+        # --- build GT (resized + normalized) ---
+        gt_intrinsics_rs, gt_extrinsics, _, gt_point_maps, gt_depth_maps, gt_depth_masks, gt_images = build_gt_geometry_data(
+            image_pils=batch.image_pils, 
+            depths=batch.depths, 
+            raw_w2c=batch.raw_w2c,
+            raw_K=batch.raw_K,
+            output_width=GT_OUTPUT_WIDTH,
+            depth_far=DEPTH_FAR,
+            depth_near=DEPTH_NEAR,
+            )
+
+        gt_c2w = closed_form_inverse_se3(gt_extrinsics.squeeze(0))
+        
+        save_npy(gt_seq_dir, "gt_intrinsics.npy", gt_intrinsics_rs)
         save_npy(gt_seq_dir, "gt_extrinsics.npy", gt_c2w)
         save_npy(gt_seq_dir, "gt_depth_maps.npy", gt_depth_maps.squeeze(0))
         save_npy(gt_seq_dir, "gt_point_maps.npy", gt_point_maps.squeeze(0))
         save_npy(gt_seq_dir, "gt_depth_masks.npy", gt_depth_masks)
         save_npy(gt_seq_dir, "gt_images.npy", gt_images) 
-
-    pred_seq_dir.mkdir(parents=True, exist_ok=True)
+    else: # load dumped GT data for inference
+        gt_intrinsics_rs = np.load(gt_seq_dir / "gt_intrinsics.npy")
+        gt_extrinsics = np.load(gt_seq_dir / "gt_extrinsics.npy")
 
     # ---- infer
     with torch.inference_mode():
@@ -223,6 +275,15 @@ def dump_one_seq(model,
             save_npy(pred_seq_dir, "pred_depth_maps.npy", pred_depth_maps.squeeze(0).squeeze(-1))  # (V,H,W)
             save_npy(pred_seq_dir, "pred_point_maps_by_unprojection.npy", pred_unproj)
 
+        elif model_type == "pi3":
+            pred_w2c, pred_depth_maps, pred_point_maps = run_pi3_infer(
+                model, batch.images_cpu, device=device, autocast_dtype=autocast_dtype
+            )
+            pred_c2w = closed_form_inverse_se3(pred_w2c)
+
+            save_npy(pred_seq_dir, "pred_extrinsics.npy", pred_c2w)         # (V,4,4)
+            save_npy(pred_seq_dir, "pred_depth_maps.npy", pred_depth_maps)  # (V,H,W)
+            save_npy(pred_seq_dir, "pred_point_maps.npy", pred_point_maps)  # (V,H,W,3)
         else:
             raise ValueError(f"Unknown model_type={model_type}")
 
@@ -237,21 +298,18 @@ def main():
     # ## dtu
     # p.add_argument("--dataset", type=str, default="dtu")
     # p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "DTU" / "spann3r_version"/ "dtu_test_mvsnet_release"))
-    # ## nrgbd
-    # p.add_argument("--dataset", type=str, default="nrgbd")
-    # p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "NRGBD" / "data"))
-
-    ## scannet
-    p.add_argument("--dataset", type=str, default="scannet")
-    p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "scannet" / "posed_images"))
+    ## nrgbd
+    p.add_argument("--dataset", type=str, default="nrgbd", choices=["nrgbd", "dtu", "7scenes"])
+    p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "NRGBD" / "data"))
 
     p.add_argument("--split", type=str, default="test", choices=["train", "test"])
     p.add_argument("--view", type=str, default="dense", choices=["dense", "sparse"])
-    p.add_argument("--stride", type=int, default=50)  # 
-    p.add_argument("--seq", type=str, default="")    # chess/seq-01
+    p.add_argument("--stride", type=int, default=500)  # 
+    p.add_argument("--seq", type=str, default="")      # chess/seq-01
+    p.add_argument("--max_seq_len", type=int, default=0)   # infer all view or only n views
 
     # model
-    p.add_argument("--model", type=str, default="reliev3r", choices=["vggt", "reliev3r"])
+    p.add_argument("--model", type=str, default="vggt", choices=["vggt", "pi3", "reliev3r"])
     # vggt ckpt
     p.add_argument("--ckpt", type=str, default=str(BENCH_ROOT / "checkpoints" / "VGGT-1B"))
     # reliev3r config/ckpt
@@ -265,13 +323,13 @@ def main():
     p.add_argument("--dtype", type=str, default="fp32", choices=["fp32", "bf16"])
 
     p.add_argument("--out_root", type=str, default=str(BENCH_ROOT / "outputs"))
-    p.add_argument("--dump_gt", type=int, default=1)
+    # p.add_argument("--dump_gt", type=int, default=1)
     args = p.parse_args()
 
     # ------------------------------------------------------------------------------------------------------
     device = torch.device(args.device)
     autocast_dtype = torch.float32 if args.dtype == "fp32" else torch.bfloat16
-    dump_gt = (args.dump_gt != 0)
+    # dump_gt = (args.dump_gt != 0)
 
     # dataset
     ds = get_dataset(args.dataset, args.data_root)
@@ -279,35 +337,53 @@ def main():
     sequences = [args.seq] if args.seq else ds.list_sequences(args.split)
 
     # outdir
-    setting_dir = Path(args.out_root) / args.dataset / f"{args.split}_{args.view}_stride{stride}"
+    setting_dir = Path(args.out_root) / args.dataset / f"{args.split}_{args.view}_stride{stride}_seqlen{args.max_seq_len}"
     setting_dir.mkdir(parents=True, exist_ok=True)
 
     # load model by branch
     if args.model == "vggt":
         model = load_model_vggt(args.ckpt).to(device)
+    elif args.model == "pi3":
+        model = load_model_pi3(args.ckpt).to(device)
     else:
         if not args.reliev3r_ckpt:
             raise ValueError("--reliev3r_ckpt is required when --model reliev3r")
         model = load_model_reliev3r(args.reliev3r_config, args.reliev3r_ckpt, device=device, strict=True)
 
     print(f"[INFO] dataset={args.dataset} split={args.split} view={args.view} model={args.model} "
-            f"num_seqs={len(sequences)} stride={stride} dump_gt={dump_gt} device={device} out={setting_dir}")
+            f"num_seqs={len(sequences)} stride={stride} device={device} out={setting_dir}")
 
     pbar = tqdm(sequences, desc=args.dataset, unit="seq")
     for seq in pbar:
-        seq_len = ds.count_seq_len(seq)
-        frame_ids = list(range(0, seq_len, stride))
-        if not frame_ids:
-            pbar.set_postfix_str(f"{seq}: empty")
-            continue
-        batch = ds.load_sequence(seq, frame_ids)
-
         pred_seq_dir = setting_dir / args.model / seq   #
         gt_seq_dir   = setting_dir / "gt" / seq
+        
+        pred_seq_dir.mkdir(parents=True, exist_ok=True)
+        gt_seq_dir.mkdir(parents=True, exist_ok=True)
+        
+        frame_id_path = gt_seq_dir / "frame_ids.npy"
+        
+        if frame_id_path.exists():
+            frame_ids = [int(d) for d in np.load(frame_id_path)]
+        else:
+            seq_len = ds.count_seq_len(seq)
+            frame_ids = list(range(0, seq_len, stride))
+            if args.max_seq_len > 0 and seq_len > args.max_seq_len: 
+                frame_ids = frame_ids[:args.max_seq_len]
+            if not frame_ids:
+                pbar.set_postfix_str(f"{seq}: empty")
+                continue
+            
+            np.save(frame_id_path, np.array(frame_ids, dtype=np.int32))
 
-        frame_id_dir = setting_dir / "frame_ids" / seq
-        frame_id_dir.mkdir(parents=True, exist_ok=True)
-        np.save(frame_id_dir / "frame_ids.npy", np.array(frame_ids, dtype=np.int32))
+            # pred_seq_dir = setting_dir / args.model / seq   #
+            # gt_seq_dir   = setting_dir / "gt" / seq
+
+            # frame_id_dir = setting_dir / "frame_ids" / seq
+            # frame_id_dir.mkdir(parents=True, exist_ok=True)
+            # np.save(frame_id_dir / "frame_ids.npy", np.array(frame_ids, dtype=np.int32))
+
+        batch = ds.load_sequence(seq, frame_ids)
 
         dump_one_seq(
             model = model, 
@@ -315,7 +391,7 @@ def main():
             batch = batch,
             pred_seq_dir=pred_seq_dir,
             gt_seq_dir=gt_seq_dir,
-            dump_gt=dump_gt,
+            # dump_gt=dump_gt,
             device=device,
             autocast_dtype=autocast_dtype,
         )

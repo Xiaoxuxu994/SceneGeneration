@@ -174,7 +174,7 @@ def main():
     ap.add_argument("--predicted_pointmap", type=int, default=1)
     
     ap.add_argument("--depth_align", type=str, default="scale_shift", choices=["scale", "scale_shift"])
-    ap.add_argument("--depth_device", type=str, default="npu:0",
+    ap.add_argument("--device", type=str, default="npu:0",
                     help="eval_depth_map 内部对齐用的 device，例如 npu:1")
 
     ap.add_argument("--out_xlsx", type=str, default="",
@@ -196,7 +196,7 @@ def main():
     print(f"[INFO] num_seqs={len(rels)}")
     print(f"[INFO] gt_root={gt_root}")
     print(f"[INFO] pred_root={pred_root}")
-    print(f"[INFO] depth_device={args.depth_device}")
+    print(f"[INFO] device={args.device}")
     print(f"[INFO] out={out_xlsx}")
 
     per_seq_rows: List[Dict[str, Any]] = []
@@ -257,7 +257,7 @@ def main():
                     depth_res = eval_depth_map(
                         pred_d, gt_d, mask,
                         align_with_scale=True,
-                        device=args.depth_device,
+                        device=args.device,
                     )
                 elif args.depth_align == "scale_shift":
                     depth_res = eval_depth_map(
@@ -265,7 +265,7 @@ def main():
                         align_with_lstsq=True,
                         # align_with_lad=True,
                         # align_with_lad2=True,
-                        device=args.depth_device,
+                        device=args.device,
                     )
                 else:
                     raise NotImplementedError

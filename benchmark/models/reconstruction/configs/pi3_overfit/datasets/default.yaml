@@ -1,0 +1,14 @@
+# Data mode, optional from [video, multi_view].
+# mode: video
+# Mode of sampling
+sample_mode: stride
+# Size of sampling segment.
+sample_segment: 32 # 110
+# Number of input views.
+sample_views: 8
+# Whether to reuse a video sequence multiple times by spliting it into multiple sequences.
+reuse_scene: true
+# Whether to shuffle dataset
+shuffle: true
+# Whether to generate matching information.
+pseudo_matching: false

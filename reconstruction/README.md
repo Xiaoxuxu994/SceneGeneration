@@ -21,7 +21,7 @@ This is the codebase of Reliev3R.
 
 ### Dependencies
 * In the default conda environment (PyTorch-2.1.0) of the specified docker above, run `pip install -r requirements.txt`.
-* Download DINOv2 checkpoints into directory `ckpt` (https://github.com/facebookresearch/dinov2), 
+* (NOTE: for local debugging only) Download DINOv2 checkpoints into directory `ckpt` (https://github.com/facebookresearch/dinov2). 
     ```
     |- ckpt
         |- dinov2-small
@@ -31,6 +31,12 @@ This is the codebase of Reliev3R.
         |- dinov2-large
             |- dinov2_vitl14_reg4_pretrain.pth
     ```
+    > On ROMA, DINOv2 checkpoints will be automatically mounted from `checkpoints` on EFS to `ckpt` via symlink.
+
+### ROMA
+* Syncing up with the ROMA platform can be done by easily run `./roma/code_upload.sh` and `./roma/code_download.sh`. Before that, you should set up the account and bucket path accordingly in those two scripts.
+* Copy `roma/code_download_template.sh` to `roma/code_download.sh`. Change the parameters according to your own info.
+* Copy `roma/code_upload_template.sh` to `roma/code_upload.sh`. Change the parameters according to your own info.
 
 ## Quick Start
 
@@ -43,7 +49,9 @@ bash train_local.sh
 ### Train online (ModelArts)
 Run the following script, 
 ```
-cd ${MA_JOB_DIR}/Reliev3R/
+cd ${MA_JOB_DIR}/reconstruction/
+
+ln -s /efs_data/checkpoints ckpt
 
 pip install -r requirements.txt
 

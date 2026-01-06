@@ -12,9 +12,12 @@ def setup_pythonpath() -> None:
     """
     candidates = [
         BENCH_ROOT,                              # allow import from benchmark/*
+        BENCH_ROOT / "python",                   # if you have local python packages here
         BENCH_ROOT / "lib",                      # optional local libs
         BENCH_ROOT / "models" / "vggt_official", # `import vggt` 
-        BENCH_ROOT / "models" / "reliev3r",      # `import reliev3r` 
+        BENCH_ROOT / "models" / "reliev3r", # `import reliev3r` 
+        # BENCH_ROOT / "models" / "reconstruction", # `import reliev3r` 
+        # BENCH_ROOT / "models" / "pi3_official", # `import pi3` 
     ]
     for p in candidates:
         if p.exists():
