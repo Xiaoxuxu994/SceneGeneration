@@ -2,11 +2,13 @@
 from .sevenscenes import SevenScenesDataset
 from .dtu import DTUDataset
 from .nrgbd import NRGBDDataset
+from .scannet import ScanNetDataset
 
 DATASET_REGISTRY = {
     "7scenes": SevenScenesDataset,
     "dtu": DTUDataset,
     "nrgbd": NRGBDDataset,
+    "scannet": ScanNetDataset,
 }
 
 def get_dataset(name: str, root: str):

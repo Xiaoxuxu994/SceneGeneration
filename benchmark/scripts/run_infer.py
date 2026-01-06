@@ -237,17 +237,21 @@ def main():
     # ## dtu
     # p.add_argument("--dataset", type=str, default="dtu")
     # p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "DTU" / "spann3r_version"/ "dtu_test_mvsnet_release"))
-    ## nrgbd
-    p.add_argument("--dataset", type=str, default="nrgbd")
-    p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "NRGBD" / "data"))
+    # ## nrgbd
+    # p.add_argument("--dataset", type=str, default="nrgbd")
+    # p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "NRGBD" / "data"))
+
+    ## scannet
+    p.add_argument("--dataset", type=str, default="scannet")
+    p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "scannet" / "posed_images"))
 
     p.add_argument("--split", type=str, default="test", choices=["train", "test"])
     p.add_argument("--view", type=str, default="dense", choices=["dense", "sparse"])
-    p.add_argument("--stride", type=int, default=500)  # 
+    p.add_argument("--stride", type=int, default=50)  # 
     p.add_argument("--seq", type=str, default="")    # chess/seq-01
 
     # model
-    p.add_argument("--model", type=str, default="vggt", choices=["vggt", "reliev3r"])
+    p.add_argument("--model", type=str, default="reliev3r", choices=["vggt", "reliev3r"])
     # vggt ckpt
     p.add_argument("--ckpt", type=str, default=str(BENCH_ROOT / "checkpoints" / "VGGT-1B"))
     # reliev3r config/ckpt

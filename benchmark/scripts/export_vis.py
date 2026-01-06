@@ -155,14 +155,14 @@ def main() -> None:
     ap.add_argument(
         "--dir",
         type=str,
-        default='outputs/dtu/test_dense_stride5/reliev3r',
+        default='outputs/scannet/test_dense_stride50/reliev3r',
         help="dump 根目录，例如 .../test_dense_stride40/gt 或 .../test_dense_stride40/vggt",
     )
     ap.add_argument(
         "--is_gt",
         type=int,
         default=0,
-        help="0: 按 GT 文件名读取；0: 按 VGGT(pred_*) 文件名读取",
+        help="1: 按 GT 文件名读取；0: 按 VGGT(pred_*) 文件名读取",
     )
     ap.add_argument("--depth_vmin", type=float, default=0.0)
     ap.add_argument("--depth_vmax", type=float, default=10.0)
