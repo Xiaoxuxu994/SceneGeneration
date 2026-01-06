@@ -109,13 +109,13 @@ def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1):
     
     # rough point cloud alignment
     c, R, t = umeyama(pred_pts_flatten[valid_masks_flatten].T, gt_pts_flatten[valid_masks_flatten].T)
-    
+
     # align predicted point clouds to the GTs
     pred_pts = pred_pts.reshape((S, -1, 3))
     R = np.repeat(R[None, :], S, axis=0)
     t = np.repeat(t[None, :], S, axis=0)
 
-    pred_pts = pred_pts @ R
+    pred_pts = c * pred_pts @ R
     pred_pts = pred_pts + np.transpose(t, (0, 2, 1))
     pred_pts = pred_pts.reshape((S, H, W, 3))
     
@@ -142,6 +142,11 @@ def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1):
 
     transformation = reg_p2p.transformation
     pcd = pcd.transform(transformation)
+    
+    # # debugging
+    # o3d.io.write_point_cloud("gt.ply", pcd_gt)
+    # o3d.io.write_point_cloud("pred.ply", pcd)
+    # exit()
     
     # 9. estimate normals
     pcd.estimate_normals()
