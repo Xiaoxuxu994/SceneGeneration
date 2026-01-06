@@ -24,7 +24,7 @@ def save_npy(root: Path, name: str, x) -> None:
     root.mkdir(parents=True, exist_ok=True)
     np.save(str(root / name), to_numpy(x))
 
-def filter_depth(depthmaps, far=10.0, near=1e-3):
+def filter_depth(depthmaps, far=10.0, near=0.1):
     # depthmaps: np.ndarray
     depthmaps[depthmaps > far] = 0.0
     depthmaps[depthmaps < near] = 0.0

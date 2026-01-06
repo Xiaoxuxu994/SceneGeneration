@@ -14,17 +14,6 @@ import imageio.v2 as imageio
 import _bootstrap  # noqa: F401
 from vggt.utils.camera import export_cam_as_ply
 
-
-# def iter_seq_dirs(root: Path) -> Iterator[Tuple[Path, Path]]:
-#     """遍历 root/<scene>/<seq> 结构，返回 (seq_dir, rel_path=scene/seq)."""
-#     for scene_dir in sorted(root.iterdir()):
-#         if not scene_dir.is_dir():
-#             continue
-#         for seq_dir in sorted(scene_dir.iterdir()):
-#             if seq_dir.is_dir():
-#                 yield seq_dir, seq_dir.relative_to(root)
-
-
 def iter_seq_dirs(root: Path) -> Iterator[Tuple[Path, Path]]:
     def _walk(d: Path) -> Iterator[Path]:
         entries = list(d.iterdir())
@@ -155,14 +144,8 @@ def main() -> None:
     ap.add_argument(
         "--dir",
         type=str,
-        default='./outputs/7scenes/test_dense_stride40/vggt',
+        default='outputs/dl3dv/test_stride10_max8/vggt',
         help="dump 根目录，例如 .../test_dense_stride40/gt 或 .../test_dense_stride40/vggt",
-    )
-    ap.add_argument(
-        "--is_gt",
-        type=int,
-        default=0,
-        help="1: 按 GT 文件名读取；0: 按 VGGT(pred_*) 文件名读取",
     )
     ap.add_argument("--depth_vmin", type=float, default=0.1)
     ap.add_argument("--depth_vmax", type=float, default=10.0)
@@ -172,7 +155,7 @@ def main() -> None:
     if not root.exists():
         raise FileNotFoundError("dir not found: {}".format(root))
 
-    is_gt = (args.is_gt != 0)
+    is_gt = (root.name.lower() == "gt")
 
     # 在 dir 同目录下新建 <basename>_vis（按你要求取最后一个 basename）
     vis_root = root.parent / (root.name + "_vis")
