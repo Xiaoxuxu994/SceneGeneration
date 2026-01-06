@@ -1,4 +1,5 @@
 import os
+import json
 import os.path as osp
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import torch_npu  # noqa: F401
 import imageio
 from PIL import Image
 from tqdm import tqdm
+from datetime import datetime
 
 from _bootstrap import BENCH_ROOT  # noqa
 
@@ -24,6 +26,11 @@ from training.data.cropping import resize_image_depth_and_intrinsic
 from training.train_utils.normalization import normalize_camera_extrinsics_and_points_batch
 
 # -----------------------------------------------
+# Pi3 imports 
+# -----------------------------------------------
+from pi3.models.pi3 import Pi3
+
+# -----------------------------------------------
 # Reliev3R imports 
 # -----------------------------------------------
 from utils.config_loader import LoadConfig
@@ -38,8 +45,17 @@ from model import Reliev3R
 FX, FY, CX, CY = [525, 525, 320, 240]
 GT_OUTPUT_WIDTH = 518
 DEPTH_FAR = 10.0
-DEPTH_NEAR = 1e-3
+DEPTH_NEAR = 0.1
 DEPTH_SCALE = 1000.0 # mm -> m
+
+GT_FILES = [
+    "gt_intrinsics.npy", 
+    "gt_extrinsics.npy", 
+    "gt_depth_maps.npy", 
+    "gt_point_maps.npy", 
+    "gt_depth_masks.npy", 
+    "gt_images.npy"
+]
 
 # -----------------------------
 # Small helper function
@@ -172,6 +188,31 @@ def run_vggt_infer(model, images_cpu, device: torch.device, autocast_dtype: torc
 
     return pred_w2c, pred_K, pred_depth, pred_point, pred_unproj
 
+# ---------------------- running p3 infer ------------------------------------------------
+def load_model_pi3(ckpt):
+    model = Pi3.from_pretrained(ckpt)
+    model.eval()
+    return model
+
+def run_pi3_infer(model, images_cpu, device: torch.device, autocast_dtype: torch.dtype):
+    images = images_cpu.unsqueeze(0).to(device)  # (B=1,...)
+
+    with torch.autocast(device_type=device.type, dtype=autocast_dtype):        
+        results = model(images)
+        pred_depth = results["local_points"][..., -1].cpu().squeeze(0).numpy()
+        pred_points = results["points"].cpu()
+        pred_c2w = results["camera_poses"].cpu()
+
+        # align to the first frame
+        pred_w2c = closed_form_inverse_se3(pred_c2w.squeeze(0)).unsqueeze(0) # (1,V,4,4)
+        pred_w2c_aligned, _, pred_points_aligned, _ = normalize_camera_extrinsics_and_points_batch(
+            extrinsics=pred_w2c[:,:,:3],
+            world_points=pred_points,
+            scale_by_points=False,
+        )
+        
+    return pred_w2c_aligned.squeeze(0).numpy(), pred_depth, pred_points_aligned.squeeze(0).numpy()
+
 # ---------------------- running reliev3r infer ------------------------------------------
 def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, strict: bool = True):
     cfg = LoadConfig(config_path)
@@ -192,7 +233,7 @@ def run_reliev3r_infer(
     model,
     images_cpu: torch.Tensor,          # (V,3,H,W) from load_and_preprocess_images, on CPU
     gt_intrinsics_rs: np.ndarray,       # (V,3,3) from build_gt_geometry_data first return
-    gt_extrinsics,
+    gt_extrinsics, # only ofr debugging
     device: torch.device,
     autocast_dtype: torch.dtype,
     image_paths=None,
@@ -252,8 +293,8 @@ def run_reliev3r_infer(
     # -----------------------
     pred_unproj = unproject_depth_map_to_point_map(
         pred_depth.squeeze(0),
-        # pred_w2c.squeeze(0),
-        gt_extrinsics.squeeze(0),
+        pred_w2c.squeeze(0),
+        # gt_extrinsics.squeeze(0),
         pred_K,
     )  # (V,H,W,3) typically
 
@@ -324,34 +365,52 @@ def make_paths(sevenscenes_dir: str, seq: str, frame_ids):
     depths = [osp.join(seq_dir, f"frame-{i:06d}.depth.proj.png") for i in frame_ids]
     return images, poses, depths
 
+def check_gt_data_dump(gt_seq_dir: Path):
+    flag = False # do not dump new GT data
+    
+    for file in GT_FILES:
+        if not (gt_seq_dir / file).exists():
+            flag = True # dump new GT data
+    
+    return flag
 
-def dump_one_seq(model, model_type, image_paths, pose_paths, depth_paths,
-                 pred_seq_dir: Path,
-                 gt_seq_dir: Path,
-                 invalid_depth_raw: float, dump_gt: bool,
-                 device: torch.device, autocast_dtype: torch.dtype):
+def dump_one_seq(model, model_type, 
+        image_paths, pose_paths, depth_paths,
+        # paths_dict, # {frame_id: {"image_path": ..., "pose_path": ..., "depth_path": ...}}
+        pred_seq_dir: Path,
+        gt_seq_dir: Path,
+        invalid_depth_raw: float,
+        device: torch.device, autocast_dtype: torch.dtype):
+    
+    # image_paths = [d["image_path"] for _, d in paths_dict.items()]
+    # depth_paths = [d["depth_path"] for _, d in paths_dict.items()]
+    # pose_paths = [d["pose_path"] for _, d in paths_dict.items()]
+    
     # load inputs
     image_pils, images = load_rgb(image_paths)
-    depths = load_depth(depth_paths, invalid_depth=invalid_depth_raw)
-
-    # GT info (optional dump)
-    gt_intrinsics = load_intrinsic(num_frames=len(image_paths))
-    gt_w2c = load_extrinsic(pose_paths)
-
-    gt_intrinsics_rs, gt_extrinsics, _, gt_point_maps, gt_depth_maps, gt_depth_masks, gt_images = \
-        build_gt_geometry_data(image_pils, depths, gt_w2c, gt_intrinsics)
-
-    gt_c2w = closed_form_inverse_se3(gt_extrinsics.squeeze(0))
     
-    if dump_gt:
-        gt_seq_dir.mkdir(parents=True, exist_ok=True)
+    dump_gt_flag = check_gt_data_dump(gt_seq_dir)
+    
+    if dump_gt_flag:
+        # geometry GT info
+        gt_intrinsics = load_intrinsic(num_frames=len(image_paths))
+        gt_w2c = load_extrinsic(pose_paths)
+
+        depths = load_depth(depth_paths, invalid_depth=invalid_depth_raw)
+        gt_intrinsics_rs, gt_extrinsics, _, gt_point_maps, gt_depth_maps, gt_depth_masks, gt_images = \
+            build_gt_geometry_data(image_pils, depths, gt_w2c, gt_intrinsics)
+
+        gt_c2w = closed_form_inverse_se3(gt_extrinsics.squeeze(0))
+        
+        save_npy(gt_seq_dir, "gt_intrinsics.npy", gt_intrinsics_rs)
         save_npy(gt_seq_dir, "gt_extrinsics.npy", gt_c2w)
         save_npy(gt_seq_dir, "gt_depth_maps.npy", gt_depth_maps.squeeze(0))
         save_npy(gt_seq_dir, "gt_point_maps.npy", gt_point_maps.squeeze(0))
         save_npy(gt_seq_dir, "gt_depth_masks.npy", gt_depth_masks)
         save_npy(gt_seq_dir, "gt_images.npy", gt_images) 
-
-    pred_seq_dir.mkdir(parents=True, exist_ok=True)
+    else: # load dumped GT data for inference
+        gt_intrinsics_rs = np.load(gt_seq_dir / "gt_intrinsics.npy")
+        gt_extrinsics = np.load(gt_seq_dir / "gt_extrinsics.npy")
 
     # ---- infer
     with torch.inference_mode():
@@ -371,7 +430,7 @@ def dump_one_seq(model, model_type, image_paths, pose_paths, depth_paths,
                 model=model,
                 images_cpu=images,                  # (V,3,H,W) from load_and_preprocess_images
                 gt_intrinsics_rs=gt_intrinsics_rs,  # GT内参
-                gt_extrinsics=gt_extrinsics,
+                gt_extrinsics=gt_extrinsics,        # only for debugging
                 device=device,
                 autocast_dtype=autocast_dtype,
                 image_paths=image_paths,
@@ -383,6 +442,15 @@ def dump_one_seq(model, model_type, image_paths, pose_paths, depth_paths,
             save_npy(pred_seq_dir, "pred_depth_maps.npy", pred_depth_maps.squeeze(0).squeeze(-1))  # (V,H,W)
             save_npy(pred_seq_dir, "pred_point_maps_by_unprojection.npy", pred_unproj)
 
+        elif model_type == "pi3":
+            pred_w2c, pred_depth_maps, pred_point_maps = run_pi3_infer(
+                model, images, device=device, autocast_dtype=autocast_dtype
+            )
+            pred_c2w = closed_form_inverse_se3(pred_w2c)
+
+            save_npy(pred_seq_dir, "pred_extrinsics.npy", pred_c2w)         # (V,4,4)
+            save_npy(pred_seq_dir, "pred_depth_maps.npy", pred_depth_maps)  # (V,H,W)
+            save_npy(pred_seq_dir, "pred_point_maps.npy", pred_point_maps)  # (V,H,W,3)
         else:
             raise ValueError(f"Unknown model_type={model_type}")
 
@@ -395,10 +463,10 @@ def main():
     p.add_argument("--split", type=str, default="test", choices=["train", "test"])
     p.add_argument("--view", type=str, default="dense", choices=["dense", "sparse"])
     p.add_argument("--stride", type=int, default=125)  # 0 -> paper default
-    p.add_argument("--seq", type=str, default="chess/seq-01")    # chess/seq-01
+    p.add_argument("--seq", type=str, default="")    # chess/seq-01
 
     # model
-    p.add_argument("--model", type=str, default="reliev3r", choices=["vggt", "reliev3r"])
+    p.add_argument("--model", type=str, default="reliev3r", choices=["vggt", "pi3", "reliev3r"])
     # vggt ckpt
     p.add_argument("--ckpt", type=str, default=str(BENCH_ROOT / "checkpoints" / "VGGT-1B"))
     # reliev3r config/ckpt
@@ -413,55 +481,79 @@ def main():
     p.add_argument("--invalid_depth_raw", type=float, default=60000.0)
     # NOTE invalid_depth_raw in *.depth.proj.png in not necessarily 65535
 
-    p.add_argument("--out_root", type=str, default=str(BENCH_ROOT / "outputs" / "7scenes" / "v5"))
-    p.add_argument("--dump_gt", type=int, default=0)
+    p.add_argument("--out_root", type=str, default=str(BENCH_ROOT / "outputs" / "7scenes" / "v6"))
     args = p.parse_args()
 
     device = torch.device(args.device)
     autocast_dtype = torch.float32 if args.dtype == "fp32" else torch.bfloat16
 
     stride = args.stride or (40 if args.view == "dense" else 200)
-    dump_gt = (args.dump_gt != 0)
 
     sequences = [args.seq] if args.seq else list_sequences(args.sevenscenes_dir, args.split)
 
+    # stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    # setting_dir = Path(args.out_root) / f"{args.split}_{args.view}_stride{stride}_{stamp}"
     setting_dir = Path(args.out_root) / f"{args.split}_{args.view}_stride{stride}"
     setting_dir.mkdir(parents=True, exist_ok=True)
 
     # load model by branch
     if args.model == "vggt":
         model = load_model_vggt(args.ckpt).to(device)
+    elif args.model == "pi3":
+        model = load_model_pi3(args.ckpt).to(device)
     else:
         if not args.reliev3r_ckpt:
             raise ValueError("--reliev3r_ckpt is required when --model reliev3r")
         model = load_model_reliev3r(args.reliev3r_config, args.reliev3r_ckpt, device=device, strict=True)
 
-    print(f"[INFO] model={args.model}, num_seqs={len(sequences)}, stride={stride}, dump_gt={dump_gt}, device={device}, out={setting_dir}")
+    print(f"[INFO] model={args.model}, num_seqs={len(sequences)}, stride={stride}, device={device}, out={setting_dir}")
 
 
     pbar = tqdm(sequences, desc="7Scenes", unit="seq")
     for seq in pbar:
-        seq_len = count_seq_len(args.sevenscenes_dir, seq)
-        frame_ids = list(range(0, seq_len, stride))
-        if not frame_ids:
-            pbar.set_postfix_str(f"{seq}: empty")
-            continue
-
-        image_paths, pose_paths, depth_paths = make_paths(args.sevenscenes_dir, seq, frame_ids)
-
         pred_seq_dir = setting_dir / args.model / seq   #
         gt_seq_dir   = setting_dir / "gt" / seq
+        
+        pred_seq_dir.mkdir(parents=True, exist_ok=True)
+        
+        gt_data_paths = gt_seq_dir / "data_path.json"
+        
+        if gt_data_paths.exists():
+            with open(gt_data_paths) as f:
+                gt_paths_dict = json.load(f)
+            
+            # parse paths
+            frame_ids, image_paths, pose_paths, depth_paths = [], [], [], []
+            for f_id, d in gt_paths_dict.items():
+                frame_ids.append(f_id)
+                image_paths.append(d["image_path"])
+                pose_paths.append(d["pose_path"])
+                depth_paths.append(d["depth_path"])
+        else:
+            gt_seq_dir.mkdir(parents=True, exist_ok=True)
+            
+            seq_len = count_seq_len(args.sevenscenes_dir, seq)
+            # get test frame IDs
+            frame_ids = list(range(0, seq_len, stride))
+            if not frame_ids:
+                pbar.set_postfix_str(f"{seq}: empty")
+                continue
 
-        frame_id_dir = setting_dir / "frame_ids" / seq
-        frame_id_dir.mkdir(parents=True, exist_ok=True)
-        np.save(frame_id_dir / "frame_ids.npy", np.array(frame_ids, dtype=np.int32))
+            image_paths, pose_paths, depth_paths = make_paths(args.sevenscenes_dir, seq, frame_ids)
+
+            gt_paths_dict = {f_id: {"image_path": i_path, "pose_path": p_path, "depth_path": d_path} \
+                for f_id, i_path, p_path, d_path in zip(frame_ids, image_paths, pose_paths, depth_paths)}
+            
+            with open(gt_data_paths, "w") as f:
+                json.dump(gt_paths_dict, f, indent=4)
 
         dump_one_seq(
-            model, args.model, image_paths, pose_paths, depth_paths,
+            model, args.model, 
+            image_paths, pose_paths, depth_paths,
+            # gt_paths_dict,
             pred_seq_dir=pred_seq_dir,
             gt_seq_dir=gt_seq_dir,
             invalid_depth_raw=args.invalid_depth_raw,
-            dump_gt=dump_gt,
             device=device,
             autocast_dtype=autocast_dtype,
         )
