@@ -69,13 +69,24 @@ def safe_mean(values: List[Any]) -> Optional[float]:
 
 
 def list_rel_seqs(gt_root: Path) -> List[Path]:
-    rels: List[Path] = []
-    for scene_dir in sorted(gt_root.iterdir()):
-        if not scene_dir.is_dir():
-            continue
-        for seq_dir in sorted(scene_dir.iterdir()):
-            if seq_dir.is_dir():
-                rels.append(seq_dir.relative_to(gt_root))
+    # rels: List[Path] = []
+    # for scene_dir in sorted(gt_root.iterdir()):
+    #     if not scene_dir.is_dir():
+    #         continue
+    #     for seq_dir in sorted(scene_dir.iterdir()):
+    #         if seq_dir.is_dir():
+    #             rels.append(seq_dir.relative_to(gt_root))
+                
+    def _walk(d: Path):
+        entries = list(d.iterdir())
+        if any(not e.is_dir() for e in entries):
+            yield d
+            return
+        for sub in sorted([e for e in entries if e.is_dir()]):
+            yield from _walk(sub)
+            
+    rels = [p.relative_to(gt_root) for p in _walk(gt_root)]
+
     return rels
 
 
