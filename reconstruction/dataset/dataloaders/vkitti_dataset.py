@@ -12,8 +12,6 @@ class VKitti_Dataset(Synthetic_Dataset):
         super().__init__(**kwargs)
         self.depth_scale = 0.01
         self.depth_upperbound = 655.0
-        print("[ INFO ] {} samples found for Virtual-Kitti dataset as {}.".format(
-            len(self), "training set" if self.is_train else "validation set"))
     
     def create_sample_list(self):
         scene_names = ["Scene01", "Scene02", "Scene06", "Scene18", "Scene20"]
@@ -62,9 +60,9 @@ class VKitti_Dataset(Synthetic_Dataset):
                 depth_file_list = sorted(glob(os.path.join(scene, "frames", "depth", "Camera_{}".format(scene_cam_id), "depth_*.png")))
                 
                 # assert len(image_file_list) == len(depth_file_list)
-                assert (len(image_file_list) == len(depth_file_list) and 
-                        len(image_file_list) == len(extr_list) and 
-                        len(image_file_list) == len(intr_list))
+                # assert (len(image_file_list) == len(depth_file_list) and 
+                #         len(image_file_list) == len(extr_list) and 
+                #         len(image_file_list) == len(intr_list))
                 
                 image_clip_list = []
                 depth_clip_list = []
@@ -91,14 +89,14 @@ class VKitti_Dataset(Synthetic_Dataset):
                         depth_clip_list = []
                         extr_clip_list = []
                         intr_clip_list = []
-                if len(image_clip_list) > 0:
-                    sample_list.append(dict(
-                        input_images=image_clip_list, 
-                        input_depths=depth_clip_list, 
-                        input_depth_masks=None, 
-                        input_extrs=np.stack(extr_clip_list), 
-                        input_intrs=np.stack(intr_clip_list), 
-                    ))
+                # if len(image_clip_list) > 0:
+                #     sample_list.append(dict(
+                #         input_images=image_clip_list, 
+                #         input_depths=depth_clip_list, 
+                #         input_depth_masks=None, 
+                #         input_extrs=np.stack(extr_clip_list), 
+                #         input_intrs=np.stack(intr_clip_list), 
+                #     ))
                     
         return sample_list
 

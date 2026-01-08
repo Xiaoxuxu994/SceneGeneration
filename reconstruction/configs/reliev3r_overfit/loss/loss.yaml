@@ -10,9 +10,12 @@ rgb:
 geometric:
   w: 0.5 # 0.5
 camera:
-  w: 0.0
+  w: 1.0
 
 enable_conf: true
 conf_alpha: 1.0 # 0.1
 
 enable_slide: true
+
+pred_z_depth: false # true if predict z-depth while false is predict r-depth
+use_pred_intr: true

@@ -26,37 +26,43 @@ from .vkitti_dataset import VKitti_Dataset
 ## Realistic dataset
 from .co3dv2_dataset import CO3Dv2_Dataset
 from .dl3dv_dataset import DL3DV_Dataset
+from .mapillary_dataset import Mapillary_Dataset
 from .re10k_dataset import Re10K_Dataset
 from .scannet_dataset import ScanNet_Dataset
+from .scannetpp_dataset import ScanNetpp_Dataset
 
 from ..utils.common import customized_collate_fn_placeholder, worker_init_fn
 
 DATASET_DICT = {
-    "ase":        ASE_Dataset, 
-    "blendedmvs": BlendedMVS_Dataset, 
-    "hypersim":   HyperSim_Dataset, 
-    "mvssynth":   MVSSynth_Dataset, 
-    "replica":    Replica_Dataset, 
-    "tartanair":  TartanAir_Dataset, 
-    "vkitti":     VKitti_Dataset, 
-    "co3dv2":     CO3Dv2_Dataset, 
-    "dl3dv":      DL3DV_Dataset, 
-    "re10k":      Re10K_Dataset, 
-    "scannet":    ScanNet_Dataset, 
+    "ase":        ASE_Dataset,        # indoor
+    "blendedmvs": BlendedMVS_Dataset, # outdoor
+    "hypersim":   HyperSim_Dataset,   # indoor
+    "mvssynth":   MVSSynth_Dataset,   # outdoor
+    "replica":    Replica_Dataset,    # indoor
+    "tartanair":  TartanAir_Dataset,  # indoor/outdoor
+    "vkitti":     VKitti_Dataset,     # outdoor
+    "co3dv2":     CO3Dv2_Dataset,     # object
+    "dl3dv":      DL3DV_Dataset,      # indoor/outdoor
+    "mapillary":  Mapillary_Dataset, 
+    "re10k":      Re10K_Dataset,      # indoor/outdoor
+    "scannet":    ScanNet_Dataset,    # indoor
+    "scannetpp":  ScanNetpp_Dataset,  # outdoor
 }
 
 DATASET_SAMPLES_PER_EPOCH = {
     "ase":        100000, 
-    "blendedmvs": 100000, 
-    "hypersim":   100000, 
-    "mvssynth":   100000, 
-    "replica":    100000, 
+    "blendedmvs": 30000, 
+    "hypersim":   30000, 
+    "mvssynth":   30000, 
+    "replica":    30000, 
     "tartanair":  100000, 
-    "vkitti":     100000, 
-    "co3dv2":     100000, 
+    "vkitti":     10000, 
+    "co3dv2":     50000, 
     "dl3dv":      100000, 
+    "mapillary":  100000, 
     "re10k":      100000, 
     "scannet":    100000, 
+    "scannetpp":  100000, 
 }
 
 
@@ -78,7 +84,7 @@ def create_mixed_dataloader(cfg: DottedDict, data_type="train", batch_size=1, ra
                                                                         shuffle=True, 
                                                                         drop_last=True) \
                                     if data_type == "train" else None, 
-                            num_workers=4, 
+                            num_workers=8, 
                             persistent_workers=True,
                             multiprocessing_context="spawn", 
                             worker_init_fn=partial(worker_init_fn, device_id=device_id), 

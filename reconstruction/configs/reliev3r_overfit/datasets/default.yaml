@@ -4,9 +4,15 @@ image_format: .jpg
 depth_lowerbound: 0.001
 ## Depth range upper bound
 depth_upperbound: 65535.0
+## Length of data clip
+clip_length: 16
+## Interval of frame sampling
+samp_interval: 1
 ## Minimal views to sample for a batch
-sample_min: 2
+sample_min: 8
 ## Maximum views to sample for a batch
-sample_max: 24
+sample_max: 8
 
-depth_is_z: True
+depth_is_z: true
+
+pred_z_depth: false

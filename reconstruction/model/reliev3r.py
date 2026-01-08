@@ -18,6 +18,7 @@ class Reliev3R(nn.Module):
         """
         super().__init__()
         self.cfg = cfg
+        self.eye4 = torch.eye(4, device=DEVICE_NAME)
         
         # Load monocular depth model.
         if not depth_preprocessed:
@@ -42,7 +43,7 @@ class Reliev3R(nn.Module):
         B, V, C, H, W = img.shape
         
         if self.cfg.get("decoder", None) is not None and self.cfg.decoder.camera_decoder.enabled:
-            unit_viewmats = torch.eye(4)[None, None].expand_as(viewmats).to(device=DEVICE_NAME)
+            unit_viewmats = self.eye4[None, None].expand_as(viewmats).clone()
             if data.get("pseudo_viewmats", None) is not None:
                 viewmat_place_holder = data["pseudo_viewmats"].to(device=DEVICE_NAME)
             else:
@@ -62,6 +63,7 @@ class Reliev3R(nn.Module):
                 cameras0 = self.camera_head(camera_tokens0, patch_h=H//14, patch_w=W//14, v=V).reshape(B, V, 4, 4)
             elif self.cfg.depth_aligner.type == "pi3":
                 cameras0 = aligned_depth_dict["camera_poses"]
+                camera_fovs = aligned_depth_dict["camera_fovs"]
             else:
                 raise NotImplementedError("Not implemented depth aligner type '{}'".format(self.cfg.depth_aligner.type))
         
@@ -76,6 +78,7 @@ class Reliev3R(nn.Module):
         if self.cfg.get("decoder", None) is not None and self.cfg.decoder.camera_decoder.enabled:
             output_dict.update({
                 "camera_extrs": cameras0, # Camera pose prediction
+                "camera_fovs":  camera_fovs, # Camera field of view along x-axis and y-axis, tensor of shape b,v,2
             })
         
         return output_dict
@@ -134,6 +137,7 @@ class Reliev3R(nn.Module):
                 "depth_scales":         None, 
                 "depth_transs":         None, 
                 "camera_poses":         depth_aligner_outputs["camera_poses"], 
+                "camera_fovs":          depth_aligner_outputs["camera_fovs"], 
             })
         else:
             raise NotImplementedError("Not implemented depth aligner type: {}".format(self.cfg.depth_aligner.type))
