@@ -217,7 +217,7 @@ def run_reliev3r_infer(
             pred_K,
         )         
 
-    print(f"[Reliev3R] normalize_camera_extrinsics & unproj pointcloud")
+    # print(f"[Reliev3R] normalize_camera_extrinsics & unproj pointcloud")
     pred_w2c_aligned, _, pred_unproj_aligned, _ = normalize_camera_extrinsics_and_points_batch(
         extrinsics=pred_w2c[:,:,:3].cpu(),
         world_points=torch.from_numpy(pred_unproj).to(dtype=torch.float32),
@@ -325,7 +325,7 @@ def main():
     p.add_argument("--data_root", type=str, default=None,
                help="Dataset root path. If not set, inferred from --dataset.")
     p.add_argument("--split", type=str, default="test", choices=["train", "test"])
-    p.add_argument("--seq", type=str, default="fff0ff507a7d886e7c843949050a7b3f7f8644d956f2029316b749c6625d1b1b")      # chess/seq-01
+    p.add_argument("--seq", type=str, default="")      # chess/seq-01
 
     # view sample
     p.add_argument("--mode", type=str, default="stride", choices=["stride", "random"])
@@ -345,6 +345,7 @@ def main():
 
     # output
     p.add_argument("--out_root", type=str, default=str(BENCH_ROOT / "outputs"))
+    p.add_argument("--prefix", type=str, default="")
     args = p.parse_args()
     
     # ------------------------------------------------------------------------------------------------------
@@ -412,7 +413,8 @@ def main():
 
     pbar = tqdm(sequences, desc=args.dataset, unit="seq")
     for seq in pbar:
-        pred_seq_dir = setting_dir / args.model / seq   #
+        name = args.model if not args.prefix else f"{args.model}_{args.prefix}"
+        pred_seq_dir = setting_dir / name / seq
         gt_seq_dir   = setting_dir / "gt" / seq
         pred_seq_dir.mkdir(parents=True, exist_ok=True)
         gt_seq_dir.mkdir(parents=True, exist_ok=True)

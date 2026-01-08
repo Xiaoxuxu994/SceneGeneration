@@ -66,6 +66,7 @@ class BaseDataset(ABC):
 
         if reuse and fp.exists():
             ids = np.load(fp).astype(np.int64).tolist()
+            print(f"[INFO] Load frame id from {fp}\n")
             return sorted({i for i in ids if 0 <= i < seq_len})
 
         mode = str(mode).lower()

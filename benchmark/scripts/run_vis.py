@@ -13,6 +13,7 @@ import imageio.v2 as imageio
 # 关键：先 import _bootstrap（如果它负责把 vggt 加入 sys.path）
 import _bootstrap  # noqa: F401
 from vggt.utils.camera import export_cam_as_ply
+# from models.reliev3r.utils.log_utils import export_pcds_and_cam_as_ply
 
 def iter_seq_dirs(root: Path) -> Iterator[Tuple[Path, Path]]:
     def _walk(d: Path) -> Iterator[Path]:
@@ -144,7 +145,7 @@ def main() -> None:
     ap.add_argument(
         "--dir",
         type=str,
-        default='outputs/dl3dv/test_stride10_max8/vggt',
+        default='/mnt/nvme3/z00533370/3drecon/result/0107_ckpt15000/nrgbd/test_stride10_max8/reliev3r',
         help="dump 根目录，例如 .../test_dense_stride40/gt 或 .../test_dense_stride40/vggt",
     )
     ap.add_argument("--depth_vmin", type=float, default=0.1)
@@ -260,7 +261,7 @@ def main() -> None:
 
             # export_pointcloud(pts, out_dir / "vis_pointcloud.ply", mask=mask)
             export_pointcloud(pts, out_dir / "vis_pointcloud.ply", mask=mask, colors=gt_images)
-            export_cameras(c2w, out_dir / "vis_cameras.ply")
+            export_cameras(c2w, out_dir / "vis_cameras.ply")            
             export_depth(dep, out_dir / "vis_depth", vmin=args.depth_vmin, vmax=args.depth_vmax)
 
             ok += 1
