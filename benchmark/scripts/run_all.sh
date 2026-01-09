@@ -8,10 +8,10 @@ VIS_SCRIPT="scripts/run_vis.py"
 
 # ---- all dataset ----
 DATASETS=(
-  7scenes
-  nrgbd
+#   7scenes
+#   nrgbd
   dtu
-  scannet
+#   scannet
 )
 
 # ----- model ------
@@ -222,7 +222,7 @@ for DATASET in "${DATASETS[@]}"; do
   case "${DATASET}" in
     7scenes) POINTMAP_THRESHOLD=0.1 ;;
     nrgbd)   POINTMAP_THRESHOLD=0.1 ;;
-    dtu)     POINTMAP_THRESHOLD=100 ;;
+    dtu)     POINTMAP_THRESHOLD=0.1 ;;
     scannet) POINTMAP_THRESHOLD=0.1 ;;
     *)       POINTMAP_THRESHOLD=0.1 ;;
   esac

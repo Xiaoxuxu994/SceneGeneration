@@ -343,16 +343,16 @@ def save_excel(per_seq_rows: List[Dict[str, Any]],
 # -------------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", type=str, default='/mnt/nvme3/z00533370/3drecon/result/0107_ckpt15000/7scenes/test_stride10_max8/',
+    ap.add_argument("--root", type=str, default='outputs/scannet/test_stride10_max8',
                     help="包含 gt/ 和 vggt/ 的根目录，例如 outputs/.../test_dense_stride40")
-    ap.add_argument("--dataset_name", type=str, default="7scenes")
+    ap.add_argument("--dataset_name", type=str, default="scannet")
     ap.add_argument("--gt_subdir", type=str, default="gt")
-    ap.add_argument("--pred_subdir", type=str, default="reliev3r")
+    ap.add_argument("--pred_subdir", type=str, default="pi3")
 
     ap.add_argument("--pose_threshold", type=int, default=30)
     ap.add_argument("--pointmap_threshold", type=float, default=0.1)
     
-    ap.add_argument("--predicted_pointmap", type=int, default=0)
+    ap.add_argument("--predicted_pointmap", type=int, default=1)
     
     ap.add_argument("--depth_align", type=str, default="scale_shift", choices=["scale", "scale_shift"])
     ap.add_argument("--device", type=str, default="npu:0",
