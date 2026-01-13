@@ -79,6 +79,8 @@ def visualize_prediction(pred, data, matching_info=None):
     if matching_info is not None:
         tracks = matching_info["matches"].reshape(B, V - 1, 2, -1, 2)   # (b v-1) 2 k 2 -> b v-1 2 k 2
         visibi = matching_info["visibilities"].reshape(B, V - 1, 2, -1) # (b v-1) 2 k   -> b v-1 2 k
+        # tracks = matching_info["matches"].reshape(B, (V - 1) * V // 2, 2, -1, 2)   # (b v-1) 2 k 2 -> b v-1 2 k 2
+        # visibi = matching_info["visibilities"].reshape(B, (V - 1) * V // 2, 2, -1) # (b v-1) 2 k   -> b v-1 2 k
         matched_views0 = matching_info["matched_views0"] # b v-1
         matched_views1 = matching_info["matched_views1"] # b v-1
         for b in range(B):

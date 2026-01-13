@@ -227,7 +227,6 @@ def matching_error_3D(depth: torch.Tensor,
     
     errors_3d_cos = []
     errors_camera = []
-    errors_3d_dist = []
     tracks = matching_info["matches"] # b v k 2, b v k 2
     vis    = matching_info["visibilities"] # b v k, b v k
     V = tracks.shape[1]
@@ -247,19 +246,19 @@ def matching_error_3D(depth: torch.Tensor,
     if conf is not None:
         c = samp_points_by_pixel(conf, tracks.reshape(-1, *tracks.shape[-2:])) # b v k 1
         # c0 = c0.reshape(-1, view_per_batch, *c0.shape[1:]).squeeze(-1) # b v k
-        # cossim_map = cossim_map * c0.unsqueeze(2) - 0.01 * torch.log(c0.unsqueeze(2).expand_as(cossim_map)) # b v v k
-        _, v, k, _ = points.shape
+        # cossim_map = cossim_map * c0.unsqueeze(2) - alpha * torch.log(c0.unsqueeze(2).expand_as(cossim_map)) # b v v k
+        # _, v, k, _ = points.shape
         c = c.reshape(-1, view_per_batch, *c.shape[1:]).expand_as(points) # b v k 3
         normed_points = weighted_mad(rearrange(points, "b v k c -> b c (v k)"), rearrange(c, "b v k c -> b c (v k)"))
-        normed_points = rearrange(normed_points, "b c (v k) -> b v k c", v=v)
+        normed_points = rearrange(normed_points, "b c (v k) -> b v k c", v=view_per_batch)
     
     cossim_loss = rearrange(cossim_map, "b v vv k -> b k (v vv)") # b k v*v
-    cossim_loss = rearrange(cossim_loss[..., :-1], "b k (v vv) -> b k v vv", v=V-1)[..., 1:] # b k v-1 v
+    cossim_loss = rearrange(cossim_loss[..., :-1], "b k (v vv) -> b k v vv", v=view_per_batch-1)[..., 1:] # b k v-1 v
     cossim_loss = rearrange(cossim_loss, "b k v vv -> b k (v vv)").mean(dim=-1)
     
     cossim_loss = (cossim_loss * mask).sum(dim=-1) / (mask.sum(dim=-1) + 1e-8) # b
     ## Currently we filter invalid pairs in the dataloader. So these two lines can be commented out. 
-    valid_batch_mask = mask.sum(dim=-1) > 64 # b
+    valid_batch_mask = mask.sum(dim=-1) > 16 # b
     cossim_loss = (cossim_loss * valid_batch_mask).sum() / (valid_batch_mask.sum() + 1e-8) # tensor
     
     errors_3d_cos.append(cossim_loss[None])
@@ -279,11 +278,7 @@ def matching_error_3D(depth: torch.Tensor,
         errors_camera = torch.cat(errors_camera).mean()
     else:
         errors_camera = torch.tensor(0.0)
-    if len(errors_3d_dist) > 0:
-        errors_3d_dist = torch.cat(errors_3d_dist).mean()
-    else:
-        errors_3d_dist = torch.tensor(0.0)
-    return errors_3d_cos + errors_camera + 0.1 * errors_3d_dist if flag else None
+    return errors_3d_cos + errors_camera if flag else None
 
 
 class LossFunction(torch.nn.Module):
@@ -329,8 +324,6 @@ class LossFunction(torch.nn.Module):
             intrs_src[..., :2, :] = intrs_src[..., :2, :] * focal_pred[..., None]
             intrs_src[..., 0, 2] = 0.5
             intrs_src[..., 1, 2] = 0.5
-            # print("[ DEBUG ] using pred intr")
-            
         
         depths_src = depths_src.reshape(B, V, C, H, W)
         confs_src  = confs_src.reshape(B, V, C, H, W)
@@ -346,17 +339,17 @@ class LossFunction(torch.nn.Module):
         matching_info = dict(
             matches=torch.stack([rearrange(tracks0, "b p k c -> (b p) k c"), rearrange(tracks1, "b p k c -> (b p) k c")], dim=1), # (b p) 2 k c
             visibilities=torch.stack([rearrange(visibs0, "b p k -> (b p) k"), rearrange(visibs1, "b p k -> (b p) k")], dim=1), # (b p) 2 k
-            matched_views0=data["input_tracks_view_id0"], 
-            matched_views1=data["input_tracks_view_id1"], 
+            matched_views0=data["input_tracks_view_id0"], # B P
+            matched_views1=data["input_tracks_view_id1"], # B P
         )
         
         paired_depths, paired_confs, paired_extrs, paired_intrs = [], [], [], []
         for depths, confs, extrs, intrs, pairs_x, pairs_y in zip(
             depths_src, confs_src, extrs_src, intrs_src, data["input_tracks_view_id0"], data["input_tracks_view_id1"]):
-            paired_depths.append(torch.stack([depths[pairs_x], depths[pairs_y]], dim=1))
-            paired_confs.append(torch.stack([confs[pairs_x], confs[pairs_y]], dim=1))
-            paired_extrs.append(torch.stack([extrs[pairs_x], extrs[pairs_y]], dim=1))
-            paired_intrs.append(torch.stack([intrs[pairs_x], intrs[pairs_y]], dim=1))
+            paired_depths.append(torch.stack([depths[pairs_x], depths[pairs_y]], dim=1)) # <- P 2 C H W
+            paired_confs.append(torch.stack([confs[pairs_x], confs[pairs_y]], dim=1))    # <- P 2 1 H W
+            paired_extrs.append(torch.stack([extrs[pairs_x], extrs[pairs_y]], dim=1))    # <- P 2 4 4
+            paired_intrs.append(torch.stack([intrs[pairs_x], intrs[pairs_y]], dim=1))    # <- P 2 3 3
         paired_depths = torch.stack(paired_depths).reshape(-1, 2, C, H, W)
         paired_confs = torch.stack(paired_confs).reshape(-1, 2, C, H, W)
         paired_extrs = torch.stack(paired_extrs).reshape(-1, 2, 4, 4)
@@ -400,7 +393,6 @@ class LossFunction(torch.nn.Module):
         pred_fov = output_dict["camera_fovs"] # b v 2
         gt_focal = torch.stack([data["input_Ks"][..., 0, 0], data["input_Ks"][..., 1, 1]], dim=-1) # b v 2
         gt_fov = torch.atan2(0.5 * torch.ones_like(gt_focal), gt_focal) * 2 # b v 2
-        # print("[ DEBUG ] pred fov: {}, gt_fov: {}".format(pred_fov[0, 0], gt_fov[0, 0]))
         return (pred_fov - gt_fov).abs().mean()
     
     

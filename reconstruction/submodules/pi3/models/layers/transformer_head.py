@@ -51,7 +51,7 @@ class TransformerDecoder(nn.Module):
         hidden = self.projects(hidden)
         for i, blk in enumerate(self.blocks):
             if self.use_checkpoint and self.training:
-                hidden = checkpoint(blk, hidden, xpos=xpos, xpos_max=xpos_max, use_reentrant=False)
+                hidden = checkpoint(blk, hidden, xpos, xpos_max, use_reentrant=True)
             else:
                 hidden = blk(hidden, xpos=xpos, xpos_max=xpos_max)
         out = self.linear_out(hidden)

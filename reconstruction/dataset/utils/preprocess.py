@@ -501,4 +501,61 @@ def preprocess_images_for_encode(images, intrs=None, cbox=None, out_shape=None, 
     ## Intrinsics not give, meaning that other modalities are processed ahead. Crop by the given crop box.
     out_images = out_images[..., cbox[0]: cbox[1], cbox[2]: cbox[3]]
     return out_images, None, None
+
+
+def crop_images_and_intrs(images: torch.Tensor, intrs: torch.Tensor=None, scale: float | tuple[float, float]=None, out_shape=None):
+    """Crop images and corresponding camera intrinsics with given scale or output shape.
+
+    Args:
+        images (torch.Tensor): Images. Tensor of shape (N, C, H, W)
+        intrs (torch.Tensor, optional): _description_. Defaults to None. Tensor of shape (N, 3, 3)
+        scale (float, optional): Crop the image into size of (1-scale). Defaults to None.
+        out_shape (_type_, optional): _description_. Defaults to None. Tuple of length 2, denoting (height, width).
+    """
+    assert scale is not None or out_shape is not None
     
+    H, W = images.shape[-2:]
+    if out_shape is not None:
+        out_h, out_w = out_shape
+    else:
+        if isinstance(scale, float):
+            out_h, out_w = int(H * (1 - scale)), int(W * (1 - scale))
+        elif isinstance(scale, tuple):
+            out_h, out_w = int(H * (1 - scale[0])), int(W * (1 - scale[1]))
+        else:
+            raise NotImplementedError("Not implemented 'scale' type {}".format(scale.__class__))
+    assert out_h > 0 and out_h <= H and out_w > 0 and out_w <= W
+    
+    top_left_row = (H - out_h) // 2
+    top_left_col = (W - out_w) // 2
+    bottom_right_row = top_left_row + out_h
+    bottom_right_col = top_left_col + out_w
+    
+    images = images[..., top_left_row: bottom_right_row, top_left_col: bottom_right_col]
+    if intrs is not None:
+        intrs[..., 0, 0] = intrs[..., 0, 0] * W / out_w
+        intrs[..., 1, 1] = intrs[..., 1, 1] * H / out_h
+    
+    return images, intrs, (out_h, out_w)
+
+
+def crop_tracks_and_visibs(tracks: torch.Tensor, visibs: torch.Tensor, raw_shape: tuple, out_shape: tuple):
+    """Crop preprocessed tracking and visibilities.
+
+    Args:
+        tracks (torch.Tensor): Preprocessed trackings, which should not be normalized. Tensor of shape (N, K, 2).
+        visibs (torch.Tensor): Preprocessed visibility masks. Tensor of shape (N, K).
+        raw_shape (tuple): The shape of images before cropping.
+        out_shape (tuple): The shape of cropped images.
+    """
+    raw_center = torch.tensor([(raw_shape[0] - 1) / 2, (raw_shape[1] - 1) / 2], device=tracks.device, dtype=tracks.dtype)
+    out_center = torch.tensor([(out_shape[0] - 1) / 2, (out_shape[1] - 1) / 2], device=tracks.device, dtype=tracks.dtype)
+    tracks = tracks - raw_center[None, None] + out_center[None, None]
+    visibs = torch.all(torch.stack([
+        visibs, 
+        tracks[..., 0] >= -0.5, 
+        tracks[..., 0] <= out_shape[1] - 0.5, 
+        tracks[..., 1] >= -0.5, 
+        tracks[..., 1] <= out_shape[0] - 0.5, 
+    ], dim=-1), dim=-1) # N, K
+    return tracks, visibs
