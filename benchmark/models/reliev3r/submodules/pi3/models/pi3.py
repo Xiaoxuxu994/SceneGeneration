@@ -160,7 +160,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         self.register_buffer("image_std", image_std)
 
 
-    def decode(self, hidden, N, H, W):
+    def decode(self, hidden, N, H, W, xpos_max=None):
         BN, hw, _ = hidden.shape
         B = BN // N
 
@@ -194,7 +194,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 pos = pos.reshape(B, N*hw, -1)
                 hidden = hidden.reshape(B, N*hw, -1)
 
-            hidden = blk(hidden, xpos=pos)
+            hidden = blk(hidden, xpos=pos, xpos_max=xpos_max)
 
             if i+1 in [len(self.decoder)-1, len(self.decoder)]:
                 final_output.append(hidden.reshape(B*N, hw, -1))
@@ -214,11 +214,13 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         if isinstance(hidden, dict):
             hidden = hidden["x_norm_patchtokens"]
 
-        hidden, pos = self.decode(hidden, N, H, W)
+        xpos_max = max(H//self.patch_size, W//self.patch_size)
+        hidden, pos = self.decode(hidden, N, H, W, xpos_max=xpos_max)
 
-        point_hidden = self.point_decoder(hidden, xpos=pos) if hasattr(self, "point_decoder") else self.depth_decoder(hidden, xpos=pos)
-        conf_hidden = self.conf_decoder(hidden, xpos=pos)
-        camera_hidden = self.camera_decoder(hidden, xpos=pos)
+        point_hidden = self.point_decoder(hidden, xpos=pos, xpos_max=xpos_max) \
+            if hasattr(self, "point_decoder") else self.depth_decoder(hidden, xpos=pos, xpos_max=xpos_max)
+        conf_hidden = self.conf_decoder(hidden, xpos=pos, xpos_max=xpos_max)
+        camera_hidden = self.camera_decoder(hidden, xpos=pos, xpos_max=xpos_max)
 
         with torch.amp.autocast(device_type=DEVICE_NAME, enabled=False):
             # local points
@@ -237,7 +239,9 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
 
             # camera
             camera_hidden = camera_hidden.float()
-            camera_poses = self.camera_head(camera_hidden[:, self.patch_start_idx:], patch_h, patch_w).reshape(B, N, 4, 4)
+            camera_poses, camera_fovs = self.camera_head(camera_hidden[:, self.patch_start_idx:], patch_h, patch_w)
+            camera_poses = camera_poses.reshape(B, N, 4, 4)
+            camera_fovs = camera_fovs.reshape(B, N, 2)
 
             # unproject local points using camera poses
             # points = torch.einsum('bnij, bnhwj -> bnhwi', camera_poses, homogenize_points(local_points))[..., :3]
@@ -247,6 +251,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             local_points=local_points,
             conf=conf,
             camera_poses=camera_poses,
+            camera_fovs=camera_fovs, 
         )
     
     def forward(self, imgs):

@@ -229,7 +229,7 @@ for DATASET in "${DATASETS[@]}"; do
 
   # per-model PREDICTED_POINTMAP
   case "${MODEL}" in
-    vggt)     PREDICTED_POINTMAP=1 ;;
+    vggt)     PREDICTED_POINTMAP=0 ;;
     pi3)      PREDICTED_POINTMAP=1 ;;
     reliev3r) PREDICTED_POINTMAP=0 ;;
     *)        PREDICTED_POINTMAP=0 ;;

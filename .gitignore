@@ -34,6 +34,7 @@ benchmark/.vscode/
 benchmark/checkpoints/
 benchmark/debug/
 benchmark/outputs*
+benchmark/experiments*
 
 # NPU-related
 benchmark/extra-info/

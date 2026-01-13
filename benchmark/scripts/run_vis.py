@@ -145,7 +145,7 @@ def main() -> None:
     ap.add_argument(
         "--dir",
         type=str,
-        default='/mnt/nvme3/z00533370/3drecon/result/0107_ckpt15000/nrgbd/test_stride10_max8/reliev3r',
+        default='outputs/7scenes/test_stride40_max8/vggt',
         help="dump 根目录，例如 .../test_dense_stride40/gt 或 .../test_dense_stride40/vggt",
     )
     ap.add_argument("--depth_vmin", type=float, default=0.1)
@@ -227,7 +227,8 @@ def main() -> None:
 
                 c2w = np.load(extr)
                 dep = np.load(depf).astype(np.float32)
-                pts = load_any(seq_dir, ["pred_point_maps_by_unprojection.npy", "pred_point_maps.npy"])
+                # pts = load_any(seq_dir, ["pred_point_maps_by_unprojection.npy", "pred_point_maps.npy"])
+                pts = load_any(seq_dir, ["pred_point_maps.npy"])
                 if pts is None:
                     skip += 1
                     continue
