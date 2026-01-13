@@ -14,6 +14,21 @@ from lib.dataset_util import depth_to_world_coords_points
 from lib.cropping import resize_image_depth_and_intrinsic
 from lib.normalization import normalize_camera_extrinsics_and_points_batch
 
+import time
+from functools import wraps
+
+# for recording the execution time
+# use it as a simple decorator
+def timing_decorator(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        print(f"'{func.__name__}' executed in {end_time - start_time:.4f} seconds")
+        return result
+    return wrapper
+
 def to_numpy(x):
     if torch.is_tensor(x):
         return x.detach().cpu().numpy()
@@ -24,7 +39,7 @@ def save_npy(root: Path, name: str, x) -> None:
     root.mkdir(parents=True, exist_ok=True)
     np.save(str(root / name), to_numpy(x))
 
-def filter_depth(depthmaps, far=10.0, near=1e-3):
+def filter_depth(depthmaps, far=10.0, near=0.1):
     # depthmaps: np.ndarray
     depthmaps[depthmaps > far] = 0.0
     depthmaps[depthmaps < near] = 0.0

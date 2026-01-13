@@ -141,14 +141,10 @@ class DTUDataset(BaseDataset):
 
     def make_paths(self, seq: str, frame_ids: List[int]) -> Tuple[List[str], List[str], List[str]]:
         seq_dir = osp.join(self.root, seq)
-        image_dir = osp.join(seq_dir, "images")
-        depth_dir = osp.join(seq_dir, "depths")
-        cam_dir = osp.join(seq_dir, "cams")
-        mask_dir = osp.join(seq_dir, "binary_masks")
-        images = [osp.join(image_dir, f"{i:08d}.jpg") for i in frame_ids]
-        depths = [osp.join(depth_dir, f"{i:08d}.npy") for i in frame_ids]
-        poses = [osp.join(cam_dir, f"{i:08d}_cam.txt") for i in frame_ids]
-        masks = [osp.join(mask_dir, f"{i:08d}.png") for i in frame_ids]
+        images = [osp.join(seq_dir, "images" ,f"{i:08d}.jpg") for i in frame_ids]
+        depths = [osp.join(seq_dir, "depths", f"{i:08d}.npy") for i in frame_ids]
+        poses = [osp.join(seq_dir, "cams", f"{i:08d}_cam.txt") for i in frame_ids]
+        masks = [osp.join(seq_dir, "binary_masks", f"{i:08d}.png") for i in frame_ids]
         return images, poses, depths, masks
 
     def _load_rgb(self, image_paths: List[str]):

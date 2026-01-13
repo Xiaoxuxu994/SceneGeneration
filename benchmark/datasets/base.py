@@ -46,6 +46,51 @@ class BaseDataset(ABC):
     def load_sequence(self, seq: str, frame_ids: List[int]) -> SequenceBatch:
         ...
 
-    # 可选：不同数据集默认 stride/invalid depth 等
-    def default_stride(self, view: str) -> int:
-        return 40 if view == "dense" else 200
+    def get_frame_ids(
+        self,
+        seq: str,
+        seq_len: int,
+        out_dir: str | Path,
+        *,
+        mode: str = "stride",          # "stride" | "random"
+        stride: int = 1,
+        max_seq_len: int = 0,          # stride mode: take first max_seq_len; random mode: sample n=max_seq_len (or all if 0)
+        seed: int = 0,
+        reuse: bool = True,
+        fname: str = "frame_ids.npy",
+    ) -> List[int]:
+        out_dir = Path(out_dir)
+        frame_id_dir = out_dir / "frame_ids" / seq
+        frame_id_dir.mkdir(parents=True, exist_ok=True)
+        fp = frame_id_dir / fname
+
+        if reuse and fp.exists():
+            ids = np.load(fp).astype(np.int64).tolist()
+            print(f"[INFO] Load frame id from {fp}\n")
+            return sorted({i for i in ids if 0 <= i < seq_len})
+
+        mode = str(mode).lower()
+        stride = max(1, int(stride))
+        max_seq_len = int(max_seq_len)
+
+        if seq_len <= 0:
+            ids: List[int] = []
+
+        elif mode == "stride":
+            ids = list(range(0, seq_len, stride))
+            if max_seq_len > 0:
+                ids = ids[:max_seq_len]
+
+        elif mode == "random":
+            # n = max_seq_len (if >0), else sample all frames
+            n = seq_len if max_seq_len <= 0 else min(max_seq_len, seq_len)
+            n = max(1, n)
+            np.random.seed(int(seed))
+            ids = np.random.choice(seq_len, size=n, replace=False).astype(np.int64).tolist()
+            ids.sort()
+
+        else:
+            raise ValueError(f"Unknown mode={mode}, expected stride|random")
+
+        np.save(fp, np.array(ids, dtype=np.int32))
+        return ids

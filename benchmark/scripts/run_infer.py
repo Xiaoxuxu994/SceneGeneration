@@ -35,13 +35,36 @@ from datasets import get_dataset
 # -----------------------------------------------
 # utils
 # -----------------------------------------------
-from lib.utils import save_npy, build_gt_geometry_data
+from lib.utils import save_npy, filter_depth, build_gt_geometry_data
 from lib.utils import strip_ddp_prefix
 from lib.normalization import normalize_camera_extrinsics_and_points_batch
 
 # -----------------------------
 # Config
 # -----------------------------
+# dataset
+DATA_ROOT_DEFAULTS = {
+    "7scenes": BENCH_ROOT / "data" / "7scenes" / "data",
+    "dtu":     BENCH_ROOT / "data" / "DTU" / "spann3r_version" / "dtu_test_mvsnet_release",
+    "nrgbd":   BENCH_ROOT / "data" / "NRGBD" / "data",
+    "scannet": BENCH_ROOT / "data" / "scannet" / "posed_images",
+    "dl3dv":   "/mnt/nvme1/share/chenyouyu/dataset/DL3DV/data/1K/",
+}
+MODEL_DEFAULTS = {
+    "vggt": {
+        "ckpt": BENCH_ROOT / "checkpoints" / "VGGT-1B",
+        "config": None,
+    },
+    "pi3": {
+        "ckpt": BENCH_ROOT / "checkpoints" / "Pi3",
+        "config": None,
+    },
+    "reliev3r": {
+        "config": Path("/efs-mi-east4-2/exp/ssff3d/251213-450M-pi3Base-s32v8-MoGe2/config.json"),
+        "ckpt":   Path("/efs-mi-east4-2/exp/ssff3d/251213-450M-pi3Base-s32v8-MoGe2/ckpt/60000.ckpt"),
+    },
+}
+
 GT_OUTPUT_WIDTH = 518
 DEPTH_FAR = 10.0
 DEPTH_NEAR = 0.1
@@ -60,7 +83,7 @@ def load_model_vggt(ckpt):
     model = VGGT.from_pretrained(ckpt)
     model.eval()
     num_params = sum(p.numel() for p in model.parameters())
-    print(f"    [VGGT] #params = {num_params/1e6:.2f} M")
+    print(f"[VGGT] #params = {num_params/1e6:.2f} M")
     return model
 
 def run_vggt_infer(model, images_cpu, device: torch.device, autocast_dtype: torch.dtype):
@@ -120,10 +143,10 @@ def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, 
     state = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
     state = strip_ddp_prefix(state)
     model.load_state_dict(state, strict=strict)
-    print(f"    [OK] Reliev3R loaded ckpt: {ckpt_path} (strict={strict})")
+    print(f"[OK] Reliev3R loaded ckpt: {ckpt_path} (strict={strict})")
 
     num_params = sum(p.numel() for p in model.parameters())
-    print(f"    [Reliev3R] #params = {num_params/1e6:.2f} M")
+    print(f"[Reliev3R] #params = {num_params/1e6:.2f} M")
     return model
 
 def run_reliev3r_infer(
@@ -172,15 +195,11 @@ def run_reliev3r_infer(
         pred = model.forward(data)
 
     pred_depth = pred["scaled_depths"].permute(0, 1, 3, 4, 2).contiguous()
-    pred_w2c = pred["camera_extrs"]
+    # depth_np = pred_depth.squeeze(0).squeeze(-1).detach().cpu().numpy()  # (V,H,W) np
+    # depth_np, _ = filter_depth(depth_np, far=DEPTH_FAR, near=DEPTH_NEAR)  #
+    # pred_depth = torch.from_numpy(depth_np).to(device=device, dtype=torch.float32)[None, ..., None]
 
-    ##
-    print(f"    [Reliev3R] normalize_camera_extrinsics")
-    pred_w2c, _, _, _ = normalize_camera_extrinsics_and_points_batch(
-        extrinsics=pred_w2c[:,:,:3].cpu(),
-        scale_by_points = False,
-    )
-    pred_w2c = pred_w2c.to(device.type)
+    pred_w2c = pred["camera_extrs"]
     # GT intrinsics (V,3,3)
     pred_K = torch.from_numpy(gt_intrinsics_rs.astype(np.float32)).to(device=device, dtype=torch.float32)  # (V,3,3)
 
@@ -188,24 +207,29 @@ def run_reliev3r_infer(
     if unproj_with_gt:
         pred_unproj = unproject_depth_map_to_point_map(
             pred_depth.squeeze(0),
-            gt_extrinsics.squeeze(0),
+            gt_extrinsics,
             pred_K,
-        )  # (V,H,W,3) typically
+        ) 
     else:
         pred_unproj = unproject_depth_map_to_point_map(
             pred_depth.squeeze(0),
             pred_w2c.squeeze(0),
             pred_K,
-        )  # (V,H,W,3) typically
+        )         
 
-    return pred_w2c, pred_depth, pred_unproj
+    # print(f"[Reliev3R] normalize_camera_extrinsics & unproj pointcloud")
+    pred_w2c_aligned, _, pred_unproj_aligned, _ = normalize_camera_extrinsics_and_points_batch(
+        extrinsics=pred_w2c[:,:,:3].cpu(),
+        world_points=torch.from_numpy(pred_unproj).to(dtype=torch.float32),
+        scale_by_points = False,
+    )
+    return pred_w2c_aligned, pred_depth, pred_unproj_aligned.squeeze(0).numpy()
 
 def dump_one_seq(model, 
                  model_type,
                  batch,
                  pred_seq_dir: Path,
                  gt_seq_dir: Path,
-                #  dump_gt: bool,
                  device: torch.device, 
                  autocast_dtype: torch.dtype):
     
@@ -232,8 +256,9 @@ def dump_one_seq(model,
             depth_far=DEPTH_FAR,
             depth_near=DEPTH_NEAR,
             )
-
-        gt_c2w = closed_form_inverse_se3(gt_extrinsics.squeeze(0))
+        
+        gt_extrinsics = gt_extrinsics.squeeze(0)
+        gt_c2w = closed_form_inverse_se3(gt_extrinsics)
         
         save_npy(gt_seq_dir, "gt_intrinsics.npy", gt_intrinsics_rs)
         save_npy(gt_seq_dir, "gt_extrinsics.npy", gt_c2w)
@@ -243,7 +268,10 @@ def dump_one_seq(model,
         save_npy(gt_seq_dir, "gt_images.npy", gt_images) 
     else: # load dumped GT data for inference
         gt_intrinsics_rs = np.load(gt_seq_dir / "gt_intrinsics.npy")
-        gt_extrinsics = np.load(gt_seq_dir / "gt_extrinsics.npy")
+        gt_c2w = np.load(gt_seq_dir / "gt_extrinsics.npy")
+        # ---- fix: convert loaded c2w back to w2c (extrinsics) ----
+        gt_c2w = torch.from_numpy(gt_c2w)
+        gt_extrinsics = closed_form_inverse_se3(gt_c2w).cpu().numpy() # for debug only
 
     # ---- infer
     with torch.inference_mode():
@@ -291,42 +319,58 @@ def dump_one_seq(model,
 def main():
     import argparse
     p = argparse.ArgumentParser()
-    # dataset
-    ## 7scenes
-    # p.add_argument("--dataset", type=str, default="7scenes")
-    # p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "7scenes" / "data"))
-    # ## dtu
-    # p.add_argument("--dataset", type=str, default="dtu")
-    # p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "DTU" / "spann3r_version"/ "dtu_test_mvsnet_release"))
-    ## nrgbd
-    p.add_argument("--dataset", type=str, default="nrgbd", choices=["nrgbd", "dtu", "7scenes"])
-    p.add_argument("--data_root", type=str, default=str(BENCH_ROOT / "data" / "NRGBD" / "data"))
 
+    # dataset
+    p.add_argument("--dataset", type=str, default="dl3dv", choices=list(DATA_ROOT_DEFAULTS.keys()))
+    p.add_argument("--data_root", type=str, default=None,
+               help="Dataset root path. If not set, inferred from --dataset.")
     p.add_argument("--split", type=str, default="test", choices=["train", "test"])
-    p.add_argument("--view", type=str, default="dense", choices=["dense", "sparse"])
-    p.add_argument("--stride", type=int, default=500)  # 
     p.add_argument("--seq", type=str, default="")      # chess/seq-01
-    p.add_argument("--max_seq_len", type=int, default=0)   # infer all view or only n views
+
+    # view sample
+    p.add_argument("--mode", type=str, default="stride", choices=["stride", "random"])
+    p.add_argument("--stride", type=int, default=10)
+    p.add_argument("--max_seq_len", type=int, default=8)  # stride: 截断数量; random: 采样数量(0=全量)
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--reuse_frame_ids", type=int, default=1)
 
     # model
-    p.add_argument("--model", type=str, default="vggt", choices=["vggt", "pi3", "reliev3r"])
-    # vggt ckpt
-    p.add_argument("--ckpt", type=str, default=str(BENCH_ROOT / "checkpoints" / "VGGT-1B"))
-    # reliev3r config/ckpt
-    p.add_argument("--reliev3r_config", type=str, default="/efs-mi-east4-2/exp/ssff3d/251213-450M-pi3Base-s32v8-MoGe2/config.json")
-    p.add_argument("--reliev3r_ckpt", type=str, default="/efs-mi-east4-2/exp/ssff3d/251213-450M-pi3Base-s32v8-MoGe2/ckpt/60000.ckpt")
+    p.add_argument("--model", type=str, default="pi3", choices=list(MODEL_DEFAULTS.keys()))
+    p.add_argument("--ckpt", type=str, default=None, help="(vggt/pi3/reliev3r) checkpoint path/dir. If not set, inferred from --model.")
+    p.add_argument("--config", type=str, default=None, help="(reliev3r) config.json. If not set, inferred from --model.")
 
-    # p.add_argument("--reliev3r_config", type=str, default="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-251228/exp/Reliev3R_251231_stg1_v8c32s1_p50/config.json")
-    # p.add_argument("--reliev3r_ckpt", type=str, default="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-251228/exp/Reliev3R_251231_stg1_v8c32s1_p50/ckpt/50000.ckpt")
-
+    # device
     p.add_argument("--device", type=str, default="npu:5")
     p.add_argument("--dtype", type=str, default="fp32", choices=["fp32", "bf16"])
 
+    # output
     p.add_argument("--out_root", type=str, default=str(BENCH_ROOT / "outputs"))
-    # p.add_argument("--dump_gt", type=int, default=1)
+    p.add_argument("--prefix", type=str, default="")
     args = p.parse_args()
-
+    
     # ------------------------------------------------------------------------------------------------------
+    # ---- auto match data_root after parsing ----
+    if args.data_root is None:
+        args.data_root = str(DATA_ROOT_DEFAULTS[args.dataset])
+    else:
+        args.data_root = str(Path(args.data_root))
+    if not Path(args.data_root).exists():
+        raise FileNotFoundError(f"data_root does not exist: {args.data_root}")
+    # ---- auto match model ckpt/config after parsing ----
+    mdef = MODEL_DEFAULTS[args.model]
+    if args.ckpt is None:
+        if mdef.get("ckpt") is None:
+            raise ValueError(f"--ckpt is required for model={args.model} (no default configured).")
+        args.ckpt = str(mdef["ckpt"])
+    else:
+        args.ckpt = str(Path(args.ckpt))
+
+    if args.config is None:
+        args.config = str(mdef["config"])
+    else:
+        args.config = str(Path(args.config))
+    # ------------------------------------------------------------------------------------------------------
+
     device = torch.device(args.device)
     autocast_dtype = torch.float32 if args.dtype == "fp32" else torch.bfloat16
     # dump_gt = (args.dump_gt != 0)
@@ -337,7 +381,12 @@ def main():
     sequences = [args.seq] if args.seq else ds.list_sequences(args.split)
 
     # outdir
-    setting_dir = Path(args.out_root) / args.dataset / f"{args.split}_{args.view}_stride{stride}_seqlen{args.max_seq_len}"
+    setting_dir = Path(args.out_root) / args.dataset / (
+        f"{args.split}_" +
+        (f"stride{stride}_max{args.max_seq_len if args.max_seq_len>0 else 'all'}"
+        if args.mode == "stride"
+        else f"rand{args.max_seq_len if args.max_seq_len>0 else 'all'}_seed{args.seed}")
+    )
     setting_dir.mkdir(parents=True, exist_ok=True)
 
     # load model by branch
@@ -345,43 +394,42 @@ def main():
         model = load_model_vggt(args.ckpt).to(device)
     elif args.model == "pi3":
         model = load_model_pi3(args.ckpt).to(device)
-    else:
-        if not args.reliev3r_ckpt:
+    elif args.model == 'reliev3r':
+        if not args.ckpt:
             raise ValueError("--reliev3r_ckpt is required when --model reliev3r")
-        model = load_model_reliev3r(args.reliev3r_config, args.reliev3r_ckpt, device=device, strict=True)
+        model = load_model_reliev3r(args.config, args.ckpt, device=device, strict=True)
+    else:
+        raise ValueError(f"Unknown model_type={args.model}")
 
-    print(f"[INFO] dataset={args.dataset} split={args.split} view={args.view} model={args.model} "
-            f"num_seqs={len(sequences)} stride={stride} device={device} out={setting_dir}")
+    print(
+        "[INFO] "
+        f"dataset={args.dataset} | split={args.split} | "
+        f"model={args.model} | num_seqs={len(sequences)} | "
+        f"mode={args.mode} | stride={stride} | max_seq_len={args.max_seq_len} | seed={args.seed} | "
+        f"reuse_frame_ids={args.reuse_frame_ids} | device={device}\n"
+        f"[INFO] data_root={args.data_root}\n"
+        f"[INFO] out={setting_dir}"
+    )
 
     pbar = tqdm(sequences, desc=args.dataset, unit="seq")
     for seq in pbar:
-        pred_seq_dir = setting_dir / args.model / seq   #
+        name = args.model if not args.prefix else f"{args.model}_{args.prefix}"
+        pred_seq_dir = setting_dir / name / seq
         gt_seq_dir   = setting_dir / "gt" / seq
-        
         pred_seq_dir.mkdir(parents=True, exist_ok=True)
         gt_seq_dir.mkdir(parents=True, exist_ok=True)
         
-        frame_id_path = gt_seq_dir / "frame_ids.npy"
-        
-        if frame_id_path.exists():
-            frame_ids = [int(d) for d in np.load(frame_id_path)]
-        else:
-            seq_len = ds.count_seq_len(seq)
-            frame_ids = list(range(0, seq_len, stride))
-            if args.max_seq_len > 0 and seq_len > args.max_seq_len: 
-                frame_ids = frame_ids[:args.max_seq_len]
-            if not frame_ids:
-                pbar.set_postfix_str(f"{seq}: empty")
-                continue
-            
-            np.save(frame_id_path, np.array(frame_ids, dtype=np.int32))
-
-            # pred_seq_dir = setting_dir / args.model / seq   #
-            # gt_seq_dir   = setting_dir / "gt" / seq
-
-            # frame_id_dir = setting_dir / "frame_ids" / seq
-            # frame_id_dir.mkdir(parents=True, exist_ok=True)
-            # np.save(frame_id_dir / "frame_ids.npy", np.array(frame_ids, dtype=np.int32))
+        seq_len = ds.count_seq_len(seq)
+        frame_ids = ds.get_frame_ids(
+            seq=seq,
+            seq_len=seq_len,
+            out_dir=setting_dir,
+            mode=args.mode,                      # "stride" or "random"
+            stride=stride,                       # stride
+            max_seq_len=args.max_seq_len,        # stride: 截断; random: 采样数量
+            seed=args.seed,
+            reuse=(args.reuse_frame_ids != 0),
+        )
 
         batch = ds.load_sequence(seq, frame_ids)
 
@@ -391,7 +439,6 @@ def main():
             batch = batch,
             pred_seq_dir=pred_seq_dir,
             gt_seq_dir=gt_seq_dir,
-            # dump_gt=dump_gt,
             device=device,
             autocast_dtype=autocast_dtype,
         )

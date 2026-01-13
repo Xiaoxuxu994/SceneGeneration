@@ -47,3 +47,31 @@ python eval_7scenes.py --input_dir models/vggt_official/outputs/7scenes/sample_s
 # Update on 20251231
 1. move infer scripts outside model folder, insert path in code
 2. put all infer & eval script in './scripts'
+
+# Update on 20260108
+
+```
+模型推理主脚本：run_infer.py
+模型结果评测脚本：run_eval.py
+模型结果可视化：run_vis.py
+```
+```
+模型结果保存格式：
+    <output_root>
+        - 7scenes
+            - test_stride{}_max{}
+                - frame_ids
+                - gt
+                - gt_vis
+                - vggt
+                - vggt_vis
+                - pi3
+                - pi3_vis
+                - reliev3r_{}
+                - reliev3r_{}_vis
+                - metrics_vggt.xlsx
+                - metrics_pi3.xlsx
+                - metrics_reliev3r_{}.xlsx
+        - nrgbd
+        - xxx
+```

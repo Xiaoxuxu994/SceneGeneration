@@ -4,8 +4,9 @@ import open3d as o3d
 from lib.metric import se3_to_relative_pose_error, calculate_auc, umeyama, accuracy, completion
 from lib.evo_utils import get_tum_poses, eval_metrics
 from lib.depth import depth_evaluation
+from lib.utils import timing_decorator
 
-
+# @timing_decorator
 def eval_angle(pred_extrinsics, gt_extrinsics, threshold=30):
     """evaluate relative angles in SE(3) predictions.
 
@@ -34,6 +35,7 @@ def eval_angle(pred_extrinsics, gt_extrinsics, threshold=30):
     
     return rra_acc.item(), rta_acc.item(), auc_at_threshold
 
+# @timing_decorator
 def eval_trajectory(pred_extrinsics, gt_extrinsics):
     """evaluate pose trajectories.
 
@@ -49,6 +51,7 @@ def eval_trajectory(pred_extrinsics, gt_extrinsics):
     
     return ate, rpe_trans, rpe_rot
 
+# @timing_decorator
 def eval_depth_map(pred_depths, gt_depths, valid_masks, 
         align_with_lstsq=False,
         align_with_lad=False,
@@ -86,6 +89,7 @@ def eval_depth_map(pred_depths, gt_depths, valid_masks,
     
     return depth_results
 
+# @timing_decorator
 def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1):
     """evaluate predicted point maps in world coordinates.
 
