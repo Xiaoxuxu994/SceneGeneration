@@ -6,8 +6,6 @@ class CO3Dv2_Dataset(Realistic_Dataset):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        print("[ INFO ] {} scenes found for CO3Dv2 dataset".format(len(self)))
-
 
 if __name__ == "__main__":
     co3dv2_root = "/mnt/diskb/chenyouyu/workspace/code/Reliev3R-251125/Reliev3R_data_sample/co3dv2_Sample"

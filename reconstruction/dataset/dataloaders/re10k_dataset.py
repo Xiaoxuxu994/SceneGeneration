@@ -5,7 +5,6 @@ class Re10K_Dataset(Realistic_Dataset):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        print("[ INFO ] {} scenes found for Re10K dataset".format(len(self)))
 
 
 if __name__ == "__main__":

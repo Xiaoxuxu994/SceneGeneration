@@ -1,4 +1,4 @@
-output_dir: exp/debug
+output_dir: exp/debug_rdepth_intr_engage
 
 model:
   depth_model:    !include models/depth_model.yaml

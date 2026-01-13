@@ -470,7 +470,6 @@ def preprocess_images_for_encode(images, intrs=None, cbox=None, out_shape=None, 
             out_W = min(max_size, W) // patch_size * patch_size
             out_H = H * out_W // W // patch_size * patch_size
         out_shape = (out_H, out_W)
-    # print("[ DEBUG - INFO ] preprocess shape {} -> {}".format((H, W), out_shape))
     
     ## Perform resize of the same scale along height and width, and then crop the redundant part. 
     if out_shape[0] == H and out_shape[1] == W:

@@ -25,11 +25,9 @@ class ASE_Dataset(Synthetic_Dataset):
         super().__init__(**kwargs)
         self.depth_scale = 0.001
         self.depth_is_z = False
-        print("[ INFO ] {} samples found for ASE dataset as {}.".format(
-            len(self), "training set" if self.is_train else "validation set"))
     
     def create_sample_list(self):
-        scene_list = [os.path.join(self.data_root, "{}".format(i)) for i in range(20000)]
+        scene_list = [os.path.join(self.data_root, "{}".format(i)) for i in range(100000)]
         sample_list = []
         trans_device_from_camera = get_trans_device_from_camera()
         intr = np.array([[0.42278125, 0, 0.5], [0, 0.42278125, 0.5], [0, 0, 1]])
@@ -87,14 +85,14 @@ class ASE_Dataset(Synthetic_Dataset):
                     image_clip_list = []
                     depth_clip_list = []
                     extr_clip_list = []
-            if len(image_clip_list) > 0:
-                sample_list.append(dict(
-                    input_images=image_clip_list, 
-                    input_depths=depth_clip_list, 
-                    input_depth_masks=None, 
-                    input_extrs=np.stack(extr_clip_list), 
-                    input_intrs=np.stack([intr for _ in range(len(image_clip_list))]), 
-                ))
+            # if len(image_clip_list) > 0:
+            #     sample_list.append(dict(
+            #         input_images=image_clip_list, 
+            #         input_depths=depth_clip_list, 
+            #         input_depth_masks=None, 
+            #         input_extrs=np.stack(extr_clip_list), 
+            #         input_intrs=np.stack([intr for _ in range(len(image_clip_list))]), 
+            #     ))
     
         return sample_list
 

@@ -10,8 +10,6 @@ class BlendedMVS_Dataset(Synthetic_Dataset):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        print("[ INFO ] {} samples found for BlendedMVS dataset as {}.".format(
-            len(self), "training set" if self.is_train else "validation set"))
     
     def create_sample_list(self):
         scene_list = [folder for folder in sorted(glob(os.path.join(self.data_root, "*"))) if os.path.isdir(folder)]
@@ -69,14 +67,14 @@ class BlendedMVS_Dataset(Synthetic_Dataset):
                     depth_clip_list = []
                     extr_clip_list = []
                     intr_clip_list = []
-            if len(image_clip_list) > 0:
-                sample_list.append(dict(
-                    input_images=image_clip_list, 
-                    input_depths=depth_clip_list, 
-                    input_depth_masks=None, 
-                    input_extrs=np.stack(extr_clip_list), 
-                    input_intrs=np.stack(intr_clip_list), 
-                ))
+            # if len(image_clip_list) > 0:
+            #     sample_list.append(dict(
+            #         input_images=image_clip_list, 
+            #         input_depths=depth_clip_list, 
+            #         input_depth_masks=None, 
+            #         input_extrs=np.stack(extr_clip_list), 
+            #         input_intrs=np.stack(intr_clip_list), 
+            #     ))
         
         return sample_list
 

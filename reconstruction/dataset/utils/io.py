@@ -4,6 +4,33 @@ import h5py
 import numpy as np
 import torch
 from justpfm import justpfm
+import json
+
+
+FINISHED_TAG = "finished"
+FAILED_TAG = "failed"
+SKIP_TAG = "skiped"
+
+def run_check(output_dir, sample_num=None):
+    """ check file status for realistic sample dir 'output_dir' """
+    meta_info_path = os.path.join(output_dir, "meta_info.json")
+    if not os.path.exists(meta_info_path):
+        return False
+
+    with open(meta_info_path, "r") as fp:
+        meta_info = json.load(fp)
+
+    if meta_info.get("moge_status") == FAILED_TAG or meta_info.get("cotracker_status") == FAILED_TAG:
+        return False
+    if meta_info.get("moge_status") == SKIP_TAG and meta_info.get("ori_depth_status") != FINISHED_TAG:
+        return False
+    if meta_info.get("cotracker_status") == SKIP_TAG and meta_info.get("depth_to_track_status") != FINISHED_TAG:
+        return False
+    if meta_info.get("rgb_status") != FINISHED_TAG:
+        return False
+    if sample_num is not None and meta_info.get("rgb_count", None) is not None and meta_info["rgb_count"] < sample_num:
+        return False
+    return True
 
 
 def read_image_as_tensor(file_name: str, device="cpu", dtype=torch.float32):
@@ -71,10 +98,10 @@ def read_cotracker_info_as_tensor(file_name: str, device="cpu", dtype=torch.floa
     """
     if file_name.endswith(".npz"):
         matching_infos = np.load(file_name, allow_pickle=True)["data"]
-        track0 = torch.from_numpy(np.concat([matching_info["tracks"][0] for matching_info in matching_infos], axis=0)) # n k 2
-        track1 = torch.from_numpy(np.concat([matching_info["tracks"][1] for matching_info in matching_infos], axis=0)) # n k 2
-        visib0 = torch.from_numpy(np.concat([matching_info["visibility"][0] for matching_info in matching_infos], axis=0)) # n k
-        visib1 = torch.from_numpy(np.concat([matching_info["visibility"][1] for matching_info in matching_infos], axis=0)) # n k
+        track0 = torch.from_numpy(np.concatenate([matching_info["tracks"][0] for matching_info in matching_infos], axis=0)) # n k 2
+        track1 = torch.from_numpy(np.concatenate([matching_info["tracks"][1] for matching_info in matching_infos], axis=0)) # n k 2
+        visib0 = torch.from_numpy(np.concatenate([matching_info["visibility"][0] for matching_info in matching_infos], axis=0)) # n k
+        visib1 = torch.from_numpy(np.concatenate([matching_info["visibility"][1] for matching_info in matching_infos], axis=0)) # n k
     else:
         raise NotImplementedError("Not implemented cotracker file format '{}'".format(file_name.split('.')[-1]))
     assert track0.ndim == 3 and visib0.ndim == 2 and track0.shape[:2] == visib0.shape

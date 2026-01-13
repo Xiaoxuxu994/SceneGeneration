@@ -77,13 +77,22 @@ def visualize_prediction(pred, data, matching_info=None):
     B, V, C, H, W  = images.shape
     tracked_images = images.clone()
     if matching_info is not None:
-        tracks = matching_info["matches"].reshape(B, V * (V - 1) // 2, 2, -1, 2)      # (b cv2) 2 k 2 -> b cv2 2 k 2
-        visibi = matching_info["visibilities"].reshape(B, V * (V - 1) // 2, 2, -1) # (b cv2) 2 k   -> b cv2 2 k
+        tracks = matching_info["matches"].reshape(B, V - 1, 2, -1, 2)   # (b v-1) 2 k 2 -> b v-1 2 k 2
+        visibi = matching_info["visibilities"].reshape(B, V - 1, 2, -1) # (b v-1) 2 k   -> b v-1 2 k
+        matched_views0 = matching_info["matched_views0"] # b v-1
+        matched_views1 = matching_info["matched_views1"] # b v-1
         for b in range(B):
-            for v in range(V):
-                track = torch.cat([tracks[b, _v, 0] for _v in range(V - 1)], dim=0) if v == 0 else tracks[b, v - 1, 1] # k 2
-                mask  = torch.cat([visibi[b, _v, 0] for _v in range(V - 1)], dim=0) if v == 0 else visibi[b, v - 1, 1] # k
-                tracked_images[b, v] = draw_keypoints(tracked_images[b, v], track[mask].unsqueeze(0), colors="red")
+            for v in range(V - 1):
+                track0 = tracks[b, v, 0]
+                mask0  = visibi[b, v, 0]
+                track1 = tracks[b, v, 1]
+                mask1  = visibi[b, v, 1]
+                view0_id = matched_views0[b, v]
+                view1_id = matched_views1[b, v]
+                tracked_images[b, view0_id] = draw_keypoints(tracked_images[b, view0_id], track0[mask0].unsqueeze(0), 
+                                                             colors=(255 * (V - v) // V, 255 * v // V, 0))
+                tracked_images[b, view1_id] = draw_keypoints(tracked_images[b, view1_id], track1[mask1].unsqueeze(0), 
+                                                             colors=(255 * (V - v) // V, 255 * v // V, 0))
                 
     depths_mono    = torch.cat([data["input_depths"]], dim=1).detach().cpu()
     depths_mono    = torch.log10(depths_mono + 1.0)

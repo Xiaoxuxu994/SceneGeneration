@@ -38,19 +38,19 @@ def clean_up():
 def create_dataloaders(rank, cfg):
     """Create data loaders. """
     dataloader, data_iter, dataloader_eval, data_eval_iter = None, None, None, None
-    if rank == 0:
-        if not cfg.eval:
-            dataloader = create_mixed_dataloader(cfg.datasets, "train", cfg.training.batch_size, rank=rank)
-            data_iter  = iter(dataloader)
-        dataloader_eval = create_mixed_dataloader(cfg.datasets, "eval", cfg.training.batch_size, rank=rank)
-        data_eval_iter  = iter(dataloader_eval)
-    dist.barrier()
-    if rank != 0:
-        if not cfg.eval:
-            dataloader = create_mixed_dataloader(cfg.datasets, "train", cfg.training.batch_size, rank=rank)
-            data_iter  = iter(dataloader)
-        dataloader_eval = create_mixed_dataloader(cfg.datasets, "eval", cfg.training.batch_size, rank=rank)
-        data_eval_iter  = iter(dataloader_eval)
+    # if rank == 0:
+    if not cfg.eval:
+        dataloader = create_mixed_dataloader(cfg.datasets, "train", cfg.training.batch_size, rank=rank)
+        data_iter  = iter(dataloader)
+    dataloader_eval = create_mixed_dataloader(cfg.datasets, "eval", cfg.training.batch_size, rank=rank)
+    data_eval_iter  = iter(dataloader_eval)
+    # dist.barrier()
+    # if rank != 0:
+    #     if not cfg.eval:
+    #         dataloader = create_mixed_dataloader(cfg.datasets, "train", cfg.training.batch_size, rank=rank)
+    #         data_iter  = iter(dataloader)
+    #     dataloader_eval = create_mixed_dataloader(cfg.datasets, "eval", cfg.training.batch_size, rank=rank)
+    #     data_eval_iter  = iter(dataloader_eval)
     dist.barrier()
     return dataloader, data_iter, dataloader_eval, data_eval_iter
 
@@ -97,7 +97,8 @@ def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
         if not is_pred_points:
             pred_points = depth2pointmap(rearrange(pred["scaled_depths"], "b v c h w -> (b v) c h w"), 
                                          rearrange(cam_poses, "b v n m -> (b v) n m"), 
-                                         rearrange(data["input_Ks"], "b v n m -> (b v) n m"))
+                                         rearrange(data["input_Ks"], "b v n m -> (b v) n m"), 
+                                         depth_is_z=cfg.loss.pred_z_depth)
             pred_points = rearrange(pred_points, "(b v) c h w -> b v c h w", b=len(cam_poses))
         else:
             pred_points = localpoint2global(rearrange(pred["scaled_depths"], "b v c h w -> b v h w c"), cam_poses)
@@ -137,9 +138,6 @@ def run(rank, cfg):
     """Load models. """
     model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
     
-    """Enable checkpoint. """
-    model.enable_checkpoint()
-    
     """Create loss functions. """
     loss_func = make_loss_func(cfg.loss)
     
@@ -164,11 +162,16 @@ def run(rank, cfg):
         """Create optimizers from scratch. """
         optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate)
         lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations)
+    step_begins = step
+    
+    """Enable checkpoint. """
+    model.enable_checkpoint()
     
     """Wrap model with ddp. """
     model = DDP(model, device_ids=[rank], bucket_cap_mb=100, gradient_as_bucket_view=True)
     
     model.train()
+    torch_device_lib.empty_cache()
     dist.barrier()
     
     enable_time_profiling = ENABLE_TIME_PROFILING
@@ -195,6 +198,7 @@ def run(rank, cfg):
         total_time = 0.0
         
         """Training loop. """
+        dataset_count = {}
         while step < cfg.training.iterations:
             
             if enable_time_profiling:
@@ -203,11 +207,18 @@ def run(rank, cfg):
             
             data, data_iter, _ = dataloader_step(data_iter, dataloader, step / cfg.training.iterations)
             step += 1
+            # print("[ INFO ] step {}, image shape: {}, dataset: {}".format(step, data["input_images"].shape, data["dataset_names"][0]))
+            if dataset_count.get(data["dataset_names"][0], None) is None:
+                dataset_count[data["dataset_names"][0]] = 1
+            else:
+                dataset_count[data["dataset_names"][0]] += 1
+            if step % 100 == 0 and rank == 0:
+                print("[ INFO ] Step {}, dataset sample summarize:".format(step))
+                print(dataset_count)
+            dist.barrier()
             
             if enable_time_profiling:
                 data_end.record()
-            
-            dist.barrier()
             
             """Training"""
             if enable_time_profiling:
@@ -222,12 +233,9 @@ def run(rank, cfg):
                 loss_start.record()
 
             loss_dict = loss_func(pred, data)
-            if torch.isnan(loss_dict["total"]):
-                print("[ WARNING ] loss nan found! skipping step {} !".format(step))
-                # del pred
-                # del loss_dict
-                # torch_device_lib.empty_cache()
-                continue
+            # if torch.isnan(loss_dict["total"]):
+            #     print("[ WARNING ] loss nan found! skipping step {} !".format(step))
+            #     continue
                 
             if enable_time_profiling:
                 loss_end.record()
@@ -257,7 +265,7 @@ def run(rank, cfg):
                     print("            forward time:  {:.2f} seconds, {:.2f}%".format(forward_time, forward_time / step_time * 100))
                     print("            loss time:     {:.2f} seconds, {:.2f}%".format(loss_time, loss_time / step_time * 100))
                     print("            backward time: {:.2f} seconds, {:.2f}%".format(backward_time, backward_time / step_time * 100))
-                    print("            avg step time: {:.2f} seconds".format(total_time / (step + 1e-5)))
+                    print("            avg step time: {:.2f} seconds".format(total_time / (step - step_begins + 1e-5)))
                     print("======================================")
             
             if global_rank == 0:
@@ -267,6 +275,7 @@ def run(rank, cfg):
                     pred["depths"].min().item(), pred["depths"].max().item(), 
                     pred["depths_conf"].min().item(), pred["depths_conf"].max().item(), 
                     pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item()))
+                print("[ DEBUG ] dataset: {}".format(data["dataset_names"]))
                 for loss_name, loss_value in loss_dict.items():
                     if loss_name == "matching_info":
                         continue
@@ -305,10 +314,6 @@ def run(rank, cfg):
                         "current_iteration": step, 
                     }
                     torch.save(checkpoint, ckpt_name)
-            
-            # del pred
-            # del loss_dict
-            # torch_device_lib.empty_cache()
     
     else:
         """Visualize evaluation results on eval set, not for metric computation, implemented for single GPU. """
@@ -355,9 +360,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     cfg = LoadConfig(args.config)
-    # print("[ DEBUG ] config: {}".format(cfg))
-    # import time
-    # time.sleep(2000)
     
     if args.data_url is not None:
         cfg.datasets.dl3dv.data_root = args.data_url

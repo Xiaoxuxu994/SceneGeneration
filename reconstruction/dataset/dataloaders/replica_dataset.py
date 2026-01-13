@@ -11,8 +11,6 @@ class Replica_Dataset(Synthetic_Dataset):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.depth_scale = 1 / 6553.5
-        print("[ INFO ] {} samples found for Replica dataset as {}.".format(
-            len(self), "training set" if self.is_train else "validation set"))
     
     def create_sample_list(self):
         scene_names = ["office0", "office1", "office2", "office3", "office4", "room0", "room1", "room2"]
@@ -57,14 +55,14 @@ class Replica_Dataset(Synthetic_Dataset):
                     image_clip_list = []
                     depth_clip_list = []
                     extr_clip_list = []
-            if len(image_clip_list) > 0:
-                sample_list.append(dict(
-                    input_images=image_clip_list, 
-                    input_depths=depth_clip_list, 
-                    input_depth_masks=None, 
-                    input_extrs=np.stack(extr_clip_list), 
-                    input_intrs=np.stack([intr for _ in range(len(image_clip_list))]), 
-                ))
+            # if len(image_clip_list) > 0:
+            #     sample_list.append(dict(
+            #         input_images=image_clip_list, 
+            #         input_depths=depth_clip_list, 
+            #         input_depth_masks=None, 
+            #         input_extrs=np.stack(extr_clip_list), 
+            #         input_intrs=np.stack([intr for _ in range(len(image_clip_list))]), 
+            #     ))
         
         return sample_list
 
