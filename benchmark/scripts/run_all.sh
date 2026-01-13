@@ -11,28 +11,28 @@ DATASETS=(
   7scenes
   nrgbd
   dtu
-  scannet
+  # scannet
 )
 
 # ----- model ------
-MODEL="vggt" # ['vggt','pi3','reliev3r']
-CKPT="" #"/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260104/exp/Reliev3r_260105_v8b2c32s1_m400_n-1/ckpt/15000.ckpt"
-CONFIG="" #"/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260104/exp/Reliev3r_260105_v8b2c32s1_m400_n-1/config.json"
+MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+CKPT="/efs-mi-east4-3/c50041401/exp/ssff3d/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/ckpt/25000.ckpt"
+CONFIG="/efs-mi-east4-3/c50041401/exp/ssff3d/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/config.json"
 
 # ---- params ------
 SPLIT="test"
 SEQ=""   # e.g. chess/seq-01 ; empty means all
 
 MODE="stride"       # stride | random
-STRIDE=10           # default stride
+STRIDE=1           # default stride
 MAX_SEQ_LEN=8       # default max seq len
 SEED=0              # used when MODE=random
 
-DEVICE="npu:5"
+DEVICE="npu:7"
 DTYPE="fp32"
 
-OUT_ROOT="/mnt/nvme3/z00533370/3drecon/benchmark/"
-PREFIX="" #"260105_v8b2c32s1_m400_n-1_ckpt15k"           # e.g., "0107_ckpt15000" ; empty -> no suffix
+OUT_ROOT="/home/chenzhenyu/03_project/SceneGeneration/benchmark/"  # "/mnt/nvme3/z00533370/3drecon/benchmark/"
+PREFIX="260108_v8b2c32s1_n-1_rdepth_Ipred_ckpt25k_v3" #"260105_v8b2c32s1_m400_n-1_ckpt15k"           # e.g., "0107_ckpt15000" ; empty -> no suffix
 
 # ---- eval common params ----
 POSE_THRESHOLD=30
@@ -128,11 +128,11 @@ for DATASET in "${DATASETS[@]}"; do
 
   case "${DATASET}" in
     7scenes)
-      STRIDE_CUR=40
+      STRIDE_CUR=1
       MAX_SEQ_LEN_CUR=8
       ;;
     nrgbd)
-      STRIDE_CUR=100
+      STRIDE_CUR=1
       MAX_SEQ_LEN_CUR=8
       ;;
     dtu)
@@ -140,7 +140,7 @@ for DATASET in "${DATASETS[@]}"; do
       MAX_SEQ_LEN_CUR=8
       ;;
     scannet)
-      STRIDE_CUR=40
+      STRIDE_CUR=1
       MAX_SEQ_LEN_CUR=8
       ;;
     *)
@@ -222,7 +222,7 @@ for DATASET in "${DATASETS[@]}"; do
   case "${DATASET}" in
     7scenes) POINTMAP_THRESHOLD=0.1 ;;
     nrgbd)   POINTMAP_THRESHOLD=0.1 ;;
-    dtu)     POINTMAP_THRESHOLD=100 ;;
+    dtu)     POINTMAP_THRESHOLD=0.1 ;;
     scannet) POINTMAP_THRESHOLD=0.1 ;;
     *)       POINTMAP_THRESHOLD=0.1 ;;
   esac

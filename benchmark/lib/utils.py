@@ -14,6 +14,21 @@ from lib.dataset_util import depth_to_world_coords_points
 from lib.cropping import resize_image_depth_and_intrinsic
 from lib.normalization import normalize_camera_extrinsics_and_points_batch
 
+import time
+from functools import wraps
+
+# for recording the execution time
+# use it as a simple decorator
+def timing_decorator(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        print(f"'{func.__name__}' executed in {end_time - start_time:.4f} seconds")
+        return result
+    return wrapper
+
 def to_numpy(x):
     if torch.is_tensor(x):
         return x.detach().cpu().numpy()
