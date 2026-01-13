@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import torch_npu  # noqa: F401
 from tqdm import tqdm
+import open3d as o3d
 
 # 如果你项目里靠 _bootstrap 设置 pythonpath，建议保留
 import _bootstrap  # noqa: F401
@@ -353,6 +354,7 @@ def main():
     ap.add_argument("--pointmap_threshold", type=float, default=0.1)
     
     ap.add_argument("--predicted_pointmap", type=int, default=0)
+    ap.add_argument("--save_pointmap", type=int, default=0)
     
     ap.add_argument("--depth_align", type=str, default="scale_shift", choices=["scale", "scale_shift"])
     ap.add_argument("--device", type=str, default="npu:0",
@@ -395,185 +397,111 @@ def main():
             "status": "ok",
         }
 
-        # try:
-        #     # ---------- load pose ----------
-        #     gt_extr_p = gt_seq / "gt_extrinsics.npy"
-        #     pred_extr_p = pred_seq / "pred_extrinsics.npy"
-        #     if not gt_extr_p.exists() or not pred_extr_p.exists():
-        #         row["status"] = "missing_extrinsics"
-        #         per_seq_rows.append(row)
-        #         continue
+        try:
+            # ---------- load pose ----------
+            gt_extr_p = gt_seq / "gt_extrinsics.npy"
+            pred_extr_p = pred_seq / "pred_extrinsics.npy"
+            if not gt_extr_p.exists() or not pred_extr_p.exists():
+                row["status"] = "missing_extrinsics"
+                per_seq_rows.append(row)
+                continue
 
-        #     pred_extr = torch_f32(np_load(pred_extr_p))
-        #     gt_extr = torch_f32(np_load(gt_extr_p))
+            pred_extr = torch_f32(np_load(pred_extr_p))
+            gt_extr = torch_f32(np_load(gt_extr_p))
 
-        #     # ---------- pose metrics ----------
-        #     rra_acc, rta_acc, auc = eval_angle(pred_extr, gt_extr, threshold=args.pose_threshold)
-        #     ate, rpe_trans, rpe_rot = eval_trajectory(pred_extr, gt_extr)
+            # ---------- pose metrics ----------
+            rra_acc, rta_acc, auc = eval_angle(pred_extr, gt_extr, threshold=args.pose_threshold)
+            ate, rpe_trans, rpe_rot = eval_trajectory(pred_extr, gt_extr)
 
-        #     row["pose_rra_acc"] = float(rra_acc)
-        #     row["pose_rta_acc"] = float(rta_acc)
-        #     row["pose_auc"] = float(auc)
-        #     row["traj_ate"] = float(ate)
-        #     row["traj_rpe_trans"] = float(rpe_trans)
-        #     row["traj_rpe_rot"] = float(rpe_rot)
+            row["pose_rra_acc"] = float(rra_acc)
+            row["pose_rta_acc"] = float(rta_acc)
+            row["pose_auc"] = float(auc)
+            row["traj_ate"] = float(ate)
+            row["traj_rpe_trans"] = float(rpe_trans)
+            row["traj_rpe_rot"] = float(rpe_rot)
 
-        #     # ---------- load depth/mask ----------
-        #     gt_depth_p = gt_seq / "gt_depth_maps.npy"
-        #     pred_depth_p = pred_seq / "pred_depth_maps.npy"
-        #     gt_mask_p = gt_seq / "gt_depth_masks.npy"
+            # ---------- load depth/mask ----------
+            gt_depth_p = gt_seq / "gt_depth_maps.npy"
+            pred_depth_p = pred_seq / "pred_depth_maps.npy"
+            gt_mask_p = gt_seq / "gt_depth_masks.npy"
 
-        #     if pred_depth_p.exists():
-        #         dd = np_load(pred_depth_p)
-        #         row["num_frames"] = int(dd.shape[0]) if dd.ndim == 3 else 1
+            if pred_depth_p.exists():
+                dd = np_load(pred_depth_p)
+                row["num_frames"] = int(dd.shape[0]) if dd.ndim == 3 else 1
 
-        #     # ---------- depth metrics ----------
-        #     if pred_depth_p.exists() and gt_depth_p.exists() and gt_mask_p.exists():
-        #         pred_d = np_load(pred_depth_p).astype(np.float32)
-        #         gt_d = np_load(gt_depth_p).astype(np.float32)
-        #         mask = np_load(gt_mask_p).astype(bool)
+            # ---------- depth metrics ----------
+            if pred_depth_p.exists() and gt_depth_p.exists() and gt_mask_p.exists():
+                pred_d = np_load(pred_depth_p).astype(np.float32)
+                gt_d = np_load(gt_depth_p).astype(np.float32)
+                mask = np_load(gt_mask_p).astype(bool)
 
-        #         # refer to https://github.com/yyfz/Pi3/blob/evaluation/videodepth/eval.py#L54
-        #         if args.depth_align == "scale":
-        #             depth_res = eval_depth_map(
-        #                 pred_d, gt_d, mask,
-        #                 align_with_scale=True,
-        #                 device=args.device,
-        #             )
-        #         elif args.depth_align == "scale_shift":
-        #             depth_res = eval_depth_map(
-        #                 pred_d, gt_d, mask,
-        #                 align_with_lstsq=True,
-        #                 # align_with_lad=True,
-        #                 # align_with_lad2=True,
-        #                 device=args.device,
-        #             )
-        #         else:
-        #             raise NotImplementedError
+                # refer to https://github.com/yyfz/Pi3/blob/evaluation/videodepth/eval.py#L54
+                if args.depth_align == "scale":
+                    depth_res = eval_depth_map(
+                        pred_d, gt_d, mask,
+                        align_with_scale=True,
+                        device=args.device,
+                    )
+                elif args.depth_align == "scale_shift":
+                    depth_res = eval_depth_map(
+                        pred_d, gt_d, mask,
+                        align_with_lstsq=True,
+                        # align_with_lad=True,
+                        # align_with_lad2=True,
+                        device=args.device,
+                    )
+                else:
+                    raise NotImplementedError
                 
-        #         # print(depth_res)
-        #         row.update(flatten_depth_dict(depth_res, prefix="depth_"))
-        #     else:
-        #         # 不覆盖已有 status，但记录一下
-        #         # if row["status"] == "ok":
-        #         #     row["status"] = "missing_depth_or_mask"
-        #         row["status"] = "missing_depth_or_mask"
-
-        #     # ---------- point map metrics ----------
-        #     gt_pm_p = gt_seq / "gt_point_maps.npy"
-        #     pred_pm_p = pick_pred_pointmap(pred_seq, args.predicted_pointmap != 0)
-
-        #     if gt_pm_p.exists() and gt_mask_p.exists() and pred_pm_p is not None:
-        #         pred_pm = np_load(pred_pm_p).astype(np.float32)
-        #         gt_pm = np_load(gt_pm_p).astype(np.float32)
-        #         mask = np_load(gt_mask_p).astype(bool)
-
-        #         acc, acc_med, nc1, nc1_med, comp, comp_med, nc2, nc2_med = eval_point_map(
-        #             pred_pm, gt_pm, mask, threshold=args.pointmap_threshold
-        #         )
-        #         row["pm_acc_mean"] = float(acc)
-        #         row["pm_acc_med"] = float(acc_med)
-        #         row["pm_nc1_mean"] = float(nc1)
-        #         row["pm_nc1_med"] = float(nc1_med)
-        #         row["pm_comp_mean"] = float(comp)
-        #         row["pm_comp_med"] = float(comp_med)
-        #         row["pm_nc2_mean"] = float(nc2)
-        #         row["pm_nc2_med"] = float(nc2_med)
-        #     else:
-        #         row["status"] = "missing_pointmap_or_mask"
-
-        # except Exception as e:
-        #     row["status"] = f"error:{type(e).__name__}"
-        #     row["error_msg"] = str(e)
-
-        # per_seq_rows.append(row)
-        # scene_bucket[scene].append(row)
-        
-        # ---------- load pose ----------
-        gt_extr_p = gt_seq / "gt_extrinsics.npy"
-        pred_extr_p = pred_seq / "pred_extrinsics.npy"
-        if not gt_extr_p.exists() or not pred_extr_p.exists():
-            row["status"] = "missing_extrinsics"
-            per_seq_rows.append(row)
-            continue
-
-        pred_extr = torch_f32(np_load(pred_extr_p))
-        gt_extr = torch_f32(np_load(gt_extr_p))
-
-        # ---------- pose metrics ----------
-        rra_acc, rta_acc, auc = eval_angle(pred_extr, gt_extr, threshold=args.pose_threshold)
-        ate, rpe_trans, rpe_rot = eval_trajectory(pred_extr, gt_extr)
-
-        row["pose_rra_acc"] = float(rra_acc)
-        row["pose_rta_acc"] = float(rta_acc)
-        row["pose_auc"] = float(auc)
-        row["traj_ate"] = float(ate)
-        row["traj_rpe_trans"] = float(rpe_trans)
-        row["traj_rpe_rot"] = float(rpe_rot)
-
-        # ---------- load depth/mask ----------
-        gt_depth_p = gt_seq / "gt_depth_maps.npy"
-        pred_depth_p = pred_seq / "pred_depth_maps.npy"
-        gt_mask_p = gt_seq / "gt_depth_masks.npy"
-
-        if pred_depth_p.exists():
-            dd = np_load(pred_depth_p)
-            row["num_frames"] = int(dd.shape[0]) if dd.ndim == 3 else 1
-
-        # ---------- depth metrics ----------
-        if pred_depth_p.exists() and gt_depth_p.exists() and gt_mask_p.exists():
-            pred_d = np_load(pred_depth_p).astype(np.float32)
-            gt_d = np_load(gt_depth_p).astype(np.float32)
-            mask = np_load(gt_mask_p).astype(bool)
-
-            # refer to https://github.com/yyfz/Pi3/blob/evaluation/videodepth/eval.py#L54
-            if args.depth_align == "scale":
-                depth_res = eval_depth_map(
-                    pred_d, gt_d, mask,
-                    align_with_scale=True,
-                    device=args.device,
-                )
-            elif args.depth_align == "scale_shift":
-                depth_res = eval_depth_map(
-                    pred_d, gt_d, mask,
-                    align_with_lstsq=True,
-                    # align_with_lad=True,
-                    # align_with_lad2=True,
-                    device=args.device,
-                )
+                # print(depth_res)
+                row.update(flatten_depth_dict(depth_res, prefix="depth_"))
             else:
-                raise NotImplementedError
-            
-            # print(depth_res)
-            row.update(flatten_depth_dict(depth_res, prefix="depth_"))
-        else:
-            # 不覆盖已有 status，但记录一下
-            # if row["status"] == "ok":
-            #     row["status"] = "missing_depth_or_mask"
-            row["status"] = "missing_depth_or_mask"
+                # 不覆盖已有 status，但记录一下
+                # if row["status"] == "ok":
+                #     row["status"] = "missing_depth_or_mask"
+                row["status"] = "missing_depth_or_mask"
 
-        # ---------- point map metrics ----------
-        gt_pm_p = gt_seq / "gt_point_maps.npy"
-        pred_pm_p = pick_pred_pointmap(pred_seq, args.predicted_pointmap != 0)
+            # ---------- point map metrics ----------
+            gt_pm_p = gt_seq / "gt_point_maps.npy"
+            pred_pm_p = pick_pred_pointmap(pred_seq, args.predicted_pointmap != 0)
 
-        if gt_pm_p.exists() and gt_mask_p.exists() and pred_pm_p is not None:
-            pred_pm = np_load(pred_pm_p).astype(np.float32)
-            gt_pm = np_load(gt_pm_p).astype(np.float32)
-            mask = np_load(gt_mask_p).astype(bool)
+            if gt_pm_p.exists() and gt_mask_p.exists() and pred_pm_p is not None:
+                pred_pm = np_load(pred_pm_p).astype(np.float32)
+                gt_pm = np_load(gt_pm_p).astype(np.float32)
+                mask = np_load(gt_mask_p).astype(bool)
 
-            acc, acc_med, nc1, nc1_med, comp, comp_med, nc2, nc2_med = eval_point_map(
-                pred_pm, gt_pm, mask, threshold=args.pointmap_threshold
-            )
-            row["pm_acc_mean"] = float(acc)
-            row["pm_acc_med"] = float(acc_med)
-            row["pm_nc1_mean"] = float(nc1)
-            row["pm_nc1_med"] = float(nc1_med)
-            row["pm_comp_mean"] = float(comp)
-            row["pm_comp_med"] = float(comp_med)
-            row["pm_nc2_mean"] = float(nc2)
-            row["pm_nc2_med"] = float(nc2_med)
-        
-        exit()
+                results = eval_point_map(
+                    pred_pm, gt_pm, mask, threshold=args.pointmap_threshold, 
+                    return_point_maps=(args.save_pointmap != 0)
+                )
+                row["pm_acc_mean"] = float(results["accuracy"]["mean"])
+                row["pm_acc_med"] = float(results["accuracy"]["median"])
+                row["pm_nc1_mean"] = float(results["normal_consistency_1"]["mean"])
+                row["pm_nc1_med"] = float(results["normal_consistency_1"]["median"])
+                row["pm_comp_mean"] = float(results["completion"]["mean"])
+                row["pm_comp_med"] = float(results["completion"]["median"])
+                row["pm_nc2_mean"] = float(results["normal_consistency_2"]["mean"])
+                row["pm_nc2_med"] = float(results["normal_consistency_2"]["median"])
+                
+                # save aligned point maps
+                if args.save_pointmap != 0:
+                    export_root_gt = Path(str(gt_root)+"_vis") / rel
+                    export_root_gt.mkdir(exist_ok=True, parents=True)
+                    
+                    export_root_pred = Path(str(pred_root)+"_vis") / rel
+                    export_root_pred.mkdir(exist_ok=True, parents=True)
+                    
+                    o3d.io.write_point_cloud(str(export_root_gt / "vis_pointcloud_aligned.ply"), results["point_maps"]["gt"])
+                    o3d.io.write_point_cloud(str(export_root_pred / "vis_pointcloud_aligned.ply"), results["point_maps"]["pred"])
+            else:
+                row["status"] = "missing_pointmap_or_mask"
+
+        except Exception as e:
+            row["status"] = f"error:{type(e).__name__}"
+            row["error_msg"] = str(e)
+
+        per_seq_rows.append(row)
+        scene_bucket[scene].append(row)
 
     # -------- per-scene aggregation --------
     # 对每个 scene，把 status=ok 的 seq 做均值

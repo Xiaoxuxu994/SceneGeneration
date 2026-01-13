@@ -90,7 +90,7 @@ def eval_depth_map(pred_depths, gt_depths, valid_masks,
     return depth_results
 
 # @timing_decorator
-def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1):
+def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1, return_point_maps=False):
     """evaluate predicted point maps in world coordinates.
 
     Args:
@@ -166,5 +166,13 @@ def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1):
         pcd_gt.points, pcd.points, gt_normal, pred_normal
     )
     
-    return acc, acc_med, nc1, nc1_med, comp, comp_med, nc2, nc2_med
+    # pack outputs
+    results = {}
+    results["accuracy"] = {"mean": acc, "median": acc_med}
+    results["completion"] = {"mean": comp, "median": comp_med}
+    results["normal_consistency_1"] = {"mean": nc1, "median": nc1_med}
+    results["normal_consistency_2"] = {"mean": nc2, "median": nc2_med}
+    if return_point_maps: results["point_maps"] = {"pred": pcd, "gt": pcd_gt}
+    
+    return results
     
