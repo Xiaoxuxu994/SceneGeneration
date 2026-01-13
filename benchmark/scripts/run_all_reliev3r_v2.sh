@@ -8,15 +8,18 @@ VIS_SCRIPT="scripts/run_vis.py"
 
 # ---- all dataset ----
 DATASETS=(
-  # 7scenes
-  # nrgbd
+  7scenes
+  nrgbd
   dtu
   # scannet
 )
 
 # ----- model ------
 MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-CKPT="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260104/exp/Reliev3r_260105_v8b2c32s1_m400_n-1/ckpt/5000.ckpt"
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260104/exp/Reliev3r_260105_v8b2c32s1_m400_n-1/ckpt/30000.ckpt"
+# CONFIG="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260104/exp/Reliev3r_260105_v8b2c32s1_m400_n-1/config.json"
+
+CKPT="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260108/exp/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/ckpt/10000.ckpt"
 CONFIG="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260104/exp/Reliev3r_260105_v8b2c32s1_m400_n-1/config.json"
 
 # ---- params ------
@@ -28,11 +31,11 @@ STRIDE=10           # default stride
 MAX_SEQ_LEN=8       # default max seq len
 SEED=0              # used when MODE=random
 
-DEVICE="npu:7"
+DEVICE="npu:6"
 DTYPE="fp32"
 
 OUT_ROOT="/mnt/nvme3/z00533370/3drecon/benchmark/"
-PREFIX="260105_v8b2c32s1_m400_n-1_ckpt5k"           # e.g., "0107_ckpt15000" ; empty -> no suffix
+PREFIX="260108_v8b2c32s1_n-1_rdepth_Ipred_ckpt10k_v3"           # e.g., "0107_ckpt15000" ; empty -> no suffix
 
 # ---- eval common params ----
 POSE_THRESHOLD=30
@@ -128,11 +131,11 @@ for DATASET in "${DATASETS[@]}"; do
 
   case "${DATASET}" in
     7scenes)
-      STRIDE_CUR=40
+      STRIDE_CUR=1
       MAX_SEQ_LEN_CUR=8
       ;;
     nrgbd)
-      STRIDE_CUR=100
+      STRIDE_CUR=1
       MAX_SEQ_LEN_CUR=8
       ;;
     dtu)
@@ -140,7 +143,7 @@ for DATASET in "${DATASETS[@]}"; do
       MAX_SEQ_LEN_CUR=8
       ;;
     scannet)
-      STRIDE_CUR=40
+      STRIDE_CUR=1
       MAX_SEQ_LEN_CUR=8
       ;;
     *)

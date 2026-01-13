@@ -307,9 +307,9 @@ class BlockRope(nn.Module):
 
         self.sample_drop_ratio = drop_path
 
-    def forward(self, x: Tensor, xpos=None) -> Tensor:
+    def forward(self, x: Tensor, xpos=None, xpos_max=None) -> Tensor:
         def attn_residual_func(x: Tensor) -> Tensor:
-            return self.ls1(self.attn(self.norm1(x), xpos=xpos))
+            return self.ls1(self.attn(self.norm1(x), xpos=xpos, xpos_max=xpos_max))
 
         def ffn_residual_func(x: Tensor) -> Tensor:
             return self.ls2(self.mlp(self.norm2(x)))

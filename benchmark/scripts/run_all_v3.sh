@@ -11,13 +11,13 @@ DATASETS=(
   7scenes
   nrgbd
   dtu
-  scannet
+  # scannet
 )
 
 # ----- model ------
-MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-CKPT="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260104/exp/Reliev3r_260105_v8b2c32s1_m400_n-1/ckpt/30000.ckpt"
-CONFIG="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260104/exp/Reliev3r_260105_v8b2c32s1_m400_n-1/config.json"
+MODEL="vggt" # ['vggt','pi3','reliev3r']
+CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch007-loss_valid0.3137-metric_valid0.2497.ckpt/pytorch_model.bin" #"/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260104/exp/Reliev3r_260105_v8b2c32s1_m400_n-1/ckpt/15000.ckpt"
+CONFIG="" #"/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260104/exp/Reliev3r_260105_v8b2c32s1_m400_n-1/config.json"
 
 # ---- params ------
 SPLIT="test"
@@ -28,11 +28,11 @@ STRIDE=10           # default stride
 MAX_SEQ_LEN=8       # default max seq len
 SEED=0              # used when MODE=random
 
-DEVICE="npu:2"
+DEVICE="npu:6"
 DTYPE="fp32"
 
 OUT_ROOT="/mnt/nvme3/z00533370/3drecon/benchmark/"
-PREFIX="260105_v8b2c32s1_m400_n-1_ckpt30k"           # e.g., "0107_ckpt15000" ; empty -> no suffix
+PREFIX="vggt_sz_ep7" #"260105_v8b2c32s1_m400_n-1_ckpt15k"           # e.g., "0107_ckpt15000" ; empty -> no suffix
 
 # ---- eval common params ----
 POSE_THRESHOLD=30
@@ -128,11 +128,11 @@ for DATASET in "${DATASETS[@]}"; do
 
   case "${DATASET}" in
     7scenes)
-      STRIDE_CUR=40
+      STRIDE_CUR=1
       MAX_SEQ_LEN_CUR=8
       ;;
     nrgbd)
-      STRIDE_CUR=100
+      STRIDE_CUR=1
       MAX_SEQ_LEN_CUR=8
       ;;
     dtu)
@@ -140,7 +140,7 @@ for DATASET in "${DATASETS[@]}"; do
       MAX_SEQ_LEN_CUR=8
       ;;
     scannet)
-      STRIDE_CUR=40
+      STRIDE_CUR=1
       MAX_SEQ_LEN_CUR=8
       ;;
     *)
@@ -229,7 +229,7 @@ for DATASET in "${DATASETS[@]}"; do
 
   # per-model PREDICTED_POINTMAP
   case "${MODEL}" in
-    vggt)     PREDICTED_POINTMAP=1 ;;
+    vggt)     PREDICTED_POINTMAP=0 ;;
     pi3)      PREDICTED_POINTMAP=1 ;;
     reliev3r) PREDICTED_POINTMAP=0 ;;
     *)        PREDICTED_POINTMAP=0 ;;

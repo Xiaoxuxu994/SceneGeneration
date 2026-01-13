@@ -35,7 +35,7 @@ from datasets import get_dataset
 # -----------------------------------------------
 # utils
 # -----------------------------------------------
-from lib.utils import save_npy, filter_depth, build_gt_geometry_data
+from lib.utils import save_npy, build_gt_geometry_data, fovs_to_K_norm,K_denormalize,rdepth_to_zdepth
 from lib.utils import strip_ddp_prefix
 from lib.normalization import normalize_camera_extrinsics_and_points_batch
 
@@ -79,8 +79,33 @@ GT_FILES = [
 ]
 
 # ---------------------- running vggt infer ------------------------------------------------
-def load_model_vggt(ckpt):
-    model = VGGT.from_pretrained(ckpt)
+# def load_model_vggt(ckpt):
+#     model = VGGT.from_pretrained(ckpt)
+#     model.eval()
+#     num_params = sum(p.numel() for p in model.parameters())
+#     print(f"[VGGT] #params = {num_params/1e6:.2f} M")
+#     return model
+
+
+def load_model_vggt(ckpt: str):
+    ckpt_p = Path(ckpt)
+    if ("/" in ckpt and not ckpt_p.exists()) or ckpt_p.is_dir():
+        model = VGGT.from_pretrained(ckpt) 
+    else:
+        model = VGGT()  
+        obj = torch.load(str(ckpt_p), map_location="cpu")
+        state_dict = obj.get("state_dict", obj) if isinstance(obj, dict) else obj
+
+        fixed = {}
+        for k, v in state_dict.items():
+            k = k.replace("module.", "")
+            k = k.replace("model.", "")
+            fixed[k] = v
+
+        missing, unexpected = model.load_state_dict(fixed, strict=False)
+        print("missing:", missing)
+        print("unexpected:", unexpected)
+
     model.eval()
     num_params = sum(p.numel() for p in model.parameters())
     print(f"[VGGT] #params = {num_params/1e6:.2f} M")
@@ -169,7 +194,7 @@ def run_reliev3r_infer(
     if not torch.is_tensor(images_cpu) or images_cpu.ndim != 4:
         raise ValueError(f"images_cpu must be (V,3,H,W), got {type(images_cpu)} {getattr(images_cpu,'shape',None)}")
 
-    V = images_cpu.shape[0]
+    V,C,H,W = images_cpu.shape
 
     # -----------------------
     # build minimal batch
@@ -194,14 +219,24 @@ def run_reliev3r_infer(
     with torch.autocast(device_type=device.type, dtype=autocast_dtype):
         pred = model.forward(data)
 
-    pred_depth = pred["scaled_depths"].permute(0, 1, 3, 4, 2).contiguous()
+    ray_depth = pred["scaled_depths"].permute(0, 1, 3, 4, 2).contiguous()
     # depth_np = pred_depth.squeeze(0).squeeze(-1).detach().cpu().numpy()  # (V,H,W) np
     # depth_np, _ = filter_depth(depth_np, far=DEPTH_FAR, near=DEPTH_NEAR)  #
     # pred_depth = torch.from_numpy(depth_np).to(device=device, dtype=torch.float32)[None, ..., None]
 
     pred_w2c = pred["camera_extrs"]
     # GT intrinsics (V,3,3)
-    pred_K = torch.from_numpy(gt_intrinsics_rs.astype(np.float32)).to(device=device, dtype=torch.float32)  # (V,3,3)
+    # pred_K = torch.from_numpy(gt_intrinsics_rs.astype(np.float32)).to(device=device, dtype=torch.float32)  # (V,3,3)
+
+    ## predict intrinsic (1,8,2)
+    fovs_pred = pred["camera_fovs"]      # (B,V,2)
+    K_norm = fovs_to_K_norm(fovs_pred).squeeze(0)          # (B,V,3,3)
+    pred_K  = K_denormalize(K_norm, W=W, H=H)
+
+    ## raydepth to zdepth
+    ray_depth = ray_depth.squeeze(0).permute(0,3,1,2)
+    pred_depth = rdepth_to_zdepth(ray_depth,K_norm)
+    pred_depth = pred_depth.unsqueeze(0).permute(0,1,3,4,2)
 
     # unprojection 
     if unproj_with_gt:
@@ -321,7 +356,7 @@ def main():
     p = argparse.ArgumentParser()
 
     # dataset
-    p.add_argument("--dataset", type=str, default="scannet", choices=list(DATA_ROOT_DEFAULTS.keys()))
+    p.add_argument("--dataset", type=str, default="7scenes", choices=list(DATA_ROOT_DEFAULTS.keys()))
     p.add_argument("--data_root", type=str, default=None,
                help="Dataset root path. If not set, inferred from --dataset.")
     p.add_argument("--split", type=str, default="test", choices=["train", "test"])
@@ -334,10 +369,19 @@ def main():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--reuse_frame_ids", type=int, default=1)
 
-    # model
-    p.add_argument("--model", type=str, default="pi3", choices=list(MODEL_DEFAULTS.keys()))
-    p.add_argument("--ckpt", type=str, default=None, help="(vggt/pi3/reliev3r) checkpoint path/dir. If not set, inferred from --model.")
-    p.add_argument("--config", type=str, default=None, help="(reliev3r) config.json. If not set, inferred from --model.")
+    # # model
+    # p.add_argument("--model", type=str, default="vggt", choices=list(MODEL_DEFAULTS.keys()))
+    # p.add_argument("--ckpt", type=str, default='/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch008-loss_valid0.2872-metric_valid0.2346.ckpt/epoch008-loss_valid0.2872-metric_valid0.2346.ckpt/pytorch_model.bin', help="(vggt/pi3/reliev3r) checkpoint path/dir. If not set, inferred from --model.")
+    # p.add_argument("--config", type=str, default=None, help="(reliev3r) config.json. If not set, inferred from --model.")
+
+    # p.add_argument("--model", type=str, default="pi3", choices=list(MODEL_DEFAULTS.keys()))
+    # p.add_argument("--ckpt", type=str, default=None, help="(vggt/pi3/reliev3r) checkpoint path/dir. If not set, inferred from --model.")
+    # p.add_argument("--config", type=str, default=None, help="(reliev3r) config.json. If not set, inferred from --model.")
+
+    # # model debug
+    p.add_argument("--model", type=str, default="reliev3r", choices=list(MODEL_DEFAULTS.keys()))
+    p.add_argument("--ckpt", type=str, default='/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260108/exp/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/ckpt/20000.ckpt', help="(vggt/pi3/reliev3r) checkpoint path/dir. If not set, inferred from --model.")
+    p.add_argument("--config", type=str, default='/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260108/exp/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/config.json', help="(reliev3r) config.json. If not set, inferred from --model.")
 
     # device
     p.add_argument("--device", type=str, default="npu:5")
