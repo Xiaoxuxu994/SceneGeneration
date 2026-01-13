@@ -47,13 +47,13 @@ class TransformerDecoder(nn.Module):
 
         self.linear_out = nn.Linear(dec_embed_dim, out_dim)
 
-    def forward(self, hidden, xpos=None):
+    def forward(self, hidden, xpos=None, xpos_max=None):
         hidden = self.projects(hidden)
         for i, blk in enumerate(self.blocks):
             if self.use_checkpoint and self.training:
-                hidden = checkpoint(blk, hidden, xpos=xpos, use_reentrant=False)
+                hidden = checkpoint(blk, hidden, xpos=xpos, xpos_max=xpos_max, use_reentrant=False)
             else:
-                hidden = blk(hidden, xpos=xpos)
+                hidden = blk(hidden, xpos=xpos, xpos_max=xpos_max)
         out = self.linear_out(hidden)
         return out
 

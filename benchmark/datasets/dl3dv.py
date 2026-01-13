@@ -57,7 +57,7 @@ class DL3DVDataset(BaseDataset):
     """
     DL3DV:
       root/<scene_id>/
-        images_8/frame_00000.png ...
+        rgb/frame_00000.png ...
         transforms.json
 
     Notes:
@@ -69,7 +69,7 @@ class DL3DVDataset(BaseDataset):
     def __init__(
         self,
         root: str | Path,
-        image_dir: str = "images_8",
+        image_dir: str = "rgb",
         transforms_name: str = "transforms.json",
     ):
         super().__init__(root)

@@ -111,3 +111,97 @@ def strip_ddp_prefix(state_dict):
     if all(k.startswith("module.") for k in ks):
         return {k[len("module."):]: v for k, v in state_dict.items()}
     return state_dict
+
+def calc_intr_inv(intr: torch.Tensor):
+    assert intr.shape[-2] == 3 and intr.shape[-1] == 3
+    ret = torch.zeros_like(intr)
+    ret[..., 0, 0] = 1 / intr[..., 0, 0]
+    ret[..., 1, 1] = 1 / intr[..., 1, 1]
+    ret[..., 0, 2] = -intr[..., 0, 2] / intr[..., 0, 0]
+    ret[..., 1, 2] = -intr[..., 1, 2] / intr[..., 1, 1]
+    ret[..., 2, 2] = ret[..., 2, 2] + 1.0
+    return ret
+
+def rdepth_to_zdepth(r_depths: torch.Tensor, intrs: torch.Tensor):
+    """
+    Transform ray depth into z depth.
+    Args:
+        r_depths (torch.Tensor): Tensor of shape (N, 1, H, W).
+        intrs (torch.Tensor): Tensor of shape (N, 3, 3), normalized.
+    """
+    H, W = r_depths.shape[-2:]
+    image_grid = torch.cartesian_prod((torch.arange(H) + 0.5) / H, (torch.arange(W) + 0.5) / W).reshape(H, W, 2).flip(dims=[-1])
+    
+    pixel_vec = torch.cat([image_grid, torch.ones_like(image_grid[..., :1])], dim=-1)[None] # 1 H W 3
+    pixel_vec = pixel_vec.to(intrs.device)
+    pixel_vec = (calc_intr_inv(intrs)[:, None, None] @ pixel_vec[..., None])[..., 0]
+    pixel_vec = pixel_vec / (pixel_vec.norm(dim=-1, keepdim=True) + 1e-12) # N H W 3
+    cam_coord = pixel_vec * r_depths.permute(0, 2, 3, 1)
+    z_depth = cam_coord[..., -1:].permute(0, 3, 1, 2)
+        
+    return z_depth
+
+def fovs_to_K_norm(fovs_pred: torch.Tensor, fov_in_degrees: bool = False):
+    """
+    fovs_pred: (B,V,2)  last dim = (fov_x, fov_y)
+    return:    (B,V,3,3) normalized intrinsics (cx=cy=0.5)
+    """
+    if fov_in_degrees:
+        fovs_pred = torch.deg2rad(fovs_pred)
+
+    B, V = fovs_pred.shape[:2]
+    focal_pred = 0.5 / torch.tan(fovs_pred / 2)  # (B,V,2)
+
+    eye3 = torch.eye(3, device=fovs_pred.device, dtype=fovs_pred.dtype)
+    intrs = eye3[None, None].expand(B, V, -1, -1).clone()         # (B,V,3,3)
+    intrs[..., :2, :] = intrs[..., :2, :] * focal_pred[..., None] # row0*=fx_norm, row1*=fy_norm
+    intrs[..., 0, 2] = 0.5
+    intrs[..., 1, 2] = 0.5
+    return intrs
+
+
+def K_denormalize(K_norm: torch.Tensor, W: int, H: int):
+    """
+    把归一化内参 K_norm 反归一化成像素内参 K_pix
+    约定：x_norm = x_pix / W, y_norm = y_pix / H
+    """
+    K_pix = K_norm.clone()
+    K_pix[..., 0, 0] = K_norm[..., 0, 0] * W
+    K_pix[..., 1, 1] = K_norm[..., 1, 1] * H
+    K_pix[..., 0, 2] = K_norm[..., 0, 2] * W
+    K_pix[..., 1, 2] = K_norm[..., 1, 2] * H
+    K_pix[..., 2, 2] = 1.0
+    return K_pix
+
+# def camera_fovs_to_K(camera_fovs: torch.Tensor, W: int, H: int,
+#                      cx: float | None = None, cy: float | None = None,
+#                      fov_in_degrees: bool = False) -> torch.Tensor:
+#     """
+#     camera_fovs: (B, V, 2) or (..., 2), last dim = (fov_x, fov_y)
+#     returns:     (B, V, 3, 3) or (..., 3, 3)
+#     """
+#     assert camera_fovs.shape[-1] == 2, camera_fovs.shape
+
+#     fov = camera_fovs
+#     if fov_in_degrees:
+#         fov = torch.deg2rad(fov)
+
+#     fov_x = fov[..., 0]
+#     fov_y = fov[..., 1]
+
+#     fx = (0.5 * W) / torch.tan(0.5 * fov_x)
+#     fy = (0.5 * H) / torch.tan(0.5 * fov_y)
+
+#     if cx is None:
+#         cx = (W - 1) * 0.5
+#     if cy is None:
+#         cy = (H - 1) * 0.5
+
+#     K = torch.zeros((*camera_fovs.shape[:-1], 3, 3),
+#                     device=camera_fovs.device, dtype=camera_fovs.dtype)
+#     K[..., 0, 0] = fx
+#     K[..., 1, 1] = fy
+#     K[..., 0, 2] = cx
+#     K[..., 1, 2] = cy
+#     K[..., 2, 2] = 1.0
+#     return K
