@@ -11,8 +11,6 @@ class HyperSim_Dataset(Synthetic_Dataset):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        print("[ INFO ] {} samples found for HyperSim dataset as {}.".format(
-            len(self), "training set" if self.is_train else "validation set"))
         
     def create_sample_list(self):
         ## Fetch scene list
@@ -78,14 +76,14 @@ class HyperSim_Dataset(Synthetic_Dataset):
                         image_clip_list = []
                         depth_clip_list = []
                         extr_clip_list = []
-                if len(image_clip_list) > 0:
-                    sample_list.append(dict(
-                        input_images=image_clip_list, 
-                        input_depths=depth_clip_list, 
-                        input_depth_masks=None, 
-                        input_extrs=np.stack(extr_clip_list), 
-                        input_intrs=np.stack([intr for _ in range(self.clip_length)]), 
-                    ))
+                # if len(image_clip_list) > 0:
+                #     sample_list.append(dict(
+                #         input_images=image_clip_list, 
+                #         input_depths=depth_clip_list, 
+                #         input_depth_masks=None, 
+                #         input_extrs=np.stack(extr_clip_list), 
+                #         input_intrs=np.stack([intr for _ in range(self.clip_length)]), 
+                #     ))
         
         return sample_list
 

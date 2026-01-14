@@ -183,7 +183,8 @@ def run_reliev3r_infer(
     autocast_dtype: torch.dtype,
     image_paths=None,
     scene_name="7scenes",
-    unproj_with_gt=False,
+    unproj_with_gt_extrinsics=False,
+    unproj_with_gt_intrinsics=False,
 ):
     """
     Returns:
@@ -225,8 +226,9 @@ def run_reliev3r_infer(
     # pred_depth = torch.from_numpy(depth_np).to(device=device, dtype=torch.float32)[None, ..., None]
 
     pred_w2c = pred["camera_extrs"]
+    
     # GT intrinsics (V,3,3)
-    # pred_K = torch.from_numpy(gt_intrinsics_rs.astype(np.float32)).to(device=device, dtype=torch.float32)  # (V,3,3)
+    gt_K = torch.from_numpy(gt_intrinsics_rs.astype(np.float32)).to(device=device, dtype=torch.float32)  # (V,3,3)
 
     ## predict intrinsic (1,8,2)
     fovs_pred = pred["camera_fovs"]      # (B,V,2)
@@ -239,22 +241,28 @@ def run_reliev3r_infer(
     pred_depth = pred_depth.unsqueeze(0).permute(0,1,3,4,2)
 
     # unprojection 
-    if unproj_with_gt:
-        pred_unproj = unproject_depth_map_to_point_map(
-            pred_depth.squeeze(0),
-            gt_extrinsics,
-            pred_K,
-        ) 
-    else:
-        pred_unproj = unproject_depth_map_to_point_map(
-            pred_depth.squeeze(0),
-            pred_w2c.squeeze(0),
-            pred_K,
-        )         
+    # if unproj_with_gt:
+    #     pred_unproj = unproject_depth_map_to_point_map(
+    #         pred_depth.squeeze(0),
+    #         gt_extrinsics,
+    #         pred_K,
+    #     ) 
+    # else:
+    #     pred_unproj = unproject_depth_map_to_point_map(
+    #         pred_depth.squeeze(0),
+    #         pred_w2c.squeeze(0),
+    #         pred_K,
+    #     )  
+        
+    pred_unproj = unproject_depth_map_to_point_map(
+        pred_depth.squeeze(0),
+        gt_extrinsics if unproj_with_gt_extrinsics else pred_w2c.squeeze(0),
+        gt_K if unproj_with_gt_intrinsics else pred_K,
+    )        
 
     # print(f"[Reliev3R] normalize_camera_extrinsics & unproj pointcloud")
     pred_w2c_aligned, _, pred_unproj_aligned, _ = normalize_camera_extrinsics_and_points_batch(
-        extrinsics=pred_w2c[:,:,:3].cpu(),
+        extrinsics=torch.from_numpy(gt_extrinsics).unsqueeze(0)[:,:,:3].to(dtype=torch.float32) if unproj_with_gt_extrinsics else pred_w2c[:,:,:3].cpu(),
         world_points=torch.from_numpy(pred_unproj).to(dtype=torch.float32),
         scale_by_points = False,
     )
@@ -266,7 +274,10 @@ def dump_one_seq(model,
                  pred_seq_dir: Path,
                  gt_seq_dir: Path,
                  device: torch.device, 
-                 autocast_dtype: torch.dtype):
+                 autocast_dtype: torch.dtype,
+                 unproj_with_gt_extrinsics: bool,
+                 unproj_with_gt_intrinsics: bool,
+                 ):
     
     def check_gt_data_dump(gt_seq_dir: Path, gt_files: list):
         flag = False # do not dump new GT data
@@ -331,6 +342,8 @@ def dump_one_seq(model,
                 autocast_dtype=autocast_dtype,
                 image_paths=batch.image_paths,
                 scene_name=batch.seq,
+                unproj_with_gt_extrinsics=unproj_with_gt_extrinsics,
+                unproj_with_gt_intrinsics=unproj_with_gt_intrinsics,
             )
             pred_c2w = closed_form_inverse_se3(pred_w2c.squeeze(0))
 
@@ -361,6 +374,7 @@ def main():
                help="Dataset root path. If not set, inferred from --dataset.")
     p.add_argument("--split", type=str, default="test", choices=["train", "test"])
     p.add_argument("--seq", type=str, default="")      # chess/seq-01
+    p.add_argument("--num_seq", type=int, default=0)   # 0 -> use all squences
 
     # view sample
     p.add_argument("--mode", type=str, default="stride", choices=["stride", "random"])
@@ -368,7 +382,10 @@ def main():
     p.add_argument("--max_seq_len", type=int, default=8)  # stride: 截断数量; random: 采样数量(0=全量)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--reuse_frame_ids", type=int, default=1)
-
+    
+    p.add_argument("--use_gt_pose", type=int, default=0) # project with GT extrinsics
+    p.add_argument("--use_gt_k", type=int, default=0) # project with GT intrinsics
+    
     # # model
     # p.add_argument("--model", type=str, default="vggt", choices=list(MODEL_DEFAULTS.keys()))
     # p.add_argument("--ckpt", type=str, default='/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch008-loss_valid0.2872-metric_valid0.2346.ckpt/epoch008-loss_valid0.2872-metric_valid0.2346.ckpt/pytorch_model.bin', help="(vggt/pi3/reliev3r) checkpoint path/dir. If not set, inferred from --model.")
@@ -419,10 +436,15 @@ def main():
     autocast_dtype = torch.float32 if args.dtype == "fp32" else torch.bfloat16
     # dump_gt = (args.dump_gt != 0)
 
+    # unprojection flags
+    unproj_with_gt_extrinsics = True if args.use_gt_pose != 0 else False
+    unproj_with_gt_intrinsics = True if args.use_gt_k != 0 else False
+
     # dataset
     ds = get_dataset(args.dataset, args.data_root)
     stride = args.stride or ds.default_stride(args.view)
     sequences = [args.seq] if args.seq else ds.list_sequences(args.split)
+    if args.num_seq > 0: sequences = sequences[:args.num_seq]
 
     # outdir
     setting_dir = Path(args.out_root) / args.dataset / (
@@ -451,6 +473,7 @@ def main():
         f"model={args.model} | num_seqs={len(sequences)} | "
         f"mode={args.mode} | stride={stride} | max_seq_len={args.max_seq_len} | seed={args.seed} | "
         f"reuse_frame_ids={args.reuse_frame_ids} | device={device}\n"
+        f"[INFO] use_gt_pose={args.use_gt_pose} use_gt_K={args.use_gt_k}\n"
         f"[INFO] data_root={args.data_root}\n"
         f"[INFO] out={setting_dir}"
     )
@@ -458,6 +481,8 @@ def main():
     pbar = tqdm(sequences, desc=args.dataset, unit="seq")
     for seq in pbar:
         name = args.model if not args.prefix else f"{args.model}_{args.prefix}"
+        if unproj_with_gt_extrinsics: name += "_gt_pose"
+        if unproj_with_gt_intrinsics: name += "_gt_K"
         pred_seq_dir = setting_dir / name / seq
         gt_seq_dir   = setting_dir / "gt" / seq
         pred_seq_dir.mkdir(parents=True, exist_ok=True)
@@ -485,6 +510,8 @@ def main():
             gt_seq_dir=gt_seq_dir,
             device=device,
             autocast_dtype=autocast_dtype,
+            unproj_with_gt_extrinsics=unproj_with_gt_extrinsics,
+            unproj_with_gt_intrinsics=unproj_with_gt_intrinsics,
         )
 
         pbar.set_postfix_str(f"{seq} K={len(frame_ids)}")

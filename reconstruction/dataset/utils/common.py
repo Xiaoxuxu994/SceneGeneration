@@ -24,9 +24,12 @@ def customized_collate_fn(batch_inputs):
     input_tracks1 = []
     input_visibs0 = []
     input_visibs1 = []
+    input_tracks_view_id0 = []
+    input_tracks_view_id1 = []
     input_extrs = []
     input_intrs = []
     input_points = []
+    dataset_names = []
     for batch_input in batch_inputs:
         if batch_input is None:
             return None
@@ -37,9 +40,12 @@ def customized_collate_fn(batch_inputs):
         input_tracks1.append(batch_input["input_tracks1"])
         input_visibs0.append(batch_input["input_visibs0"])
         input_visibs1.append(batch_input["input_visibs1"])
+        input_tracks_view_id0.append(batch_input["input_tracks_view_id0"])
+        input_tracks_view_id1.append(batch_input["input_tracks_view_id1"])
         input_extrs.append(batch_input["input_extrs"])
         input_intrs.append(batch_input["input_intrs"])
         input_points.append(batch_input["input_points"])
+        dataset_names.append(batch_input["dataset_name"])
     return dict(
         input_images=torch.stack(input_images), 
         input_depths=torch.stack(input_depths), 
@@ -48,9 +54,12 @@ def customized_collate_fn(batch_inputs):
         input_tracks1=torch.stack(input_tracks1), 
         input_visibs0=torch.stack(input_visibs0) if input_visibs0[0] is not None else None, 
         input_visibs1=torch.stack(input_visibs1) if input_visibs1[0] is not None else None, 
+        input_tracks_view_id0=torch.stack(input_tracks_view_id0), 
+        input_tracks_view_id1=torch.stack(input_tracks_view_id1), 
         input_viewmats=torch.stack(input_extrs), 
         input_Ks=torch.stack(input_intrs), 
         input_points=torch.stack(input_points) if input_points[0] is not None else None, 
+        dataset_names=dataset_names, 
     )
 
 
@@ -193,3 +202,54 @@ def rdepth_to_zdepth(r_depths: torch.Tensor, intrs: torch.Tensor):
     z_depth = cam_coord[..., -1:].permute(0, 3, 1, 2)
         
     return z_depth
+
+
+def zdepth_to_rdepth(z_depths: torch.Tensor, intrs: torch.Tensor):
+    """
+    Transform z depth into ray depth.
+    Args:
+        z_depths (torch.Tensor): Tensor of shape (N, 1, H, W).
+        intrs (torch.Tensor): Tensor of shape (N, 3, 3), normalized.
+    """
+    H, W = z_depths.shape[-2:]
+    image_grid = torch.cartesian_prod((torch.arange(H) + 0.5) / H, (torch.arange(W) + 0.5) / W).reshape(H, W, 2).flip(dims=[-1])
+    
+    pixel_vec = torch.cat([image_grid, torch.ones_like(image_grid[..., :1])], dim=-1)[None] # 1 H W 3
+    pixel_vec = (calc_intr_inv(intrs)[:, None, None] @ pixel_vec[..., None])[..., 0] # N H W 3
+    pixel_vec = pixel_vec * z_depths.permute(0, 2, 3, 1) # N H W 3
+    r_depths = pixel_vec.norm(dim=-1, keepdim=True).permute(0, 3, 1, 2) # N 1 H W
+        
+    return r_depths
+
+
+def aug_by_crop(images: torch.Tensor, intrs: torch.Tensor, min_crop_rate=0.0, max_crop_rate=0.2, depths=None, depth_masks=None):
+    """Augment images by cropping, along with modifying the ground-truth intrinsics.
+
+    Args:
+        images (torch.Tensor): Tensor of shape (V, C, H, W)
+        intrs (torch.Tensor): Tensor of shape (V, 3, 3)
+        min_crop_rate (float, optional): Minimal rate to crop images. Defaults to 0.0.
+        max_crop_rate (float, optional): Maximal rate to crop images. Defaults to 0.2.
+    """
+    assert min_crop_rate < max_crop_rate and min_crop_rate >= 0.0 and max_crop_rate < 1.0
+    h_crop_rate = np.random.rand() * (max_crop_rate - min_crop_rate) + min_crop_rate
+    w_crop_rate = np.random.rand() * (max_crop_rate - min_crop_rate) + min_crop_rate
+    h, w = images.shape[-2:]
+    new_h, new_w = int(h * (1 - h_crop_rate)), int(w * (1 - w_crop_rate))
+    left_up_row = (h - new_h) // 2
+    left_up_col = (w - new_w) // 2
+    right_down_row = h - (h - new_h) // 2
+    right_down_col = w - (w - new_w) // 2
+    
+    images = images[..., left_up_row: right_down_row, left_up_col: right_down_col]
+    new_h, new_w = images.shape[-2:]
+    intrs[..., 0, 0] *= w / new_w
+    intrs[..., 1, 1] *= h / new_h
+    if depths is not None:
+        depths = depths[..., left_up_row: right_down_row, left_up_col: right_down_col]
+    if depth_masks is not None:
+        depth_masks = depth_masks[..., left_up_row: right_down_row, left_up_col: right_down_col]
+    
+    return images, intrs, depths, depth_masks
+    
+    

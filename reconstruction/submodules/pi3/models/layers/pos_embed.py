@@ -139,7 +139,7 @@ except ImportError:
             sin = torch.nn.functional.embedding(pos1d, sin)[:, None, :, :]
             return (tokens * cos) + (self.rotate_half(tokens) * sin)
             
-        def forward(self, tokens, positions):
+        def forward(self, tokens, positions, xpos_max=None):
             """
             input:
                 * tokens: batch_size x nheads x ntokens x dim
@@ -150,7 +150,9 @@ except ImportError:
             assert tokens.size(3)%2==0, "number of dimensions should be a multiple of two"
             D = tokens.size(3) // 2
             assert positions.ndim==3 and positions.shape[-1] == 2 # Batch, Seq, 2
-            cos, sin = self.get_cos_sin(D, int(positions.max())+1, tokens.device, tokens.dtype)
+            if xpos_max is None:
+                xpos_max = int(positions.max())
+            cos, sin = self.get_cos_sin(D, xpos_max+1, tokens.device, tokens.dtype)
             # split features into two along the feature dimension, and apply rope1d on each half
             y, x = tokens.chunk(2, dim=-1)
             y = self.apply_rope1d(y, positions[:,:,0], cos, sin)

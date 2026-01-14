@@ -16,8 +16,8 @@ DATASETS=(
 
 # ----- model ------
 MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-CKPT="/efs-mi-east4-3/c50041401/exp/ssff3d/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/ckpt/25000.ckpt"
-CONFIG="/efs-mi-east4-3/c50041401/exp/ssff3d/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/config.json"
+CKPT="experiments/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/ckpt/25000.ckpt"
+CONFIG="experiments/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/config.json"
 
 # ---- params ------
 SPLIT="test"
@@ -28,10 +28,13 @@ STRIDE=1           # default stride
 MAX_SEQ_LEN=8       # default max seq len
 SEED=0              # used when MODE=random
 
+USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
+USE_GT_K=1 # 1 if using GT intrinsics; 0 predicted
+
 DEVICE="npu:7"
 DTYPE="fp32"
 
-OUT_ROOT="/home/chenzhenyu/03_project/SceneGeneration/benchmark/"  # "/mnt/nvme3/z00533370/3drecon/benchmark/"
+OUT_ROOT="outputs"  # "/mnt/nvme3/z00533370/3drecon/benchmark/"
 PREFIX="260108_v8b2c32s1_n-1_rdepth_Ipred_ckpt25k_v3" #"260105_v8b2c32s1_m400_n-1_ckpt15k"           # e.g., "0107_ckpt15000" ; empty -> no suffix
 
 # ---- eval common params ----
@@ -99,10 +102,10 @@ run_vis_if_needed () {
   local DIR="$1"
   local VIS_DIR="${DIR}_vis"
 
-  if [[ -d "${VIS_DIR}" ]] && [[ -n "$(ls -A "${VIS_DIR}" 2>/dev/null)" ]]; then
-    echo "[VIS] skip (exists & non-empty): ${VIS_DIR}"
-    return 0
-  fi
+  # if [[ -d "${VIS_DIR}" ]] && [[ -n "$(ls -A "${VIS_DIR}" 2>/dev/null)" ]]; then
+  #   echo "[VIS] skip (exists & non-empty): ${VIS_DIR}"
+  #   return 0
+  # fi
 
   echo "[VIS] run: dir=${DIR} (vmin=${DEPTH_VMIN}, vmax=${DEPTH_VMAX})"
   ${PYTHON} ${VIS_SCRIPT} \
@@ -171,6 +174,14 @@ for DATASET in "${DATASETS[@]}"; do
     PRED_SUBDIR="${MODEL}"
   fi
 
+  if [ "${USE_GT_POSE}" -eq 1 ]; then
+    PRED_SUBDIR="${PRED_SUBDIR}_gt_pose"
+  fi
+
+  if [ "${USE_GT_K}" -eq 1 ]; then
+    PRED_SUBDIR="${PRED_SUBDIR}_gt_K"
+  fi
+
   if [ "${MODE_CUR}" = "stride" ]; then
     ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_stride${STRIDE_CUR}_max${MSL}"
   else
@@ -196,7 +207,7 @@ for DATASET in "${DATASETS[@]}"; do
     [[ -n "${CONFIG}" ]] && EXTRA_ARGS+=(--config "${CONFIG}")
     [[ -n "${PREFIX}" ]] && EXTRA_ARGS+=(--prefix "${PREFIX}")
 
-    echo "[INFER] dataset=${DATASET} split=${SPLIT} mode=${MODE_CUR} stride=${STRIDE_CUR} max_seq_len=${MAX_SEQ_LEN_CUR}"
+    echo "[INFER] dataset=${DATASET} split=${SPLIT} mode=${MODE_CUR} stride=${STRIDE_CUR} max_seq_len=${MAX_SEQ_LEN_CUR} use_gt_k=${USE_GT_K}"
     ${PYTHON} ${SCRIPT} \
       --dataset "${DATASET}" \
       --split "${SPLIT}" \
@@ -207,6 +218,8 @@ for DATASET in "${DATASETS[@]}"; do
       --device "${DEVICE}" \
       --dtype "${DTYPE}" \
       --out_root "${OUT_ROOT}" \
+      --use_gt_pose "${USE_GT_POSE}" \
+      --use_gt_k "${USE_GT_K}" \
       "${EXTRA_ARGS[@]}"
   fi
   t1=$(date +%s)

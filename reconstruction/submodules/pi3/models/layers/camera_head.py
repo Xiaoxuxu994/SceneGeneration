@@ -46,6 +46,8 @@ class CameraHead(nn.Module):
             )
         self.fc_t = nn.Linear(output_dim, 3)
         self.fc_rot = nn.Linear(output_dim, 9)
+        self.fc_fov = nn.Linear(output_dim, 2)
+        self.zero_4x4 = torch.zeros((4, 4), device=DEVICE_NAME)
 
     def forward(self, feat, patch_h, patch_w, v=None):
         BN, hw, c = feat.shape
@@ -62,18 +64,19 @@ class CameraHead(nn.Module):
             out_t = self.fc_t(feat.float())  # [B,3]
             out_r = self.fc_rot(feat.float())  # [B,9]
             pose = self.convert_pose_to_4x4(BN, out_r, out_t, feat.device, v=v)
+            out_fov = torch.sigmoid(self.fc_fov(feat.float())) * torch.pi # [B, 2]
 
-        return pose
+        return pose, out_fov
 
     def convert_pose_to_4x4(self, B, out_r, out_t, device, v=None):
         out_r = self.svd_orthogonalize(out_r)  # [N,3,3]
-        pose = torch.zeros((B, 4, 4), device=device)
+        pose = torch.stack([self.zero_4x4 for _ in range(B)])
         if v is not None:
             pose  = rearrange(pose, "(b v) n m -> b v n m", v=v)          # b v 4 4
             out_r = rearrange(out_r, "(b v) n m -> b v n m", v=v)         # b v 3 3
             out_t = rearrange(out_t, "(b v) n -> b v n", v=v)             # b v 3
-            out_t_magnitude = out_t.norm(dim=-1).mean(dim=-1)[..., None, None] # b 1 1
-            out_t = out_t / (out_t_magnitude + 1e-8)
+        # out_t_magnitude = out_t.norm(dim=-1).mean(dim=-1)[..., None, None] # b 1 1
+        # out_t = out_t / (out_t_magnitude + 1e-8)
         pose[..., :3, :3] = out_r
         pose[..., :3, 3]  = out_t
         pose[..., 3, 3]   = 1.
@@ -92,7 +95,15 @@ class CameraHead(nn.Module):
             m = m.reshape((-1, 3, 3))
         m_transpose = torch.transpose(torch.nn.functional.normalize(m, p=2, dim=-1), dim0=-1, dim1=-2)
         u, s, v = torch.svd(m_transpose)
-        det = torch.det(torch.matmul(v, u.transpose(-2, -1)))
+        def det_3x3(mat):
+            return (mat[..., 0, 0] * mat[..., 1, 1] * mat[..., 2, 2] + 
+                    mat[..., 0, 1] * mat[..., 1, 2] * mat[..., 2, 0] + 
+                    mat[..., 0, 2] * mat[..., 1, 0] * mat[..., 2, 1] - 
+                    mat[..., 0, 2] * mat[..., 1, 1] * mat[..., 2, 0] - 
+                    mat[..., 0, 0] * mat[..., 1, 2] * mat[..., 2, 1] - 
+                    mat[..., 0, 1] * mat[..., 1, 0] * mat[..., 2, 2])
+        # det = torch.det(torch.matmul(v, u.transpose(-2, -1)))
+        det = det_3x3(torch.matmul(v, u.transpose(-2, -1)))
         # Check orientation reflection.
         r = torch.matmul(
             torch.cat([v[:, :, :-1], v[:, :, -1:] * det.view(-1, 1, 1)], dim=2),

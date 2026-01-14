@@ -21,8 +21,6 @@ class TartanAir_Dataset(Synthetic_Dataset):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.depth_upperbound = 1000
-        print("[ INFO ] {} samples found for TartanAir dataset as {}.".format(
-            len(self), "training set" if self.is_train else "validation set"))
     
     def create_sample_list(self):
         scene_list = sorted(glob(os.path.join(self.data_root, "*", "*", "*")))
@@ -43,7 +41,7 @@ class TartanAir_Dataset(Synthetic_Dataset):
                 extr_meta = np.loadtxt(cam_file)
                 intr = np.array([[0.5, 0, 0.5], [0, 0.66666666, 0.5], [0, 0, 1]]) # in opencv coord
                 
-                assert len(image_file_list) == len(depth_file_list) and len(image_file_list) == len(extr_meta)
+                # assert len(image_file_list) == len(depth_file_list) and len(image_file_list) == len(extr_meta)
                 
                 image_clip_list = []
                 depth_clip_list = []
@@ -71,14 +69,14 @@ class TartanAir_Dataset(Synthetic_Dataset):
                         image_clip_list = []
                         depth_clip_list = []
                         extr_clip_list = []
-                if len(image_clip_list) > 0:
-                    sample_list.append(dict(
-                        input_images=image_clip_list, 
-                        input_depths=depth_clip_list, 
-                        input_depth_masks=None, 
-                        input_extrs=np.stack(extr_clip_list), 
-                        input_intrs=np.stack([intr for _ in range(len(image_clip_list))]), 
-                    ))
+                # if len(image_clip_list) > 0:
+                #     sample_list.append(dict(
+                #         input_images=image_clip_list, 
+                #         input_depths=depth_clip_list, 
+                #         input_depth_masks=None, 
+                #         input_extrs=np.stack(extr_clip_list), 
+                #         input_intrs=np.stack([intr for _ in range(len(image_clip_list))]), 
+                #     ))
         
         return sample_list
 

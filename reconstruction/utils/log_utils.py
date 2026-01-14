@@ -137,7 +137,7 @@ def export_pcds_and_cam_as_ply(path_prefix: str, point_maps: torch.Tensor, image
         o3d.io.write_point_cloud(path_prefix + "_cam" + "_batch{}.ply".format(b), merged_cameras)
 
 
-def depth2pointmap(depths: torch.Tensor, extrs: torch.Tensor, intrs: torch.Tensor, device=DEVICE_NAME, is_intr_normalized=True):
+def depth2pointmap(depths: torch.Tensor, extrs: torch.Tensor, intrs: torch.Tensor, device=DEVICE_NAME, is_intr_normalized=True, depth_is_z=True):
     """Back-project depth maps into 3D point maps with given cameras. 
 
     Args:
@@ -145,6 +145,8 @@ def depth2pointmap(depths: torch.Tensor, extrs: torch.Tensor, intrs: torch.Tenso
         extrs (torch.Tensor): Extrinsics (world-to-camera), tensor of shape (B, 4, 4).
         intrs (torch.Tensor): Intrinsics (not normalized, assuming c corresponds to the image center), tensor of shape (B, 3, 3).
         device (str): The default device to perform operations on.
+        is_intr_normalized (bool): If the intrinsics are normalized or not. 
+        depth_is_z (bool): If the input depths maps are z-depth. True if they are z-depth while False if they are r-depth.
     
     Returns:
         torch.Tensor: The back-projected point maps, tensor of shape (B, H, W, 3).
@@ -157,16 +159,15 @@ def depth2pointmap(depths: torch.Tensor, extrs: torch.Tensor, intrs: torch.Tenso
         intrs = intrs / intr_normalizer
     
     grids = torch.cartesian_prod((torch.arange(W, device=device) + 0.5) / W, (torch.arange(H, device=device) + 0.5) / H)
-    grids = grids.reshape(1, W, H, 2).permute(0, 2, 1, 3).expand(B, -1, -1, -1) # B H W 2
-    orth_depths = torch.cat([grids, torch.ones_like(grids[..., :1])], dim=-1) * rearrange(depths, "n c h w -> n h w c") # b h w 3
-
-    # intrs_inv = torch.linalg.inv(intrs) # b, 3, 3
+    grids = grids.reshape(1, W, H, 2).permute(0, 2, 1, 3).expand(B, -1, -1, -1) # b h w 2
+    pixel_vecs = torch.cat([grids, torch.ones_like(grids[..., :1])], dim=-1) # b h w 3
     intrs_inv = calc_intr_inv(intrs)
-    points_local = torch.matmul(intrs_inv[..., None, None, :, :], orth_depths[..., None]) # b h w 3 1
+    pixel_vecs = torch.matmul(intrs_inv[..., None, None, :, :], pixel_vecs[..., None]) # b h w 3 1
+    if not depth_is_z:
+        pixel_vecs = pixel_vecs / (pixel_vecs.norm(dim=-2, keepdim=True) + 1e-8)
+    points_local = pixel_vecs * rearrange(depths, "n c h w -> n h w c")[..., None] # b h w 3 1
     
-    # extrs_inv = torch.linalg.inv(extrs) # b, 4, 4
     extrs_inv = calc_extr_inv(extrs)
-    
     orth_points_local = torch.cat([points_local, torch.ones_like(points_local[..., :1, :])], dim=-2) # b h w 4 1
     points_world = torch.matmul(extrs_inv[..., None, None, :, :], orth_points_local) # b h w 4 1
     points_world = points_world[..., :3, 0] / points_world[..., 3:, 0] # b h w 3

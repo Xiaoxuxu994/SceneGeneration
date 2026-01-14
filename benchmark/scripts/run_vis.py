@@ -59,8 +59,9 @@ def export_pointcloud(
     mask: (S,H,W) optional
     colors: (S,H,W,3) uint8/float optional (0~255 or 0~1)
     """
-    if point_maps.ndim != 4 or point_maps.shape[-1] != 3:
-        raise ValueError("point_maps must be (S,H,W,3), got {}".format(point_maps.shape))
+    
+    # if point_maps.ndim != 4 or point_maps.shape[-1] != 3:
+    #     raise ValueError("point_maps must be (S,H,W,3), got {}".format(point_maps.shape))
 
     pts = point_maps.reshape(-1, 3)
 
@@ -177,6 +178,7 @@ def main() -> None:
                 ptsf = seq_dir / "gt_point_maps.npy"
                 depf = seq_dir / "gt_depth_maps.npy"
                 maskf = seq_dir / "gt_depth_masks.npy"
+                aligned_ptsf = seq_dir / "gt_point_maps_aligned.npy"
 
                 if not (extr.exists() and ptsf.exists() and depf.exists()):
                     skip += 1
@@ -221,6 +223,7 @@ def main() -> None:
             else:
                 extr = seq_dir / "pred_extrinsics.npy"
                 depf = seq_dir / "pred_depth_maps.npy"
+                aligned_ptsf = seq_dir / "pred_point_maps_aligned.npy"
                 if not (extr.exists() and depf.exists()):
                     skip += 1
                     continue
@@ -264,6 +267,13 @@ def main() -> None:
             export_pointcloud(pts, out_dir / "vis_pointcloud.ply", mask=mask, colors=gt_images)
             export_cameras(c2w, out_dir / "vis_cameras.ply")            
             export_depth(dep, out_dir / "vis_depth", vmin=args.depth_vmin, vmax=args.depth_vmax)
+
+            try:
+                aligned_pts = np.load(aligned_ptsf)
+                export_pointcloud(aligned_pts, out_dir / "vis_pointcloud_aligned.ply")
+            except Exception as e:
+                # print(e)
+                pass
 
             ok += 1
             print("[OK] {}".format(rel))

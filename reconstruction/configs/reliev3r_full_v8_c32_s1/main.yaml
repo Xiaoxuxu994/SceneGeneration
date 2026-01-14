@@ -20,8 +20,8 @@ datasets:
   vkitti:     !include datasets/vkitti.yaml
   # co3dv2:     !include datasets/co3dv2.yaml
   dl3dv:      !include datasets/dl3dv.yaml
-  # re10k:      !include datasets/re10k.yaml
-  mapillary:  !include datasets/mapillary.yaml
+  re10k:      !include datasets/re10k.yaml
+  # mapillary:  !include datasets/mapillary.yaml
   scannet:    !include datasets/scannet.yaml
   scannetpp:  !include datasets/scannetpp.yaml
 

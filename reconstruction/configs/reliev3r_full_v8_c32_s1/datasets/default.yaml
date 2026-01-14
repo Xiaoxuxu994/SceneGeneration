@@ -14,3 +14,5 @@ sample_min: 8
 sample_max: 8
 
 depth_is_z: True
+
+pred_z_depth: false
