@@ -356,15 +356,15 @@ def main():
     p = argparse.ArgumentParser()
 
     # dataset
-    p.add_argument("--dataset", type=str, default="7scenes", choices=list(DATA_ROOT_DEFAULTS.keys()))
+    p.add_argument("--dataset", type=str, default="dl3dv", choices=list(DATA_ROOT_DEFAULTS.keys()))
     p.add_argument("--data_root", type=str, default=None,
                help="Dataset root path. If not set, inferred from --dataset.")
     p.add_argument("--split", type=str, default="test", choices=["train", "test"])
-    p.add_argument("--seq", type=str, default="")      # chess/seq-01
+    p.add_argument("--seq", type=str, default="77cb930b374c3da40729cc553878255de9d0d92bae95b4475d1678a17186a3c5_00005")      # chess/seq-01
 
     # view sample
     p.add_argument("--mode", type=str, default="stride", choices=["stride", "random"])
-    p.add_argument("--stride", type=int, default=40)
+    p.add_argument("--stride", type=int, default=10)
     p.add_argument("--max_seq_len", type=int, default=8)  # stride: 截断数量; random: 采样数量(0=全量)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--reuse_frame_ids", type=int, default=1)

@@ -19,7 +19,7 @@ MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260104/exp/Reliev3r_260105_v8b2c32s1_m400_n-1/ckpt/30000.ckpt"
 # CONFIG="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260104/exp/Reliev3r_260105_v8b2c32s1_m400_n-1/config.json"
 
-CKPT="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260108/exp/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/ckpt/5000.ckpt"
+CKPT="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260108/exp/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/ckpt/30000.ckpt"
 CONFIG="/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260104/exp/Reliev3r_260105_v8b2c32s1_m400_n-1/config.json"
 
 # ---- params ------
@@ -35,7 +35,7 @@ DEVICE="npu:2"
 DTYPE="fp32"
 
 OUT_ROOT="/mnt/nvme3/z00533370/3drecon/benchmark/"
-PREFIX="260108_v8b2c32s1_n-1_rdepth_Ipred_ckpt5k_v3"           # e.g., "0107_ckpt15000" ; empty -> no suffix
+PREFIX="260108_v8b2c32s1_n-1_rdepth_Ipred_ckpt30k_v3"           # e.g., "0107_ckpt15000" ; empty -> no suffix
 
 # ---- eval common params ----
 POSE_THRESHOLD=30

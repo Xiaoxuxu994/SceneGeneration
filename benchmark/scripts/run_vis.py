@@ -227,8 +227,8 @@ def main() -> None:
 
                 c2w = np.load(extr)
                 dep = np.load(depf).astype(np.float32)
-                # pts = load_any(seq_dir, ["pred_point_maps_by_unprojection.npy", "pred_point_maps.npy"])
-                pts = load_any(seq_dir, ["pred_point_maps.npy"])
+                pts = load_any(seq_dir, ["pred_point_maps_by_unprojection.npy", "pred_point_maps.npy"])
+                # pts = load_any(seq_dir, ["pred_point_maps.npy"])
                 if pts is None:
                     skip += 1
                     continue
