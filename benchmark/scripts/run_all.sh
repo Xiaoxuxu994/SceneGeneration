@@ -102,10 +102,10 @@ run_vis_if_needed () {
   local DIR="$1"
   local VIS_DIR="${DIR}_vis"
 
-  if [[ -d "${VIS_DIR}" ]] && [[ -n "$(ls -A "${VIS_DIR}" 2>/dev/null)" ]]; then
-    echo "[VIS] skip (exists & non-empty): ${VIS_DIR}"
-    return 0
-  fi
+  # if [[ -d "${VIS_DIR}" ]] && [[ -n "$(ls -A "${VIS_DIR}" 2>/dev/null)" ]]; then
+  #   echo "[VIS] skip (exists & non-empty): ${VIS_DIR}"
+  #   return 0
+  # fi
 
   echo "[VIS] run: dir=${DIR} (vmin=${DEPTH_VMIN}, vmax=${DEPTH_VMAX})"
   ${PYTHON} ${VIS_SCRIPT} \

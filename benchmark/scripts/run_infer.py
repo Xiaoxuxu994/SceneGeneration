@@ -262,7 +262,7 @@ def run_reliev3r_infer(
 
     # print(f"[Reliev3R] normalize_camera_extrinsics & unproj pointcloud")
     pred_w2c_aligned, _, pred_unproj_aligned, _ = normalize_camera_extrinsics_and_points_batch(
-        extrinsics=pred_w2c[:,:,:3].cpu(),
+        extrinsics=torch.from_numpy(gt_extrinsics).unsqueeze(0)[:,:,:3].to(dtype=torch.float32) if unproj_with_gt_extrinsics else pred_w2c[:,:,:3].cpu(),
         world_points=torch.from_numpy(pred_unproj).to(dtype=torch.float32),
         scale_by_points = False,
     )
@@ -374,6 +374,7 @@ def main():
                help="Dataset root path. If not set, inferred from --dataset.")
     p.add_argument("--split", type=str, default="test", choices=["train", "test"])
     p.add_argument("--seq", type=str, default="")      # chess/seq-01
+    p.add_argument("--num_seq", type=int, default=0)   # 0 -> use all squences
 
     # view sample
     p.add_argument("--mode", type=str, default="stride", choices=["stride", "random"])
@@ -443,6 +444,7 @@ def main():
     ds = get_dataset(args.dataset, args.data_root)
     stride = args.stride or ds.default_stride(args.view)
     sequences = [args.seq] if args.seq else ds.list_sequences(args.split)
+    if args.num_seq > 0: sequences = sequences[:args.num_seq]
 
     # outdir
     setting_dir = Path(args.out_root) / args.dataset / (

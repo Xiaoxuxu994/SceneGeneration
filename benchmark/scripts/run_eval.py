@@ -485,14 +485,17 @@ def main():
                 
                 # save aligned point maps
                 if args.save_pointmap != 0:
-                    export_root_gt = Path(str(gt_root)+"_vis") / rel
-                    export_root_gt.mkdir(exist_ok=True, parents=True)
+                    # export_root_gt = Path(str(gt_root)+"_vis") / rel
+                    # export_root_gt.mkdir(exist_ok=True, parents=True)
                     
-                    export_root_pred = Path(str(pred_root)+"_vis") / rel
-                    export_root_pred.mkdir(exist_ok=True, parents=True)
+                    # export_root_pred = Path(str(pred_root)+"_vis") / rel
+                    # export_root_pred.mkdir(exist_ok=True, parents=True)
                     
-                    o3d.io.write_point_cloud(str(export_root_gt / "vis_pointcloud_aligned.ply"), results["point_maps"]["gt"])
-                    o3d.io.write_point_cloud(str(export_root_pred / "vis_pointcloud_aligned.ply"), results["point_maps"]["pred"])
+                    # o3d.io.write_point_cloud(str(export_root_gt / "vis_pointcloud_aligned.ply"), results["point_maps"]["gt"])
+                    # o3d.io.write_point_cloud(str(export_root_pred / "vis_pointcloud_aligned.ply"), results["point_maps"]["pred"])
+                    
+                    np.save(gt_seq / "gt_point_maps_aligned.npy", results["point_maps"]["gt"])
+                    np.save(pred_seq / "pred_point_maps_aligned.npy", results["point_maps"]["pred"])
             else:
                 row["status"] = "missing_pointmap_or_mask"
 
