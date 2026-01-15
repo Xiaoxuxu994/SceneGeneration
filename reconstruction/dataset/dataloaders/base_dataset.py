@@ -114,25 +114,32 @@ class Base_Dataset(Dataset):
     def __getitem__(self, _):
         batch = []
         max_retries = 2
-        crop_ratio = (np.random.rand() * (0.15 - 0) + 0, np.random.rand() * (0.15 - 0) + 0) # Augmentation by cropping.
+        crop_ratio = (np.random.rand() * (0.075 - 0) + 0, np.random.rand() * (0.075 - 0) + 0) # Augmentation by cropping.
         # crop_ratio = None
-        for _ in range(self.batch_size):
-            tries = 0
+        # for _ in range(self.batch_size):
+        #     tries = 0
+        #     sample_idx = np.random.randint(low=0, high=len(self))
+        #     data = self._getitem_fn(sample_idx, crop_ratio=crop_ratio)
+        #     """
+        #     data can be None for illegal sampling, specifically:
+        #     1. Missing files.
+        #     2. Inconsistent modality file list length.
+        #     3. Clip view number < sample number, which should have been addressed.
+        #     4. Unconnected views after max retries.
+        #     5. Unexpected errors.
+        #     """
+        #     while data is None and tries < max_retries: # or (batch_shape is not None and data["input_images"].shape != batch_shape):
+        #         sample_idx = np.random.randint(low=0, high=len(self))
+        #         data = self._getitem_fn(sample_idx, crop_ratio=crop_ratio)
+        #         tries += 1
+        #     batch.append(data)
+        tries = 0
+        while tries < max_retries:
             sample_idx = np.random.randint(low=0, high=len(self))
-            data = self._getitem_fn(sample_idx, crop_ratio=crop_ratio)
-            """
-            data can be None for illegal sampling, specifically:
-            1. Missing files.
-            2. Inconsistent modality file list length.
-            3. Clip view number < sample number, which should have been addressed.
-            4. Unconnected views after max retries.
-            5. Unexpected errors.
-            """
-            while data is None and tries < max_retries: # or (batch_shape is not None and data["input_images"].shape != batch_shape):
-                sample_idx = np.random.randint(low=0, high=len(self))
-                data = self._getitem_fn(sample_idx, crop_ratio=crop_ratio)
-                tries += 1
-            batch.append(data)
+            batch = self._getitem_fn(sample_idx, crop_ratio=crop_ratio, batch_size=self.batch_size)
+            if batch is not None:
+                break
+            tries += 1
         try:
             """
             try can fail when the batch is illegal, specifically:
@@ -163,13 +170,13 @@ class Base_Dataset(Dataset):
         nonzero_count = len(mst_g_mat.flatten().nonzero()[0])
         if nonzero_count == view_num - 1:
             match_view_i, match_view_j = [], []
-            for nonzero_idx in mst_g_mat.flatten().nonzero()[0]:
-                match_view_i.append(nonzero_idx // view_num)
-                match_view_j.append(nonzero_idx % view_num)
-            # for i in range(view_num):
-            #     for j in range(i + 1, view_num):
-            #         match_view_i.append(i)
-            #         match_view_j.append(j)
+            # for nonzero_idx in mst_g_mat.flatten().nonzero()[0]:
+            #     match_view_i.append(nonzero_idx // view_num)
+            #     match_view_j.append(nonzero_idx % view_num)
+            for i in range(view_num):
+                for j in range(i + 1, view_num):
+                    match_view_i.append(i)
+                    match_view_j.append(j)
             match_view_i = np.array(match_view_i)
             match_view_j = np.array(match_view_j)
             return match_view_i, match_view_j
@@ -216,7 +223,7 @@ class Realistic_Dataset(Base_Dataset):
     def __len__(self):
         return len(self.sample_list)
 
-    def _getitem_fn(self, sample_idx, crop_ratio=None):
+    def _getitem_fn(self, sample_idx, crop_ratio=None, batch_size=1):
         try:
             timer = cm.MyTimer()
             timer.record_start("0_Total")
@@ -250,6 +257,11 @@ class Realistic_Dataset(Base_Dataset):
             
             extrs_raw, intrs_raw = io.read_realistic_camera_npy(camera_file)
             tracking_info_raw = io.read_cotracker_info_as_tensor(tracking_file)
+            if self.__class__.__name__ == "WildRGBD_Dataset":
+                intrs_raw[..., 0, 2] = 0.5
+                intrs_raw[..., 1, 2] = 0.5
+                intrs_raw[..., 2, 0] = 0.0
+                intrs_raw[..., 2, 1] = 0.0                
             
             ## Filter out scenes with numerical illegal cameras.
             try:
@@ -297,7 +309,8 @@ class Realistic_Dataset(Base_Dataset):
             
             ## Try at most MAX_SAMPLE_RETRY times to get a legal sample.
             current_try = 0
-            while current_try < MAX_SAMPLE_RETRY:
+            batch_data = []
+            while current_try < MAX_SAMPLE_RETRY and len(batch_data) < batch_size:
                 current_try += 1
                 samp_view_ids = self.view_sampler(clip_view_num)
                 
@@ -361,9 +374,12 @@ class Realistic_Dataset(Base_Dataset):
                                  ))
                 if not self.pred_z_depth:
                     data.update(dict(input_depths=cm.zdepth_to_rdepth(data["input_depths"], data["input_intrs"])))
+                batch_data.append(data)
+            
+            if len(batch_data) == batch_size:
                 timer.record_end("0_Total")
                 timer.report()
-                return data
+                return batch_data
             
             print("[ WARNING ] Max retries exceed!")
             return None
@@ -413,7 +429,10 @@ class Synthetic_Dataset(Base_Dataset):
     def __len__(self):
         return len(self.sample_list)
     
-    def _getitem_fn(self, sample_idx, crop_ratio=None):
+    def _getitem_fn(self, sample_idx, crop_ratio=None, batch_size=1):
+        """
+        Returns a batch-list of data.
+        """
         try:
             timer = cm.MyTimer()
             timer.record_start("0_Total")
@@ -470,7 +489,8 @@ class Synthetic_Dataset(Base_Dataset):
             
             ## Try at most MAX_SAMPLE_RETRY times to get a legal sample.
             current_try = 0
-            while current_try < MAX_SAMPLE_RETRY:
+            batch_data = []
+            while current_try < MAX_SAMPLE_RETRY and len(batch_data) < batch_size:
                 current_try += 1
                 
                 samp_view_ids = self.view_sampler(clip_view_num=V)
@@ -500,11 +520,10 @@ class Synthetic_Dataset(Base_Dataset):
                 # matched_pairs = self.is_visib_valid(visibs.sum(dim=-1) / (images.shape[-2] * images.shape[-1]), 
                 #                                     view_num=len(samp_view_ids), min_thres=0.00625/(10000/10000))
                 matched_pairs = self.is_visib_valid(visibs.sum(dim=-1) / (grid_size * grid_size), 
-                                                    view_num=len(samp_view_ids), min_thres=16 / (grid_size * grid_size))
+                                                    view_num=len(samp_view_ids), min_thres=64 / (grid_size * grid_size))
                 timer.record_end("3_MatchCalc")
                 if matched_pairs is None:
                     continue
-                timer.record_start("3_MatchCalc")
                 # tracks0, tracks1, visibs = cm.exhaustive_geo2match(
                 #     depths, calc_extr_inv(extrs), intrs, eps=self.match_eps, samples_to_keep=400, grid_size=grid_size)
                 matched_view_i, matched_view_j = matched_pairs
@@ -522,10 +541,12 @@ class Synthetic_Dataset(Base_Dataset):
                                  ))
                 if not self.pred_z_depth:
                     data.update(dict(input_depths=cm.zdepth_to_rdepth(depths, intrs)))
-                timer.record_end("3_MatchCalc")
+                batch_data.append(data)
+            
+            if len(batch_data) == batch_size:
                 timer.record_end("0_Total")
                 timer.report()
-                return data
+                return batch_data
             
             print("[ WARNING ] Max retries exceed!")
             print("[ WARNING ] Error data from max retries from {}".format(self.__class__.__name__))

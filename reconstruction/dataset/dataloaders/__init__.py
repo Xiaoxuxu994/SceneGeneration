@@ -30,6 +30,7 @@ from .mapillary_dataset import Mapillary_Dataset
 from .re10k_dataset import Re10K_Dataset
 from .scannet_dataset import ScanNet_Dataset
 from .scannetpp_dataset import ScanNetpp_Dataset
+from .wildrgbd_dataset import WildRGBD_Dataset
 
 from ..utils.common import customized_collate_fn_placeholder, worker_init_fn
 
@@ -47,6 +48,7 @@ DATASET_DICT = {
     "re10k":      Re10K_Dataset,      # indoor/outdoor
     "scannet":    ScanNet_Dataset,    # indoor
     "scannetpp":  ScanNetpp_Dataset,  # outdoor
+    "wildrgbd":   WildRGBD_Dataset,   # object
 }
 
 DATASET_SAMPLES_PER_EPOCH = {
@@ -63,6 +65,7 @@ DATASET_SAMPLES_PER_EPOCH = {
     "re10k":      1000000, 
     "scannet":    300000, 
     "scannetpp":  300000, 
+    "wildrgbd":   1000000, 
 }
 
 
@@ -85,7 +88,7 @@ def create_mixed_dataloader(cfg: DottedDict, data_type="train", batch_size=1, ra
                                                                         drop_last=True) \
                                     if data_type == "train" else None, 
                             num_workers=num_workers, 
-                            persistent_workers=True,
+                            persistent_workers=True, 
                             multiprocessing_context="spawn", 
                             worker_init_fn=partial(worker_init_fn, device_id=device_id), 
                             )
