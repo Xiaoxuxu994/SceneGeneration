@@ -55,8 +55,8 @@ class ASE_Dataset(Synthetic_Dataset):
                 ]) for i in range(len(extr_csv_meta))
             ]
             
-            if not (len(image_file_list) == len(depth_file_list) and 
-                    len(image_file_list) == len(extr_list)):
+            if not (len(image_file_list) <= len(extr_list) and 
+                    len(depth_file_list) == len(extr_list)):
                 continue
             
             image_ids = [os.path.basename(image_name).split('.')[0][-7:] for image_name in image_file_list]

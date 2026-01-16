@@ -30,6 +30,7 @@ from .mapillary_dataset import Mapillary_Dataset
 from .re10k_dataset import Re10K_Dataset
 from .scannet_dataset import ScanNet_Dataset
 from .scannetpp_dataset import ScanNetpp_Dataset
+from .wildrgbd_dataset import WildRGBD_Dataset
 
 from ..utils.common import customized_collate_fn_placeholder, worker_init_fn
 
@@ -47,26 +48,28 @@ DATASET_DICT = {
     "re10k":      Re10K_Dataset,      # indoor/outdoor
     "scannet":    ScanNet_Dataset,    # indoor
     "scannetpp":  ScanNetpp_Dataset,  # outdoor
+    "wildrgbd":   WildRGBD_Dataset,   # object
 }
 
 DATASET_SAMPLES_PER_EPOCH = {
-    "ase":        100000, 
-    "blendedmvs": 30000, 
-    "hypersim":   30000, 
-    "mvssynth":   30000, 
-    "replica":    30000, 
+    "ase":        1000000, 
+    "blendedmvs": 100000, 
+    "hypersim":   10000, 
+    "mvssynth":   10000, 
+    "replica":    10000, 
     "tartanair":  100000, 
     "vkitti":     10000, 
-    "co3dv2":     50000, 
-    "dl3dv":      100000, 
-    "mapillary":  100000, 
-    "re10k":      100000, 
-    "scannet":    100000, 
-    "scannetpp":  100000, 
+    "co3dv2":     1000000, 
+    "dl3dv":      1000000, 
+    "mapillary":  10000, 
+    "re10k":      1000000, 
+    "scannet":    300000, 
+    "scannetpp":  300000, 
+    "wildrgbd":   1000000, 
 }
 
 
-def create_mixed_dataloader(cfg: DottedDict, data_type="train", batch_size=1, rank=None):
+def create_mixed_dataloader(cfg: DottedDict, data_type="train", batch_size=1, rank=None, num_workers=8):
     assert rank is not None
     datasets = []
     dataset_batch_samples = []
@@ -84,8 +87,8 @@ def create_mixed_dataloader(cfg: DottedDict, data_type="train", batch_size=1, ra
                                                                         shuffle=True, 
                                                                         drop_last=True) \
                                     if data_type == "train" else None, 
-                            num_workers=8, 
-                            persistent_workers=True,
+                            num_workers=num_workers, 
+                            persistent_workers=True, 
                             multiprocessing_context="spawn", 
                             worker_init_fn=partial(worker_init_fn, device_id=device_id), 
                             )

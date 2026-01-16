@@ -160,7 +160,7 @@ class Reliev3R(nn.Module):
                     return checkpoint(
                         module._orig_forward,
                         *args,
-                        use_reentrant=False,
+                        use_reentrant=True,
                         **kwargs
                     )
                 return module._orig_forward(*args, **kwargs)

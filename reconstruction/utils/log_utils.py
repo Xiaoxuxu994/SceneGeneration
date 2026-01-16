@@ -206,6 +206,7 @@ def pointmap2pixel(points: torch.Tensor, extrs: torch.Tensor, intrs: torch.Tenso
     points_pixel      = points_pixel_orth[..., :2] / points_pixel_orth[..., 2:]
     return points_pixel
 
+
 class Depth2PointMap(torch.autograd.Function):
     
     @staticmethod

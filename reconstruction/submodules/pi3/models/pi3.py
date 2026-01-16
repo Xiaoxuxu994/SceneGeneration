@@ -12,6 +12,7 @@ from .layers.transformer_head import TransformerDecoder, LinearPts3d
 from .layers.camera_head import CameraHead
 from .dinov2.hub.backbones import dinov2_vitl14, dinov2_vitl14_reg, dinov2_vits14_reg, dinov2_vitb14_reg
 from huggingface_hub import PyTorchModelHubMixin
+from torch.utils.checkpoint import checkpoint
 
 from utils.platform import DEVICE_NAME
 
@@ -111,6 +112,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 dec_num_heads=16,
                 out_dim=1024,
                 rope=self.rope,
+                use_checkpoint=True
             )
             self.point_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=3, activation="linear")
 
@@ -124,6 +126,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 dec_num_heads=16,
                 out_dim=1024,
                 rope=self.rope,
+                use_checkpoint=True
             )
             self.depth_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1, activation="exp")
 
@@ -148,7 +151,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             dec_num_heads=16,                # 8
             out_dim=512,
             rope=self.rope,
-            use_checkpoint=False
+            use_checkpoint=True
         )
         self.camera_head = CameraHead(dim=512)
 
@@ -194,7 +197,10 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 pos = pos.reshape(B, N*hw, -1)
                 hidden = hidden.reshape(B, N*hw, -1)
 
-            hidden = blk(hidden, xpos=pos, xpos_max=xpos_max)
+            if self.training:
+                hidden = checkpoint(blk, hidden, pos, xpos_max, use_reentrant=True)
+            else:
+                hidden = blk(hidden, xpos=pos, xpos_max=xpos_max)
 
             if i+1 in [len(self.decoder)-1, len(self.decoder)]:
                 final_output.append(hidden.reshape(B*N, hw, -1))
