@@ -471,7 +471,7 @@ def main():
         "[INFO] "
         f"dataset={args.dataset} | split={args.split} | "
         f"model={args.model} | num_seqs={len(sequences)} | "
-        f"mode={args.mode} | stride={stride} | max_seq_len={args.max_seq_len} | seed={args.seed} | "
+        f"mode={args.mode} | stride={stride} | max_seq_len={args.max_seq_len} | num_seq={args.num_seq} | seed={args.seed} | "
         f"reuse_frame_ids={args.reuse_frame_ids} | device={device}\n"
         f"[INFO] use_gt_pose={args.use_gt_pose} use_gt_K={args.use_gt_k}\n"
         f"[INFO] data_root={args.data_root}\n"
