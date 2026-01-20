@@ -209,6 +209,7 @@ def depth_evaluation(
     device="cpu",
     align_with_scale=False,
     disp_input=False,
+    return_full=False
 ):
     """
     Evaluate the depth map using various metrics and return a depth error parity map, with an option for least squares alignment.
@@ -221,7 +222,7 @@ def depth_evaluation(
 
     Returns:
         dict: A dictionary containing the evaluation metrics.
-        torch.Tensor: The depth error parity map.
+        # torch.Tensor: The depth error parity map.
     """
     if isinstance(predicted_depth_original, np.ndarray):
         predicted_depth_original = torch.from_numpy(predicted_depth_original)
@@ -410,6 +411,40 @@ def depth_evaluation(
     threshold_2 = torch.mean((max_ratio < 1.25**2).float()).item()
     threshold_3 = torch.mean((max_ratio < 1.25**3).float()).item()
 
+    # num_valid_pixels = (
+    #     torch.sum(mask).item()
+    #     if custom_mask is None
+    #     else torch.sum(mask_within_mask).item()
+    # )
+    num_valid_pixels = torch.sum(mask).item()
+
+    if num_valid_pixels == 0:
+        (
+            abs_rel,
+            sq_rel,
+            rmse,
+            log_rmse,
+            threshold_0,
+            threshold_1,
+            threshold_2,
+            threshold_3,
+        ) = (0, 0, 0, 0, 0, 0, 0, 0)
+
+    results = {
+        "Abs Rel": abs_rel,
+        "Sq Rel": sq_rel,
+        "RMSE": rmse,
+        "Log RMSE": log_rmse,
+        "δ < 1.": threshold_0,
+        "δ < 1.25": threshold_1,
+        "δ < 1.25^2": threshold_2,
+        "δ < 1.25^3": threshold_3,
+        "valid_pixels": num_valid_pixels,
+    }
+
+    if not return_full:
+        return results
+    
     # Compute the depth error parity map
     if metric_scale:
         predicted_depth_original = predicted_depth_original
@@ -455,37 +490,6 @@ def depth_evaluation(
     gt_depth_map_full = torch.where(
         mask, ground_truth_depth_original, gt_depth_map_full
     )
-
-    # num_valid_pixels = (
-    #     torch.sum(mask).item()
-    #     if custom_mask is None
-    #     else torch.sum(mask_within_mask).item()
-    # )
-    num_valid_pixels = torch.sum(mask).item()
-
-    if num_valid_pixels == 0:
-        (
-            abs_rel,
-            sq_rel,
-            rmse,
-            log_rmse,
-            threshold_0,
-            threshold_1,
-            threshold_2,
-            threshold_3,
-        ) = (0, 0, 0, 0, 0, 0, 0, 0)
-
-    results = {
-        "Abs Rel": abs_rel,
-        "Sq Rel": sq_rel,
-        "RMSE": rmse,
-        "Log RMSE": log_rmse,
-        "δ < 1.": threshold_0,
-        "δ < 1.25": threshold_1,
-        "δ < 1.25^2": threshold_2,
-        "δ < 1.25^3": threshold_3,
-        "valid_pixels": num_valid_pixels,
-    }
 
     return (
         results,

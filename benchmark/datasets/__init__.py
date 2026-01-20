@@ -4,6 +4,8 @@ from .dtu import DTUDataset
 from .nrgbd import NRGBDDataset
 from .scannet import ScanNetDataset
 from .dl3dv import DL3DVDataset
+from .ase import ASEDataset
+from .dl3dv_new import NewDL3DVDataset
 
 DATASET_REGISTRY = {
     "7scenes": SevenScenesDataset,
@@ -11,6 +13,8 @@ DATASET_REGISTRY = {
     "nrgbd": NRGBDDataset,
     "scannet": ScanNetDataset,
     "dl3dv": DL3DVDataset, # no depth gt
+    "dl3dv_new": NewDL3DVDataset, # no depth gt
+    "ase": ASEDataset, # currently only support sampled sequences as a .npz file
 }
 
 def get_dataset(name: str, root: str):

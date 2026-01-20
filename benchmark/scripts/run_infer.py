@@ -49,6 +49,8 @@ DATA_ROOT_DEFAULTS = {
     "nrgbd":   BENCH_ROOT / "data" / "NRGBD" / "data",
     "scannet": BENCH_ROOT / "data" / "scannet" / "posed_images",
     "dl3dv":   "/mnt/nvme1/share/chenyouyu/dataset/DL3DV/data/1K/",
+    "dl3dv_new":   "/efs-m3ga/z00818731/dl3dv-new/reliev3r_sample_list_c32.npz",
+    "ase": BENCH_ROOT / "data" / "ASE" /"reliev3r_sample_list_c32_s1.npz"
 }
 MODEL_DEFAULTS = {
     "vggt": {

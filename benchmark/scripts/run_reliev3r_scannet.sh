@@ -16,8 +16,10 @@ DATASETS=(
 
 # ----- model ------
 MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-CKPT="experiments/Reliev3R_bs2v8_260108_n-1_rdepth_Ipred_15kC/ckpt/25000.ckpt"
-CONFIG="experiments/Reliev3R_bs2v8_260108_n-1_rdepth_Ipred_15kC/config.json"
+CKPT="experiments/Reliev3R_bs2v8_260116_warmup/ckpt/5000.ckpt"
+CONFIG="experiments/Reliev3R_bs2v8_260116_warmup/config.json"
+# CKPT="experiments/Reliev3R_bs2v8_260119_sub260116_5k_dw4m/ckpt/10000.ckpt"
+# CONFIG="experiments/Reliev3R_bs2v8_260119_sub260116_5k_dw4m/config.json"
 
 # ---- params ------
 SPLIT="test"
@@ -29,14 +31,15 @@ MAX_SEQ_LEN=8       # default max seq len
 SEED=0              # used when MODE=random
 NUM_SEQ=10
 
-USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
+USE_GT_POSE=1 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 
 DEVICE="npu:7"
 DTYPE="fp32"
 
 OUT_ROOT="outputs"  # "/mnt/nvme3/z00533370/3drecon/benchmark/"
-PREFIX="Reliev3R_bs2v8_260108_n-1_rdepth_Ipred_15kC_ckpt25k" #"260105_v8b2c32s1_m400_n-1_ckpt15k"           # e.g., "0107_ckpt15000" ; empty -> no suffix
+PREFIX="Reliev3R_bs2v8_260116_warmup_ckpt5k" #"260105_v8b2c32s1_m400_n-1_ckpt15k"           # e.g., "0107_ckpt15000" ; empty -> no suffix
+# PREFIX="Reliev3R_bs2v8_260119_sub260116_5k_dw4m_ckpt10k" #"260105_v8b2c32s1_m400_n-1_ckpt15k"           # e.g., "0107_ckpt15000" ; empty -> no suffix
 
 # ---- eval common params ----
 POSE_THRESHOLD=30
