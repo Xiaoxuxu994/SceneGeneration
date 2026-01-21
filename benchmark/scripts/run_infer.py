@@ -268,6 +268,18 @@ def run_reliev3r_infer(
         world_points=torch.from_numpy(pred_unproj).to(dtype=torch.float32),
         scale_by_points = False,
     )
+    
+    # from scripts.run_vis import export_cameras
+    # export_cameras(
+    #     closed_form_inverse_se3(pred_w2c.squeeze(0)).cpu().numpy(),
+    #     Path("pred_w2c.ply")
+    # ) # (1,V,4,4))
+    # # export_cameras(
+    # #     closed_form_inverse_se3(pred_w2c_aligned.squeeze(0)).cpu().numpy(),
+    # #     Path("pred_w2c_aligned.ply")
+    # # ) # (1,V,4,4))
+    # exit()
+    
     return pred_w2c_aligned, pred_depth, pred_unproj_aligned.squeeze(0).numpy()
 
 def dump_one_seq(model, 

@@ -25,7 +25,7 @@ def timing_decorator(func):
         start_time = time.perf_counter()
         result = func(*args, **kwargs)
         end_time = time.perf_counter()
-        print(f"'{func.__name__}' executed in {end_time - start_time:.4f} seconds")
+        print(f"[INFO] '{func.__name__}' executed in {end_time - start_time:.4f} seconds")
         return result
     return wrapper
 

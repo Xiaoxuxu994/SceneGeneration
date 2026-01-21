@@ -4,13 +4,32 @@ Reconstruction Benchmark
 
 The basic benchmark logistics are:
 
-- [ ] Sample the evaluation sequence according to evaluation protocals
+- [x] Sample the evaluation sequence according to evaluation protocals
 - [x] Normalize the GT poses and pointmaps to the first-frame's coordinates, and save them as .npy files
 - [x] Predict poses and pointmaps using 3R models, e.g. VGGT, and save the outputs as .npy files
 - [x] Load the predicted and GT poses and pointmaps, then call evaluation functions
-- [ ] repeat for all sequences and aggregate scores
+- [x] repeat for all sequences and aggregate scores
 
-## Usage
+# Usage
+
+We have a simple script for running evaluation with different setups, e.g. in `scripts/run_reliev3r_scannet.sh`. There are some important paths:
+```shell
+# TODO Change the following settings
+MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+CKPT="experiments/Reliev3R_bs2v8_260120_warmup/ckpt/5000.ckpt"
+CONFIG="experiments/Reliev3R_bs2v8_260120_warmup/config.json"
+
+# prefix of the output folder
+# make sure it's consistent with the ckpt path
+PREFIX="Reliev3R_bs2v8_260120_warmup_ckpt5k" 
+```
+
+Simple usage by running this script:
+```shell
+./scripts/run_reliev3r_scannet.sh
+```
+
+## Detailed usage
 
 ```
 # There are a example sequence from 7scenes under ./samples/7scenes/
