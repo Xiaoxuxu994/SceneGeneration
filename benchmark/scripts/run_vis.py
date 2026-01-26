@@ -146,7 +146,7 @@ def main() -> None:
     ap.add_argument(
         "--dir",
         type=str,
-        default='outputs/7scenes/test_stride40_max8/vggt',
+        default='outputs/scannetpp/test_stride10_max8/gt',
         help="dump 根目录，例如 .../test_dense_stride40/gt 或 .../test_dense_stride40/vggt",
     )
     ap.add_argument("--depth_vmin", type=float, default=0.1)

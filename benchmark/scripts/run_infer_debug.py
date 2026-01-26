@@ -48,6 +48,8 @@ DATA_ROOT_DEFAULTS = {
     "dtu":     BENCH_ROOT / "data" / "DTU" / "spann3r_version" / "dtu_test_mvsnet_release",
     "nrgbd":   BENCH_ROOT / "data" / "NRGBD" / "data",
     "scannet": BENCH_ROOT / "data" / "scannet" / "posed_images",
+    "scannetpp": BENCH_ROOT / "data" / "scannetppv2_val50",
+    "replica": BENCH_ROOT / "data" / "Replica" ,
     "dl3dv":   "/mnt/nvme3/z00533370/dataset/",
 }
 MODEL_DEFAULTS = {
@@ -356,11 +358,11 @@ def main():
     p = argparse.ArgumentParser()
 
     # dataset
-    p.add_argument("--dataset", type=str, default="dl3dv", choices=list(DATA_ROOT_DEFAULTS.keys()))
+    p.add_argument("--dataset", type=str, default="scannetpp", choices=list(DATA_ROOT_DEFAULTS.keys()))
     p.add_argument("--data_root", type=str, default=None,
                help="Dataset root path. If not set, inferred from --dataset.")
     p.add_argument("--split", type=str, default="test", choices=["train", "test"])
-    p.add_argument("--seq", type=str, default="77cb930b374c3da40729cc553878255de9d0d92bae95b4475d1678a17186a3c5_00005")      # chess/seq-01
+    p.add_argument("--seq", type=str, default="09c1414f1b")      # chess/seq-01
 
     # view sample
     p.add_argument("--mode", type=str, default="stride", choices=["stride", "random"])

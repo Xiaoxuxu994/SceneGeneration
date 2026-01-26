@@ -12,6 +12,7 @@ DATASETS=(
   nrgbd
   dtu
   # scannet
+  # scannetpp
 )
 
 # ----- model ------
@@ -143,6 +144,10 @@ for DATASET in "${DATASETS[@]}"; do
       MAX_SEQ_LEN_CUR=8
       ;;
     scannet)
+      STRIDE_CUR=1
+      MAX_SEQ_LEN_CUR=8
+      ;;
+    scannetpp)
       STRIDE_CUR=1
       MAX_SEQ_LEN_CUR=8
       ;;

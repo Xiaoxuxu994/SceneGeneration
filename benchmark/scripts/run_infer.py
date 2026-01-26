@@ -48,6 +48,8 @@ DATA_ROOT_DEFAULTS = {
     "dtu":     BENCH_ROOT / "data" / "DTU" / "spann3r_version" / "dtu_test_mvsnet_release",
     "nrgbd":   BENCH_ROOT / "data" / "NRGBD" / "data",
     "scannet": BENCH_ROOT / "data" / "scannet" / "posed_images",
+    "scannetpp": BENCH_ROOT / "data" / "scannetppv2_val50",
+    "replica": BENCH_ROOT / "data" / "Replica" ,
     "dl3dv":   "/mnt/nvme1/share/chenyouyu/dataset/DL3DV/data/1K/",
 }
 MODEL_DEFAULTS = {
@@ -374,7 +376,7 @@ def main():
                help="Dataset root path. If not set, inferred from --dataset.")
     p.add_argument("--split", type=str, default="test", choices=["train", "test"])
     p.add_argument("--seq", type=str, default="")      # chess/seq-01
-    p.add_argument("--num_seq", type=int, default=0)   # 0 -> use all squences
+    p.add_argument("--num_seq", type=int, default=10)   # 0 -> use all squences
 
     # view sample
     p.add_argument("--mode", type=str, default="stride", choices=["stride", "random"])

@@ -3,6 +3,8 @@ from .sevenscenes import SevenScenesDataset
 from .dtu import DTUDataset
 from .nrgbd import NRGBDDataset
 from .scannet import ScanNetDataset
+from .scannetpp import ScanNetPPDataset
+from .replica import ReplicaDataset
 from .dl3dv import DL3DVDataset
 
 DATASET_REGISTRY = {
@@ -10,6 +12,8 @@ DATASET_REGISTRY = {
     "dtu": DTUDataset,
     "nrgbd": NRGBDDataset,
     "scannet": ScanNetDataset,
+    "scannetpp": ScanNetPPDataset,
+    "replica": ReplicaDataset,
     "dl3dv": DL3DVDataset, # no depth gt
 }
 
