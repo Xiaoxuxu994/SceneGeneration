@@ -6,8 +6,11 @@ from einops import rearrange
 
 from .platform import DEVICE_NAME
 from utils.log_utils import save_pcds_as_ply, depth2pointmap, pointmap2pixel, Depth2PointMap
-from utils.common import WeightedMAD, calc_extr_inv, calc_intr_inv
+from utils.common import calc_extr_inv, calc_intr_inv, WeightedMAD, WeightedMADFast, WeightedMADHistogram
 
+# weighted_mad = WeightedMAD()
+# weighted_mad = WeightedMADFast()
+weighted_mad = WeightedMADHistogram()
 
 class ClampLower(torch.autograd.Function):
 
@@ -55,7 +58,7 @@ def l1_loss(x: torch.Tensor, y: torch.Tensor, revert_input=False) -> torch.Tenso
     return (x - y).abs().mean()
 
 
-def calc_pixel_grad_map(x: torch.Tensor, eps=1e-6) -> torch.Tensor:
+def calc_pixel_grad_map(x: torch.Tensor, eps:float=1e-6) -> torch.Tensor:
     assert x.shape[-3] == 1, "The input of pixel gradient calculation should be a depth map."
     H, W = x.shape[-2:]
     step = 1
@@ -90,7 +93,7 @@ def depth_shape_loss(x: torch.Tensor, y: torch.Tensor,
         if conf_map is not None:
             conf_map = conf_map.reshape(*x.shape)
     
-    weighted_mad = WeightedMAD()
+    # weighted_mad = WeightedMAD()
     x = weighted_mad(x.reshape(*x.shape[:-3], -1), 
                      conf_map.reshape(*x.shape[:-3], -1).detach() if conf_map is not None else None).reshape(*x.shape)
     y = weighted_mad(y.reshape(*y.shape[:-3], -1), 
@@ -160,7 +163,7 @@ def camera_basic_mat_loss(extrs: torch.Tensor, intrs: torch.Tensor, bmatches: to
     
     return(bhomo_pixels.transpose(-1, -2) @ basic_matrices.unsqueeze(-3) @ bhomo_pixels).abs().mean()
 
-
+@torch.jit.script 
 def compute_angle_loss(unnormed_points: torch.Tensor, cam_cents: torch.Tensor):
     """Compute matching angle loss as 3d correspondence loss.
     Args:
@@ -169,6 +172,7 @@ def compute_angle_loss(unnormed_points: torch.Tensor, cam_cents: torch.Tensor):
     Returns:
         Tensor of shape (B, V, V, K), the exhaustive angle loss map.
     """
+        
     vec_mat  = unnormed_points.unsqueeze(2) - cam_cents.unsqueeze(1) # b v v k 3, points from view v_i <- center of view v_j
     cent_mat = (unnormed_points - cam_cents).unsqueeze(1).expand_as(vec_mat).detach() # b v v k 3
     
@@ -178,6 +182,77 @@ def compute_angle_loss(unnormed_points: torch.Tensor, cam_cents: torch.Tensor):
     cossim      = dot_product / (norm_vec * norm_cent + 1e-8)
     
     return cossim # b v v k
+
+# NOTE: moved from inside of matching_error_3D
+# Use a more efficient tensor computation to reduce multiple sampling operations
+@torch.jit.script 
+def samp_points_by_pixel(points: torch.Tensor, pixels: torch.Tensor, 
+                         device: torch.device=DEVICE_NAME, H:int=480, W:int=640):
+    """Sample points by pixel."""
+    pixels = pixels.unsqueeze(1)  # b 1 k 2
+    image_size = torch.tensor([W, H], device=device)[None, None, None]
+    pixels = (pixels + 0.5) / image_size * 2 - 1
+    return torch.nn.functional.grid_sample(points, pixels, 
+                                           mode="bilinear", 
+                                           padding_mode="border", 
+                                           align_corners=False).squeeze(dim=2).permute(0, 2, 1)
+
+@torch.jit.script 
+def sample_by_pixels(feat: torch.Tensor, pixels: torch.Tensor, H: int, W: int):
+    """
+    feat:   (N, C, H, W)
+    pixels: (N, K, 2)  in pixel coord (x, y)
+    return: (N, K, C)
+    """
+    # grid_sample expects grid in [-1,1], align_corners=False
+    gx = (pixels[..., 0] + 0.5) / W * 2.0 - 1.0
+    gy = (pixels[..., 1] + 0.5) / H * 2.0 - 1.0
+    grid = torch.stack([gx, gy], dim=-1).unsqueeze(1)  # (N, 1, K, 2)
+
+    out = torch.nn.functional.grid_sample(
+        feat, grid,
+        mode="bilinear",
+        padding_mode="border",
+        align_corners=False,
+    )  # (N, C, 1, K)
+    return out.squeeze(2).transpose(1, 2)  # (N, K, C)
+
+@torch.jit.script 
+def backproject_pixels_world(
+    z: torch.Tensor,          # (N, K, 1)
+    pixels: torch.Tensor,     # (N, K, 2) pixel coord (x,y)
+    intrs: torch.Tensor,      # (N, 3, 3)
+    extrs: torch.Tensor,      # (N, 4, 4) world->cam
+    H: int, W: int,
+    is_intr_normalized: bool = True,
+):
+    """
+    return Xw: (N, K, 3)
+    """
+    if is_intr_normalized:
+        u = (pixels[..., 0] + 0.5) / W  # (N,K)
+        v = (pixels[..., 1] + 0.5) / H
+    else:
+        u = pixels[..., 0] + 0.5
+        v = pixels[..., 1] + 0.5
+
+    fx = intrs[:, 0, 0].unsqueeze(1)  # (N,1)
+    fy = intrs[:, 1, 1].unsqueeze(1)
+    cx = intrs[:, 0, 2].unsqueeze(1)
+    cy = intrs[:, 1, 2].unsqueeze(1)
+
+    z = z.squeeze(-1)  # (N,K)
+    x = (u - cx) / fx * z
+    y = (v - cy) / fy * z
+    Xc = torch.stack([x, y, z], dim=-1)  # (N,K,3)
+
+    R = extrs[:, :3, :3]            # (N,3,3)
+    t = extrs[:, :3, 3]             # (N,3)
+    Rinv = R.transpose(1, 2)        # (N,3,3)
+    C = -(Rinv @ t.unsqueeze(-1)).squeeze(-1)  # (N,3) camera center in world
+
+    Xw = torch.einsum("nij,nkj->nki", Rinv, Xc) + C[:, None, :]  # (N,K,3)
+    return Xw, C
 
 
 def matching_error_3D(depth: torch.Tensor, 
@@ -281,6 +356,69 @@ def matching_error_3D(depth: torch.Tensor,
     return errors_3d_cos + errors_camera if flag else None
 
 
+# NOTE: modified version
+# @torch.jit.script 
+def matching_error_3D_updated(depth: torch.Tensor, 
+                      extrs: torch.Tensor, intrs: torch.Tensor, 
+                    #   matching_info: dict,  
+                      tracks: torch.Tensor, # b v k 2
+                      vis: torch.Tensor, # b v k
+                      view_per_batch: int, 
+                      conf: torch.Tensor=None, 
+                      is_intr_normalized: bool=True,
+                      device: torch.device=DEVICE_NAME, eps=1e-2, alpha=0.01, depth_is_z=True):
+    """Compute 3d error between two group of (depths, cameras).
+
+    Args:
+        depth (torch.Tensor): Depths, tensor of shape (B, 1, H, W).
+        extrs (torch.Tensor): Extrinsics, tensor of shape (B, 4, 4). world to camera.
+        intrs (torch.Tensor): Intrinsics, tensor of shape (B, 3, 3).
+    """
+    
+    H, W = depth.shape[-2:]
+
+    # tracks = matching_info["matches"]        # (B, V, K, 2) pixel coords
+    # vis    = matching_info["visibilities"]   # (B, V, K)
+    B, V, K, _ = tracks.shape
+    assert V == view_per_batch
+    assert depth.shape[0] == B * V
+
+    # (B*V, K, 2)
+    tracks_flat = tracks.reshape(B * V, K, 2).to(depth.dtype)
+
+    # 1) 先在 depth 上采样得到 z: (B*V, K, 1)
+    z = sample_by_pixels(depth, tracks_flat, H, W)  # (B*V,K,1)
+
+    # 2) 只反投影这 K 个点到 world：Xw (B*V,K,3)，同时得到相机中心 C (B*V,3)
+    Xw, C = backproject_pixels_world(
+        z=z, pixels=tracks_flat, intrs=intrs, extrs=extrs,
+        H=H, W=W, 
+        is_intr_normalized=is_intr_normalized
+    )
+
+    # reshape to (B,V,K,3) and (B,V,3)
+    points = Xw.reshape(B, V, K, 3)
+    cam_cents = C.reshape(B, V, 3).unsqueeze(2) # (B,V,1,3)
+
+    # visibility mask (B,K)
+    mask = torch.all(vis, dim=1)
+    
+    # angle map (B,V,V,K)
+    cossim_map = compute_angle_loss(points, cam_cents)  # (B,V,V,K)
+    cossim_map = torch.acos(BoundForArcCos.apply(cossim_map))
+    
+    cossim_loss = cossim_map.permute(0, 3, 1, 2).reshape(B, K, V * V)  # (B,K,VV)
+    # cossim_loss = rearrange(cossim_loss[..., :-1], "b k (v vv) -> b k v vv", v=V-1)[..., 1:] # b k v-1 v
+    cossim_loss = cossim_loss[..., :-1].reshape(B, K, V - 1, V + 1)       # (B,K,V-1,V+1)
+    cossim_loss = cossim_loss[..., 1:].reshape(B, K, (V - 1) * V)         # (B,K,(V-1)*V)
+    cossim_loss = cossim_loss.reshape(B, K, -1).mean(dim=-1)  # (B,K)
+
+    cossim_loss = (cossim_loss * mask).sum(dim=-1) / (mask.sum(dim=-1) + 1e-8)  # (B,)
+    valid_batch_mask = (mask.sum(dim=-1) > 16)  # (B,)
+    loss = (cossim_loss * valid_batch_mask).sum() / (valid_batch_mask.sum() + 1e-8)
+
+    return loss
+
 class LossFunction(torch.nn.Module):
 
     def __init__(self, cfg, matching_model):
@@ -293,6 +431,7 @@ class LossFunction(torch.nn.Module):
         self.pred_z_depth   = cfg.pred_z_depth
         self.eye3           = torch.eye(3, device=DEVICE_NAME)
         self.use_pred_intr  = cfg.use_pred_intr
+        self.match3D_type   = cfg.match3D_type
         
     def ds_loss(self, output_dict, data, enable_conf=False, eps=1e-12):
         mono_depths = output_dict["mono_depths"].detach()
@@ -303,7 +442,7 @@ class LossFunction(torch.nn.Module):
             conf_map=output_dict["depths_conf"] * input_masks if enable_conf else None, alpha=self.conf_alpha)
         output_dict["depths_conf"] = output_dict["depths_conf"] * input_masks
         return ds_loss
-        
+
     def geometric_loss(self, output_dict, data, enable_conf=False, detach_camera=False, depth_is_z=True, use_pred_intr=False):
         
         B, V, C, H, W = output_dict["depths"].shape
@@ -336,12 +475,17 @@ class LossFunction(torch.nn.Module):
         tracks1 = data["input_tracks1"] # B P K 2
         visibs0 = data["input_visibs0"] # B P K
         visibs1 = data["input_visibs1"] # B P K
+        b, p, k, c = tracks0.shape        
         matching_info = dict(
-            matches=torch.stack([rearrange(tracks0, "b p k c -> (b p) k c"), rearrange(tracks1, "b p k c -> (b p) k c")], dim=1), # (b p) 2 k c
-            visibilities=torch.stack([rearrange(visibs0, "b p k -> (b p) k"), rearrange(visibs1, "b p k -> (b p) k")], dim=1), # (b p) 2 k
+            matches=torch.stack((tracks0.reshape(b * p, k, c), tracks1.reshape(b * p, k, c)), dim=1), # (b*p, 2, k, c)
+            visibilities=torch.stack((visibs0.reshape(b * p, k), visibs1.reshape(b * p, k)), dim=1), # (b*p, 2, k)
             matched_views0=data["input_tracks_view_id0"], # B P
             matched_views1=data["input_tracks_view_id1"], # B P
         )
+        # matching_info = dict(
+        #     matches=torch.stack([rearrange(tracks0, "b cv2 k c -> (b cv2) k c"), rearrange(tracks1, "b cv2 k c -> (b cv2) k c")], dim=1), # (b cv2) 2 k c
+        #     visibilities=torch.stack([rearrange(visibs0, "b cv2 k -> (b cv2) k"), rearrange(visibs1, "b cv2 k -> (b cv2) k")], dim=1), # (b cv2) 2 k
+        # )
         
         paired_depths, paired_confs, paired_extrs, paired_intrs = [], [], [], []
         for depths, confs, extrs, intrs, pairs_x, pairs_y in zip(
@@ -355,23 +499,43 @@ class LossFunction(torch.nn.Module):
         paired_extrs = torch.stack(paired_extrs).reshape(-1, 2, 4, 4)
         paired_intrs = torch.stack(paired_intrs).reshape(-1, 2, 3, 3)
         
-        matching_error = matching_error_3D(depth=paired_depths.view(-1, C, H, W), 
-                                           extrs=paired_extrs.view(-1, 4, 4), 
-                                           intrs=paired_intrs.view(-1, 3, 3), 
-                                           matching_info=matching_info, 
-                                           view_per_batch=2, 
-                                           conf=paired_confs.view(-1, C, H, W) if enable_conf else None, 
-                                           depth_is_z=depth_is_z)
+        if self.match3D_type == "original":
+            matching_error = matching_error_3D(depth=paired_depths.view(-1, C, H, W), 
+                                               extrs=paired_extrs.view(-1, 4, 4), 
+                                               intrs=paired_intrs.view(-1, 3, 3), 
+                                               matching_info=matching_info, 
+                                            #    tracks=matching_info["matches"], # b v k 2
+                                            #    vis=matching_info["visibilities"], # b v k
+                                               view_per_batch=2, 
+                                               conf=paired_confs.view(-1, C, H, W) if enable_conf else None, 
+                                               depth_is_z=depth_is_z)
+        elif self.match3D_type == "updated":    
+            matching_error = matching_error_3D_updated(depth=paired_depths.view(-1, C, H, W), 
+                                                        extrs=paired_extrs.view(-1, 4, 4), 
+                                                        intrs=paired_intrs.view(-1, 3, 3), 
+                                                        #    matching_info=matching_info, 
+                                                        tracks=matching_info["matches"], # b v k 2
+                                                        vis=matching_info["visibilities"], # b v k
+                                                        view_per_batch=2, 
+                                                        conf=paired_confs.view(-1, C, H, W) if enable_conf else None, 
+                                                        depth_is_z=depth_is_z)
+        else:
+            raise NotImplementedError(f"3D matching error type {self.match3D_type} is not implemented.")
                 
         return matching_error, [matching_info, ]
     
-    
-    def relative_camera_loss(self, output_dict: dict[str, torch.Tensor], data: dict[str, torch.Tensor]):
-        extrs_gt   = data["input_viewmats"] # b v 4 4
-        extrs_pred = output_dict["camera_extrs"] # b v 4 4
+    @torch.jit.script 
+    def relative_camera_loss(self, 
+                             extrs_pred: torch.Tensor, 
+                             extrs_gt: torch.Tensor,
+                            #  output_dict: dict[str, torch.Tensor], 
+                            #  data: dict[str, torch.Tensor],
+                             ):
+        # extrs_gt   = data["input_viewmats"] # b v 4 4
+        # extrs_pred = output_dict["camera_extrs"] # b v 4 4
         
         gt_t  = extrs_gt[..., :3, 3] # b v 3
-        gt_t_magnitude = gt_t.norm(dim=-1).mean(dim=-1)[:, None, None] # b 1 1
+        gt_t_magnitude = gt_t.norm(p=2,dim=-1).mean(dim=-1)[:, None, None] # b 1 1
         gt_t  = gt_t / (gt_t_magnitude + 1e-8)
         gt_r  = extrs_gt[..., :3, :3] # b v 3 3
         

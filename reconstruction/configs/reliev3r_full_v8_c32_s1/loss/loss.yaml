@@ -19,3 +19,4 @@ enable_slide: true
 
 pred_z_depth: false # true if predict z-depth while false is predict r-depth
 use_pred_intr: true
+match3D_type: updated # original / updated
