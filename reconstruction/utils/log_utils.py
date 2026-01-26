@@ -1,5 +1,6 @@
 import os
 import torch
+import torch.nn.functional as F
 import numpy as np
 import open3d as o3d
 
@@ -159,19 +160,27 @@ def depth2pointmap(depths: torch.Tensor, extrs: torch.Tensor, intrs: torch.Tenso
         intrs = intrs / intr_normalizer
     
     grids = torch.cartesian_prod((torch.arange(W, device=device) + 0.5) / W, (torch.arange(H, device=device) + 0.5) / H)
-    grids = grids.reshape(1, W, H, 2).permute(0, 2, 1, 3).expand(B, -1, -1, -1) # b h w 2
-    pixel_vecs = torch.cat([grids, torch.ones_like(grids[..., :1])], dim=-1) # b h w 3
+    grids = grids.reshape(1, W, H, 2).permute(0, 3, 2, 1).expand(B, -1, -1, -1) # b 2 h w
+    pixel_vecs = torch.cat([grids, torch.ones_like(grids[:, :1, ...])], dim=1) # b 3 h w
     intrs_inv = calc_intr_inv(intrs)
-    pixel_vecs = torch.matmul(intrs_inv[..., None, None, :, :], pixel_vecs[..., None]) # b h w 3 1
+    
+    b,d,h,w = pixel_vecs.shape
+    pixel_vecs = F.conv2d(pixel_vecs.view(1, b*d, h, w), intrs_inv.view(b*d, d, 1, 1), groups=b)
+    pixel_vecs = pixel_vecs.view(b, d, h, w)
+
     if not depth_is_z:
-        pixel_vecs = pixel_vecs / (pixel_vecs.norm(dim=-2, keepdim=True) + 1e-8)
-    points_local = pixel_vecs * rearrange(depths, "n c h w -> n h w c")[..., None] # b h w 3 1
+        pixel_vecs = pixel_vecs / (pixel_vecs.norm(dim=1, keepdim=True) + 1e-8)
+    points_local = pixel_vecs * depths # b 3 h w
     
     extrs_inv = calc_extr_inv(extrs)
-    orth_points_local = torch.cat([points_local, torch.ones_like(points_local[..., :1, :])], dim=-2) # b h w 4 1
-    points_world = torch.matmul(extrs_inv[..., None, None, :, :], orth_points_local) # b h w 4 1
-    points_world = points_world[..., :3, 0] / points_world[..., 3:, 0] # b h w 3
+    orth_points_local = torch.cat([points_local, torch.ones_like(points_local[:, :1, ...])], dim=1) # b 4 h w
     
+    b,d,h,w = orth_points_local.shape
+    points_world = F.conv2d(orth_points_local.view(1, b*d, h, w), extrs_inv.view(b*d, d, 1, 1), groups=b)
+    points_world = points_world.view(b, d, h, w)
+
+    points_world = points_world[:, :3, ...] / points_world[:, 3:, ...] # b 3 h w
+
     return points_world
 
 

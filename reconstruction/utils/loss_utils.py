@@ -197,7 +197,7 @@ def matching_error_3D(depth: torch.Tensor,
     
     weighted_mad = WeightedMAD()
     
-    points_world = depth2pointmap(depth, extrs, intrs, depth_is_z=depth_is_z).permute(0, 3, 1, 2) # b 3 h w
+    points_world = depth2pointmap(depth, extrs, intrs, depth_is_z=depth_is_z) # b 3 h w
     camera_centers = calc_extr_inv(extrs)[..., :3, -1].unsqueeze(1) # b 1 3
     
     def samp_points_by_pixel(points: torch.Tensor, pixels: torch.Tensor):
