@@ -24,6 +24,7 @@ from utils.image_utils import visualize_prediction
 from utils.optim_utils import create_optimizer, create_lr_scheduler
 from utils.log_utils import export_pcds_and_cam_as_ply, depth2pointmap, localpoint2global
 from utils import make_loss_func
+from utils.common import normalize_trans, calc_extr_inv
 from dataset.dataloaders import create_mixed_dataloader, load_data_to_device
 
 from model import Reliev3R
@@ -39,20 +40,12 @@ def clean_up():
 def create_dataloaders(rank, global_rank, cfg):
     """Create data loaders. """
     dataloader, data_iter, dataloader_eval, data_eval_iter = None, None, None, None
-    # if rank == 0:
     if not cfg.eval:
         dataloader = create_mixed_dataloader(cfg.datasets, "train", cfg.training.batch_size, rank=rank)
         data_iter  = iter(dataloader)
     if global_rank == 0:
         dataloader_eval = create_mixed_dataloader(cfg.datasets, "eval", cfg.training.batch_size, rank=rank, num_workers=8)
         data_eval_iter  = iter(dataloader_eval)
-    # dist.barrier()
-    # if rank != 0:
-    #     if not cfg.eval:
-    #         dataloader = create_mixed_dataloader(cfg.datasets, "train", cfg.training.batch_size, rank=rank)
-    #         data_iter  = iter(dataloader)
-    #     dataloader_eval = create_mixed_dataloader(cfg.datasets, "eval", cfg.training.batch_size, rank=rank)
-    #     data_eval_iter  = iter(dataloader_eval)
     dist.barrier()
     return dataloader, data_iter, dataloader_eval, data_eval_iter
 
@@ -125,14 +118,35 @@ def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
 
 
 def compute_camera_metrics_and_log(pred, data, step, tb_writer, eval_angle, eval_trajectory, header):
-    rra_acc, rta_acc, auc_at_thre = eval_angle(pred["camera_extrs"][0], data["input_viewmats"][0])
-    ate, rpe_trans, rpe_rot = eval_trajectory(pred["camera_extrs"][0], data["input_viewmats"][0])
-    tb_writer.add_scalar("{}/rra_acc".format(header), rra_acc, step)
-    tb_writer.add_scalar("{}/rta_acc".format(header), rta_acc, step)
-    tb_writer.add_scalar("{}/auc_at_thre".format(header), auc_at_thre, step)
-    tb_writer.add_scalar("{}/ate".format(header), ate, step)
-    tb_writer.add_scalar("{}/rpe_trans".format(header), rpe_trans, step)
-    tb_writer.add_scalar("{}/rpe_rot".format(header), rpe_rot, step)
+    try:
+        pr_cam = pred["camera_extrs"][0].detach()
+        gt_cam = data["input_viewmats"][0]
+        pr_cam_norm = normalize_trans(pr_cam)
+        gt_cam_norm = normalize_trans(gt_cam)
+        pr_cam_norm = pr_cam_norm[:1, ...] @ calc_extr_inv(pr_cam_norm)
+        gt_cam_norm = gt_cam_norm[:1, ...] @ calc_extr_inv(gt_cam_norm)
+        rra_acc, rta_acc, auc_at_thre = eval_angle(pr_cam_norm, gt_cam_norm)
+        ate, rpe_trans, rpe_rot = eval_trajectory(pr_cam_norm, gt_cam_norm)
+        tb_writer.add_scalar("{}/cam_acc/rra_acc".format(header), rra_acc, step)
+        tb_writer.add_scalar("{}/cam_acc/rta_acc".format(header), rta_acc, step)
+        tb_writer.add_scalar("{}/cam_acc/auc_at_thre".format(header), auc_at_thre, step)
+        tb_writer.add_scalar("{}/cam_err/ate".format(header), ate, step)
+        tb_writer.add_scalar("{}/cam_err/rpe_trans".format(header), rpe_trans, step)
+        tb_writer.add_scalar("{}/cam_err/rpe_rot".format(header), rpe_rot, step)
+    except:
+        pass
+
+
+def compute_depth_metrics_and_log(pred, data, step, tb_writter, eval_depth_map, header):
+    try:
+        gt_depth = data["input_depths"][0]            # v 1 h w
+        gt_mask  = data["input_depth_masks"][0] > 0.0 # v 1 h w
+        pr_depth = pred["scaled_depths"][0].detach()  # v 1 h w
+        metrics = eval_depth_map(pr_depth, gt_depth, gt_mask, align_with_lstsq=True, device=DEVICE_NAME)
+        tb_writter.add_scalar("{}/depth/abs_rel".format(header), metrics["Abs Rel"], step)
+        tb_writter.add_scalar("{}/depth/δ<1.25".format(header), metrics["δ < 1.25"], step)
+    except:
+        pass
 
 
 def run(rank, cfg):
@@ -145,7 +159,7 @@ def run(rank, cfg):
     """Get global rank for training output. """
     global_rank = rank + int(os.environ.get("VC_TASK_INDEX", 0)) * int(os.environ.get("MA_NUM_GPUS", 0))
     if global_rank == 0:
-        from utils.eval_utils import eval_angle, eval_trajectory
+        from utils.eval_utils import eval_angle, eval_trajectory, eval_depth_map
     
     """Create data loaders. """
     dataloader, data_iter, dataloader_eval, data_eval_iter = create_dataloaders(rank, global_rank, cfg)
@@ -179,8 +193,6 @@ def run(rank, cfg):
         lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations)
     step_begins = step
     
-    # """Enable checkpoint. """
-    # model.enable_checkpoint()
     
     """Wrap model with ddp. """
     model = DDP(model, device_ids=[rank], bucket_cap_mb=100, gradient_as_bucket_view=True)
@@ -243,7 +255,6 @@ def run(rank, cfg):
             
             data, data_iter, _ = dataloader_step(data_iter, dataloader, step)
             step += 1
-            # print("[ INFO ] step {}, image shape: {}, dataset: {}".format(step, data["input_images"].shape, data["dataset_names"][0]))
             if dataset_count.get(data["dataset_names"][0], None) is None:
                 dataset_count[data["dataset_names"][0]] = 1
             else:
@@ -251,7 +262,6 @@ def run(rank, cfg):
             if step % 100 == 0 and rank == 0:
                 print("[ INFO ] Step {}, dataset sample summarize:".format(step))
                 print(dataset_count)
-            # dist.barrier()
             
             if enable_time_profiling:
                 data_end.record()
@@ -269,10 +279,7 @@ def run(rank, cfg):
                 loss_start.record()
 
             loss_dict = loss_func(pred, data)
-            # if torch.isnan(loss_dict["total"]):
-            #     print("[ WARNING ] loss nan found! skipping step {} !".format(step))
-            #     continue
-                
+            
             if enable_time_profiling:
                 loss_end.record()
                 backward_start.record()
@@ -291,21 +298,31 @@ def run(rank, cfg):
                 backward_end.record()
                 step_end.record()
                 torch_device_lib.synchronize()
-                step_time      = step_start.elapsed_time(step_end) / 1000
-                data_time      = data_start.elapsed_time(data_end) / 1000
-                forward_time   = forward_start.elapsed_time(forward_end) / 1000
-                loss_time      = loss_start.elapsed_time(loss_end) / 1000
-                backward_time  = backward_start.elapsed_time(backward_end) / 1000
+                step_time     = step_start.elapsed_time(step_end) / 1000
+                data_time     = data_start.elapsed_time(data_end) / 1000
+                forward_time  = forward_start.elapsed_time(forward_end) / 1000
+                loss_time     = loss_start.elapsed_time(loss_end) / 1000
+                backward_time = backward_start.elapsed_time(backward_end) / 1000
                 time_profile_table["step"]     += step_time
                 time_profile_table["data"]     += data_time
                 time_profile_table["forward"]  += forward_time
                 time_profile_table["loss"]     += loss_time
                 time_profile_table["backward"] += backward_time
+<<<<<<< HEAD
+                if step % 100 == 0 or step - step_begins <= 20:
+                    print("======================================")
+                    print("[ PROFILE - STEP ] step time:     {:.2f} seconds".format(step_time))
+                    print("                   data time:     {:.2f} seconds, {:.2f}%".format(data_time, data_time / step_time * 100))
+                    print("                   forward time:  {:.2f} seconds, {:.2f}%".format(forward_time, forward_time / step_time * 100))
+                    print("                   loss time:     {:.2f} seconds, {:.2f}%".format(loss_time, loss_time / step_time * 100))
+                    print("                   backward time: {:.2f} seconds, {:.2f}%".format(backward_time, backward_time / step_time * 100))
+=======
                 data_tlst.append(data_time)
                 forward_tlst.append(forward_time)
                 loss_tlst.append(loss_time)
                 backward_tlst.append(backward_time)
                 if step % 100 == 0 and step < 20 and global_rank==0:
+>>>>>>> 50b4d7b01751d5195692d92d82d32e50676fbc7c
                     mean_step_time     = time_profile_table["step"] / (step - step_begins)
                     mean_data_time     = time_profile_table["data"] / (step - step_begins)
                     mean_forward_time  = time_profile_table["forward"] / (step - step_begins)
@@ -360,6 +377,7 @@ def run(rank, cfg):
                             tb_writer.add_scalar("loss_val/{}".format(loss_name), loss_value.item(), step)
                         """Report camera metrics of a single sample."""
                         compute_camera_metrics_and_log(pred, data, step, tb_writer, eval_angle, eval_trajectory, "metric_val")
+                        compute_depth_metrics_and_log(pred, data, step, tb_writer, eval_depth_map, "metric_val")
                 
                 """Save model checkpoint. """
                 if (step % cfg.training.ckpt_interval == 0 or step == cfg.training.iterations) and global_rank == 0:

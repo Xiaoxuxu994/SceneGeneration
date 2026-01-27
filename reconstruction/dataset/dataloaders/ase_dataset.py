@@ -56,16 +56,19 @@ class ASE_Dataset(Synthetic_Dataset):
             ]
             
             if not (len(image_file_list) <= len(extr_list) and 
-                    len(depth_file_list) == len(extr_list)):
+                    len(depth_file_list) <= len(extr_list)):
                 continue
             
             image_ids = [os.path.basename(image_name).split('.')[0][-7:] for image_name in image_file_list]
+            depth_ids = [os.path.basename(depth_name).split('.')[0][-7:] for depth_name in depth_file_list]
             
             image_clip_list = []
             depth_clip_list = []
             extr_clip_list = []
             
             for image_id in image_ids:
+                if image_id not in depth_ids:
+                    continue
                 image_clip_list.append(
                     os.path.join(scene, "undistort_rgb", "vignette{}.jpg".format(image_id)))
                 depth_clip_list.append(

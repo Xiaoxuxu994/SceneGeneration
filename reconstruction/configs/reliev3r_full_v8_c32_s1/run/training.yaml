@@ -1,5 +1,5 @@
 iterations: 50000
-batch_size: 2
+batch_size: 4
 ckpt_interval: 5000
 verbose_interval: 1000
 warm_up_iterations: 5000

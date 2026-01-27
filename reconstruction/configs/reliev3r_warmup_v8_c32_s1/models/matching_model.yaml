@@ -1,0 +1,6 @@
+name: CoTracker # Optional from [LightGlue, CoTracker]
+ckpt_path:
+  lightglue:
+    lightglue: ./ckpt/lightglue/superpoint_lightglue_v0-1_arxiv.pth
+    superpoint: ./ckpt/lightglue/superpoint_v1.pth
+  cotracker: ./ckpt/co-tracker/scaled_offline.pth
