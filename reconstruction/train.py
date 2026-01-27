@@ -28,8 +28,9 @@ from utils.common import normalize_trans, calc_extr_inv
 from dataset.dataloaders import create_mixed_dataloader, load_data_to_device
 
 from model import Reliev3R
+import numpy as np
 
-
+NPU_PROFILING = False
 ENABLE_TIME_PROFILING = True
 
 def clean_up():
@@ -209,6 +210,23 @@ def run(rank, cfg):
         backward_start, backward_end = torch_device_lib.Event(enable_timing=True), torch_device_lib.Event(enable_timing=True)
         time_profile_table = {"step": 0.0, "data": 0.0, "forward": 0.0, "loss": 0.0, "backward": 0.0}
     
+    # npu_profiling
+    npu_profiling = NPU_PROFILING # and global_rank<8 and global_rank>=0
+    if npu_profiling:
+        # time_fwd, time_bwd = [], []
+        experimental_config = torch_npu.profiler._ExperimentalConfig(
+            profiler_level=torch_npu.profiler.ProfilerLevel.Level1,
+            aic_metrics=torch_npu.profiler.AiCMetrics.PipeUtilization)
+        prof = torch_npu.profiler.profile(
+            activities=[torch_npu.profiler.ProfilerActivity.NPU,
+                        torch_npu.profiler.ProfilerActivity.CPU],
+            with_stack=True,
+            record_shapes=False,
+            profile_memory=False,
+            schedule=torch_npu.profiler.schedule(wait=7, warmup=7, active=2, repeat=0, skip_first=0),
+            experimental_config=experimental_config,
+            on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(cfg.output_dir))
+        
     TRAIN_PCD_VISUALIZE_THRE = 0.5
     EVAL_PCD_VISUALIZE_THRE  = 0.5
     
@@ -221,9 +239,14 @@ def run(rank, cfg):
             """Save configuration file for reproduction. """
             with open(os.path.join(cfg.output_dir, "config.json"), "w+") as f:
                 json.dump(cfg, f, indent='\t')
-    
+        if npu_profiling:
+            prof.start()
         """Training loop. """
         dataset_count = {}
+        data_tlst = []
+        forward_tlst = []
+        loss_tlst = []
+        backward_tlst = []
         while step < cfg.training.iterations:
             
             if enable_time_profiling:
@@ -267,8 +290,11 @@ def run(rank, cfg):
             lr_scheduler.step()
             optimizer.zero_grad()
             
+            if npu_profiling:
+                prof.step()
+
             """Output training time profiling"""
-            if enable_time_profiling and global_rank == 0:
+            if enable_time_profiling:
                 backward_end.record()
                 step_end.record()
                 torch_device_lib.synchronize()
@@ -282,6 +308,7 @@ def run(rank, cfg):
                 time_profile_table["forward"]  += forward_time
                 time_profile_table["loss"]     += loss_time
                 time_profile_table["backward"] += backward_time
+<<<<<<< HEAD
                 if step % 100 == 0 or step - step_begins <= 20:
                     print("======================================")
                     print("[ PROFILE - STEP ] step time:     {:.2f} seconds".format(step_time))
@@ -289,11 +316,24 @@ def run(rank, cfg):
                     print("                   forward time:  {:.2f} seconds, {:.2f}%".format(forward_time, forward_time / step_time * 100))
                     print("                   loss time:     {:.2f} seconds, {:.2f}%".format(loss_time, loss_time / step_time * 100))
                     print("                   backward time: {:.2f} seconds, {:.2f}%".format(backward_time, backward_time / step_time * 100))
+=======
+                data_tlst.append(data_time)
+                forward_tlst.append(forward_time)
+                loss_tlst.append(loss_time)
+                backward_tlst.append(backward_time)
+                if step % 100 == 0 and step < 20 and global_rank==0:
+>>>>>>> 50b4d7b01751d5195692d92d82d32e50676fbc7c
                     mean_step_time     = time_profile_table["step"] / (step - step_begins)
                     mean_data_time     = time_profile_table["data"] / (step - step_begins)
                     mean_forward_time  = time_profile_table["forward"] / (step - step_begins)
                     mean_loss_time     = time_profile_table["loss"] / (step - step_begins)
                     mean_backward_time = time_profile_table["backward"] / (step - step_begins)
+                    print("======================================")
+                    print("[ PROFILE - STEP ] step time:     {:.2f} seconds".format(step_time))
+                    print("                   data time:     {:.2f} seconds, {:.2f}%".format(data_time, data_time / step_time * 100))
+                    print("                   forward time:  {:.2f} seconds, {:.2f}%".format(forward_time, forward_time / step_time * 100))
+                    print("                   loss time:     {:.2f} seconds, {:.2f}%".format(loss_time, loss_time / step_time * 100))
+                    print("                   backward time: {:.2f} seconds, {:.2f}%".format(backward_time, backward_time / step_time * 100)) 
                     print("[ PROFILE - MEAN ] step time:     {:.2f} seconds".format(mean_step_time))
                     print("                   data time:     {:.2f} seconds, {:.2f}%".format(mean_data_time, mean_data_time / mean_step_time * 100))
                     print("                   forward time:  {:.2f} seconds, {:.2f}%".format(mean_forward_time, mean_forward_time / mean_step_time * 100))
@@ -351,6 +391,11 @@ def run(rank, cfg):
                         "current_iteration": step, 
                     }
                     torch.save(checkpoint, ckpt_name)
+        if npu_profiling:
+            prof.stop()
+        if enable_time_profiling:
+            arr = np.array([data_tlst, forward_tlst, loss_tlst, backward_tlst])
+            np.save(os.path.join(cfg.output_dir, f'proftime_{global_rank}.npy'), arr)
     
     else:
         """Visualize evaluation results on eval set, not for metric computation, implemented for single GPU. """
