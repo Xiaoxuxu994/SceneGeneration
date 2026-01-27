@@ -17,8 +17,9 @@ DATASETS=(
 
 # ----- model ------
 MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-CKPT="experiments/Reliev3R_bs2v8_260116_warmup/ckpt/10000.ckpt"
-CONFIG="experiments/Reliev3R_bs2v8_260116_warmup/config.json"
+CKPT="experiments/Reliev3R_bs2v8_260125_synthSup/ckpt/24000.ckpt"
+CONFIG="experiments/Reliev3R_bs2v8_260125_synthSup/config.json"
+PREFIX="Reliev3R_bs2v8_260125_synthSup_ckpt24k"
 
 # ---- params ------
 SPLIT="test"
@@ -33,11 +34,10 @@ NUM_SEQ=10
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 
-DEVICE="npu:0"
+DEVICE="npu:7"
 DTYPE="fp32"
 
 OUT_ROOT="outputs"  # "/mnt/nvme3/z00533370/3drecon/benchmark/"
-PREFIX="Reliev3R_bs2v8_260116_warmup_ckpt10k" #"260105_v8b2c32s1_m400_n-1_ckpt15k"           # e.g., "0107_ckpt15000" ; empty -> no suffix
 
 # ---- eval common params ----
 POSE_THRESHOLD=30

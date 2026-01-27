@@ -16,10 +16,13 @@ DATASETS=(
 
 # ----- model ------
 MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-CKPT="experiments/Reliev3R_bs2v8_260120_warmup/ckpt/5000.ckpt"
-CONFIG="experiments/Reliev3R_bs2v8_260120_warmup/config.json"
-# CKPT="experiments/Reliev3R_bs2v8_260119_sub260116_5k_dw4m/ckpt/10000.ckpt"
-# CONFIG="experiments/Reliev3R_bs2v8_260119_sub260116_5k_dw4m/config.json"
+CKPT="experiments/Reliev3R_bs2v8_260125_synthSup/ckpt/24000.ckpt"
+CONFIG="experiments/Reliev3R_bs2v8_260125_synthSup/config.json"
+PREFIX="Reliev3R_bs2v8_260125_synthSup_ckpt24k"
+
+# CKPT="experiments/Reliev3R_bs2v8_260123_sub260116_5k_alter_SCSup/ckpt/20000.ckpt"
+# CONFIG="experiments/Reliev3R_bs2v8_260123_sub260116_5k_alter_SCSup/config.json"
+# PREFIX="Reliev3R_bs2v8_260123_sub260116_5k_alter_SCSup_ckpt20k" 
 
 # ---- params ------
 SPLIT="test"
@@ -38,8 +41,6 @@ DEVICE="npu:7"
 DTYPE="fp32"
 
 OUT_ROOT="outputs"  # "/mnt/nvme3/z00533370/3drecon/benchmark/"
-PREFIX="Reliev3R_bs2v8_260120_warmup_ckpt5k" #"260105_v8b2c32s1_m400_n-1_ckpt15k"           # e.g., "0107_ckpt15000" ; empty -> no suffix
-# PREFIX="Reliev3R_bs2v8_260119_sub260116_5k_dw4m_ckpt10k" #"260105_v8b2c32s1_m400_n-1_ckpt15k"           # e.g., "0107_ckpt15000" ; empty -> no suffix
 
 # ---- eval common params ----
 POSE_THRESHOLD=30
