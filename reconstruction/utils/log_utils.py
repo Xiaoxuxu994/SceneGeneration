@@ -58,7 +58,6 @@ def create_camera_frustum(position, rotation, scale=0.5, fov=60, aspect_ratio=1.
         [-half_width, half_height, z], 
     ])
     
-    # R_inv = np.linalg.inv(rotation)
     points_cam_world = (rotation[None] @ points_cam[..., None])[..., 0] + position[None]
     
     lines = np.array([
@@ -66,13 +65,6 @@ def create_camera_frustum(position, rotation, scale=0.5, fov=60, aspect_ratio=1.
         [1, 2], [2, 3], [3, 4], [4, 1], 
     ])
     
-    # line_set = o3d.geometry.LineSet()
-    # line_set.points = o3d.utility.Vector3dVector(points_cam_world)
-    # line_set.lines = o3d.utility.Vector2iVector(lines)
-    # if color is not None:
-    #     line_set.colors = o3d.utility.Vector3dVector(np.array([color for _ in range(len(lines))]))
-    # return line_set
-
     point_set = o3d.geometry.PointCloud()
     points = []
     for line in lines:
@@ -82,6 +74,34 @@ def create_camera_frustum(position, rotation, scale=0.5, fov=60, aspect_ratio=1.
     point_set.points = o3d.utility.Vector3dVector(np.stack(points, axis=0))
     point_set.colors = o3d.utility.Vector3dVector(np.stack([color for _ in range(len(points))], axis=0))
     return point_set
+
+
+def trans_geo_to_first_frame_and_norm(point_maps: torch.Tensor, extrs: torch.Tensor):
+    """Transformer point maps and camera extrinsics coordinate to the first frame.
+
+    Args:
+        point_maps (torch.Tensor): Tensor of shape (B, V, H, W, 3)
+        extrs (torch.Tensor): Tensor of shape (B, V, 4, 4)
+    """
+    def normalize_trans(point_maps: torch.Tensor, extr: torch.Tensor):
+        # t: Tensor of shape (b, v, 4, 4)
+        point_maps, extr = point_maps.detach(), extr.detach()
+        t = extr[..., :3, 3] # b v 3
+        t_magnitude = t.norm(dim=-1).mean(dim=-1).unsqueeze(-1).unsqueeze(-1) # b 1 1
+        t = t / (t_magnitude + 1e-12)
+        extr = extr.clone()
+        extr[..., :3, 3] = t
+        point_maps = point_maps / t_magnitude.unsqueeze(-1).unsqueeze(-1)
+        return point_maps, extr
+    
+    point_maps, extrs = normalize_trans(point_maps, extrs)
+    homo_point_maps = torch.cat([point_maps, torch.ones_like(point_maps[..., :1])], dim=-1) # b v h w 4
+    trans_mat = extrs[..., :1, :, :] # b 1 4 4
+    homo_point_maps = trans_mat.unsqueeze(-3).unsqueeze(-3) @ homo_point_maps.unsqueeze(-1) # world-to-c0 @ world -> c0
+    point_maps = homo_point_maps[..., :3, 0]
+    extrs = extrs @ calc_extr_inv(trans_mat) # c0-to-world @ world-to-c -> c0-to-c
+    
+    return point_maps, extrs
 
 
 def export_pcds_and_cam_as_ply(path_prefix: str, point_maps: torch.Tensor, images: torch.Tensor, 
@@ -98,6 +118,8 @@ def export_pcds_and_cam_as_ply(path_prefix: str, point_maps: torch.Tensor, image
     """
     assert point_maps.ndim == 5, "This function is designed to process batched data."
     cam_color_ends = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    point_maps, extrs = trans_geo_to_first_frame_and_norm(point_maps, extrs)
+    
     extrs = torch.linalg.inv(extrs)
     
     batch_size = len(point_maps)
@@ -114,26 +136,17 @@ def export_pcds_and_cam_as_ply(path_prefix: str, point_maps: torch.Tensor, image
             colors = colors[conf_mask]
         pcd.points = o3d.utility.Vector3dVector(points)
         pcd.colors = o3d.utility.Vector3dVector(colors)
-        # scene_objects.append(pcd)
         o3d.io.write_point_cloud(path_prefix + "_batch{}.ply".format(b), pcd)
         
         ### Create camera object.
-        # scene_cameras = []
         n_views = len(point_maps[b])
-        # merged_cameras = o3d.geometry.LineSet()
         merged_cameras = o3d.geometry.PointCloud()
         for v in range(n_views):
             extr = extrs[b, v]
-            intr = intrs[b, v]
             cam_frustum = create_camera_frustum(extr[:3, 3].detach().cpu().numpy(), extr[:3, :3].detach().cpu().numpy(), 
                                                 color=cam_color_ends[0] * (n_views - v) / n_views + cam_color_ends[1] * v / n_views, 
                                                 scale=0.05)
-            # cam_frustum.paint_uniform_color()
-            # scene_cameras.append(cam_frustum)
             merged_cameras += cam_frustum
-            # o3d.io.write_line_set(path_prefix + "_cam{}".format(v) + "_batch{}.ply".format(b), cam_frustum)
-        
-        # o3d.io.write_line_set(path_prefix + "_cam" + "_batch{}.ply".format(b), merged_cameras)
         o3d.io.write_point_cloud(path_prefix + "_cam" + "_batch{}.ply".format(b), merged_cameras)
 
 

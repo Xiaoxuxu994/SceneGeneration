@@ -62,6 +62,7 @@ class CameraHead(nn.Module):
         feat = self.more_mlps(feat)  # [B, D_]
         with torch.amp.autocast(device_type=DEVICE_NAME, enabled=False):
             out_t = self.fc_t(feat.float())  # [B,3]
+            # out_t = torch.sigmoid(self.fc_t(feat.float()))  # [B,3]
             out_r = self.fc_rot(feat.float())  # [B,9]
             pose = self.convert_pose_to_4x4(BN, out_r, out_t, feat.device, v=v)
             out_fov = torch.sigmoid(self.fc_fov(feat.float())) * torch.pi # [B, 2]
@@ -76,7 +77,7 @@ class CameraHead(nn.Module):
             out_r = rearrange(out_r, "(b v) n m -> b v n m", v=v)         # b v 3 3
             out_t = rearrange(out_t, "(b v) n -> b v n", v=v)             # b v 3
         # out_t_magnitude = out_t.norm(dim=-1).mean(dim=-1)[..., None, None] # b 1 1
-        # out_t = out_t / (out_t_magnitude + 1e-8)
+        # out_t = out_t / (out_t_magnitude + 1e-12)
         pose[..., :3, :3] = out_r
         pose[..., :3, 3]  = out_t
         pose[..., 3, 3]   = 1.

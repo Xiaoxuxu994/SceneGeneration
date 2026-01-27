@@ -2,6 +2,7 @@ import bisect
 import numpy as np
 import torch
 import torch.distributed as dist
+import torch.utils
 
 from dotted_dict import DottedDict
 from functools import partial
@@ -48,24 +49,25 @@ DATASET_DICT = {
     "re10k":      Re10K_Dataset,      # indoor/outdoor
     "scannet":    ScanNet_Dataset,    # indoor
     "scannetpp":  ScanNetpp_Dataset,  # outdoor
-    "wildrgbd":   WildRGBD_Dataset,   # object
+    "wildrgbd":   WildRGBD_Dataset, 
 }
 
+EPOCH_SCALE = 10000
 DATASET_SAMPLES_PER_EPOCH = {
-    "ase":        1000000, 
-    "blendedmvs": 100000, 
-    "hypersim":   10000, 
-    "mvssynth":   10000, 
-    "replica":    10000, 
-    "tartanair":  100000, 
-    "vkitti":     10000, 
-    "co3dv2":     1000000, 
-    "dl3dv":      1000000, 
-    "mapillary":  10000, 
-    "re10k":      1000000, 
-    "scannet":    300000, 
-    "scannetpp":  300000, 
-    "wildrgbd":   1000000, 
+    "ase":        100 * EPOCH_SCALE, 
+    "blendedmvs": 10  * EPOCH_SCALE, 
+    "hypersim":   1   * EPOCH_SCALE, 
+    "mvssynth":   1   * EPOCH_SCALE, 
+    "replica":    1   * EPOCH_SCALE, 
+    "tartanair":  20  * EPOCH_SCALE, 
+    "vkitti":     1   * EPOCH_SCALE, 
+    "co3dv2":     40  * EPOCH_SCALE, 
+    "dl3dv":      40  * EPOCH_SCALE, 
+    "mapillary":  1   * EPOCH_SCALE, 
+    "re10k":      40  * EPOCH_SCALE, 
+    "scannet":    20  * EPOCH_SCALE, 
+    "scannetpp":  20  * EPOCH_SCALE, 
+    "wildrgbd":   40  * EPOCH_SCALE, 
 }
 
 
@@ -86,9 +88,9 @@ def create_mixed_dataloader(cfg: DottedDict, data_type="train", batch_size=1, ra
                             sampler=torch.utils.data.DistributedSampler(mixed_dataset, 
                                                                         shuffle=True, 
                                                                         drop_last=True) \
-                                    if data_type == "train" else None, 
+                                    if data_type == "train" else torch.utils.data.RandomSampler(mixed_dataset), 
                             num_workers=num_workers, 
-                            persistent_workers=True, 
+                            persistent_workers=True,
                             multiprocessing_context="spawn", 
                             worker_init_fn=partial(worker_init_fn, device_id=device_id), 
                             )

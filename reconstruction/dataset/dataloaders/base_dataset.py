@@ -11,12 +11,14 @@ from torch.utils.data import Dataset
 import dataset.utils.io as io
 import dataset.utils.common as cm
 from dataset.utils.preprocess import preprocess_images_for_encode, crop_images_and_intrs, crop_tracks_and_visibs
-from utils.common import calc_extr_inv
+from utils.common import calc_extr_inv, normalize_trans
 from utils.log_utils import depth2pointmap
 
 MAX_SAMPLE_RETRY = 10
 VAL_RATIO = 0.02
 IMAGE_MAX_SIZE = 518
+VIEW_OVERLAP_THRE_REALISTIC_DATA = 0.30
+VIEW_OVERLAP_THRE_SYNTHETIC_DATA = 0.10
 
 
 class Base_Dataset(Dataset):
@@ -64,6 +66,40 @@ class Base_Dataset(Dataset):
         sample_num = min(clip_view_num, self.sample_num)
         view_ids = np.random.choice(np.arange(0, clip_view_num), sample_num, replace=False)
         return view_ids
+    
+    def view_sampler_iterative(self, visibs: torch.Tensor, clip_view_num: int, thre: float):
+        """
+        Sample views of a sample from a clip in an iterative approach.
+        Given a sampled view set S from a clip C, each time add a view x in C-S, which has a minimal maximum covisibility with views in S that \
+            above a given threshold. In this way, the given threshold represents sparcity of the sampled views.
+
+        Args:
+            visibs (torch.Tensor): Covisibility of pair-wise tracking pixels. Tensor of shape (V(V-1)/2, gs*gs)
+            clip_viwe_num (int): Number of views in the clip.
+        """
+        visib_mat = cm.deflat_visibility_mat(visibs, clip_view_num) # v v
+        
+        view_ids = []
+        sampled_mask = torch.zeros(clip_view_num, dtype=torch.bool)
+        first_view_id = np.random.randint(low=0, high=clip_view_num)
+        view_ids.append(first_view_id)
+        sampled_mask[first_view_id] = True
+        sampled_view_cnt = 1
+        visib_mat[visib_mat < thre] = 0
+        while sampled_view_cnt < self.sample_num:
+            _visib_mat = visib_mat.clone()
+            _visib_mat[sampled_mask] = 0
+            _visib_mat[:, ~sampled_mask] = 0
+            _visib_vec = _visib_mat.max(dim=-1).values # v
+            _visib_vec[_visib_vec == 0] = 2
+            new_view_id = _visib_vec.min(dim=0).indices
+            if _visib_vec[new_view_id] == 2:
+                return None
+            else:
+                view_ids.append(new_view_id.item())
+                sampled_mask[new_view_id] = True
+                sampled_view_cnt += 1
+        return np.array(view_ids)
     
     def prepare_data_for_dino_encode(self, data, max_size=518):
         data["input_images"], data["input_intrs"], cbox = preprocess_images_for_encode(
@@ -261,7 +297,7 @@ class Realistic_Dataset(Base_Dataset):
                 intrs_raw[..., 0, 2] = 0.5
                 intrs_raw[..., 1, 2] = 0.5
                 intrs_raw[..., 2, 0] = 0.0
-                intrs_raw[..., 2, 1] = 0.0                
+                intrs_raw[..., 2, 1] = 0.0
             
             ## Filter out scenes with numerical illegal cameras.
             try:
@@ -273,7 +309,7 @@ class Realistic_Dataset(Base_Dataset):
                 return None
             
             all_images = torch.stack([io.read_image_as_tensor(f) for f in image_list])
-            all_depths = torch.stack([io.read_depth_as_tensor(f) for f in depth_list])
+            all_depths = torch.stack([io.read_depth_as_tensor(f, regard_inf_as=1e3) for f in depth_list])
             all_depth_masks = torch.stack([io.read_depth_mask_as_tensor(f) for f in depth_mask_list]) \
                 if depth_mask_list is not None else None
             
@@ -310,9 +346,14 @@ class Realistic_Dataset(Base_Dataset):
             ## Try at most MAX_SAMPLE_RETRY times to get a legal sample.
             current_try = 0
             batch_data = []
+            visibs_all = torch.logical_and(tracking_info_raw["visib0"], 
+                                           tracking_info_raw["visib1"]).to(dtype=torch.float32).mean(dim=-1) # v(v-1)/2
             while current_try < MAX_SAMPLE_RETRY and len(batch_data) < batch_size:
                 current_try += 1
-                samp_view_ids = self.view_sampler(clip_view_num)
+                # samp_view_ids = self.view_sampler(clip_view_num)
+                samp_view_ids = self.view_sampler_iterative(visibs_all, clip_view_num, VIEW_OVERLAP_THRE_REALISTIC_DATA)
+                if samp_view_ids is None:
+                    continue
                 
                 ## Load files
                 samp_view_ids_tensor = torch.tensor(samp_view_ids, dtype=torch.int64)
@@ -374,13 +415,13 @@ class Realistic_Dataset(Base_Dataset):
                                  ))
                 if not self.pred_z_depth:
                     data.update(dict(input_depths=cm.zdepth_to_rdepth(data["input_depths"], data["input_intrs"])))
+                data["input_extrs"] = normalize_trans(data["input_extrs"])
                 batch_data.append(data)
             
             if len(batch_data) == batch_size:
                 timer.record_end("0_Total")
                 timer.report()
                 return batch_data
-            
             print("[ WARNING ] Max retries exceed!")
             return None
         
@@ -421,7 +462,8 @@ class Synthetic_Dataset(Base_Dataset):
             print("[ INFO ] Creating sample list for {}".format(self.__class__.__name__))
             sample_list = self.create_sample_list()
             np.savez_compressed(sample_list_file, data=sample_list)
-        valid_sample_num = int(len(sample_list) * VAL_RATIO)
+        valid_sample_num = max(int(len(sample_list) * VAL_RATIO), 1)
+        # print("[ DEBUG ] VAL RATIO: {}, len sample list: {}, valid sample num: {}".format(VAL_RATIO, len(sample_list), valid_sample_num))
         if self.is_train is not None and valid_sample_num > 0:
             sample_list = sample_list[:-valid_sample_num] if self.is_train else sample_list[-valid_sample_num:]
         return sample_list
@@ -430,9 +472,6 @@ class Synthetic_Dataset(Base_Dataset):
         return len(self.sample_list)
     
     def _getitem_fn(self, sample_idx, crop_ratio=None, batch_size=1):
-        """
-        Returns a batch-list of data.
-        """
         try:
             timer = cm.MyTimer()
             timer.record_start("0_Total")
@@ -490,10 +529,18 @@ class Synthetic_Dataset(Base_Dataset):
             ## Try at most MAX_SAMPLE_RETRY times to get a legal sample.
             current_try = 0
             batch_data = []
+            timer.record_start("4_exhaustive_matching")
+            _, _, visibs_all = cm.exhaustive_geo2match(all_depths, calc_extr_inv(extr_list), intr_list, eps=self.match_eps, grid_size=100)
+            visibs_all = visibs_all.to(dtype=torch.float32).mean(dim=-1) # v(v-1)/2
+            timer.record_end("4_exhaustive_matching")
             while current_try < MAX_SAMPLE_RETRY and len(batch_data) < batch_size:
                 current_try += 1
                 
-                samp_view_ids = self.view_sampler(clip_view_num=V)
+                # samp_view_ids = self.view_sampler(clip_view_num=V)
+                samp_view_ids = self.view_sampler_iterative(visibs_all, clip_view_num=V, thre=VIEW_OVERLAP_THRE_SYNTHETIC_DATA)
+                if samp_view_ids is None:
+                    continue
+                
                 samp_view_ids_tensor = torch.tensor(samp_view_ids, dtype=torch.int64)
                 images = all_images[samp_view_ids_tensor]
                 depths = all_depths[samp_view_ids_tensor]
@@ -513,14 +560,14 @@ class Synthetic_Dataset(Base_Dataset):
                 
                 timer.record_start("3_MatchCalc")
                 ## Dataset extrinsics are defined as world-to-camera. Transform to camera-to-world when passed.
-                grid_size = 50
+                grid_size = 100
                 tracks0, tracks1, visibs = cm.exhaustive_geo2match(
                     depths, calc_extr_inv(extrs), intrs, eps=self.match_eps, samples_to_keep=10000, grid_size=grid_size)
                 ## Validate if the image group is connected by checking covisibilitu.
                 # matched_pairs = self.is_visib_valid(visibs.sum(dim=-1) / (images.shape[-2] * images.shape[-1]), 
                 #                                     view_num=len(samp_view_ids), min_thres=0.00625/(10000/10000))
                 matched_pairs = self.is_visib_valid(visibs.sum(dim=-1) / (grid_size * grid_size), 
-                                                    view_num=len(samp_view_ids), min_thres=64 / (grid_size * grid_size))
+                                                    view_num=len(samp_view_ids), min_thres=500 / (grid_size * grid_size))
                 timer.record_end("3_MatchCalc")
                 if matched_pairs is None:
                     continue
@@ -541,13 +588,17 @@ class Synthetic_Dataset(Base_Dataset):
                                  ))
                 if not self.pred_z_depth:
                     data.update(dict(input_depths=cm.zdepth_to_rdepth(depths, intrs)))
+                
+                data["input_extrs"], norm_factor = normalize_trans(data["input_extrs"], return_norm_factor=True)
+                data["input_depths"] = data["input_depths"] / norm_factor
+                data["input_points"] = data["input_points"] / norm_factor
+                
                 batch_data.append(data)
             
             if len(batch_data) == batch_size:
                 timer.record_end("0_Total")
                 timer.report()
                 return batch_data
-            
             print("[ WARNING ] Max retries exceed!")
             print("[ WARNING ] Error data from max retries from {}".format(self.__class__.__name__))
             return None

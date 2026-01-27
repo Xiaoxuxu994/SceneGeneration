@@ -48,6 +48,21 @@ def get_tracking_idx_by_pair(i, j, total=32):
     return ((total - 1) + (total - i)) * i // 2 + (j - i - 1)
 
 
+def deflat_visibility_mat(visibs: torch.Tensor, clip_view_num: int):
+    """Deflat a flattened visibility mat into a matrix of shape (clip_view_num, clip_view_num)
+
+    Args:
+        visibs (torch.Tensor): Tensor of shape (clip_view_num(clip_view_num-1)/2, )
+        clip_view_num (int): View number corresponds to the visibility.
+    """
+    assert len(visibs) == clip_view_num * (clip_view_num - 1) // 2, "Visibs shape: {}, clip view num: {}".format(visibs.shape, clip_view_num)
+    visib_mat = torch.zeros((clip_view_num, clip_view_num), dtype=torch.float32)
+    for v in range(clip_view_num):
+        visib_mat[v, v + 1:] = visibs[get_tracking_idx_by_pair(i=v, j=v+1, total=clip_view_num): 
+                                      get_tracking_idx_by_pair(i=v, j=v+1, total=clip_view_num) + clip_view_num - (v + 1)]
+    return visib_mat
+
+
 def customized_collate_fn(batch_inputs):
     input_images = []
     input_depths = []

@@ -9,6 +9,7 @@ from submodules.pi3.models.layers.camera_head import CameraHead
 from .depth_aligner import DepthAligner
 from utils.platform import DEVICE_NAME
 from utils.embedder import AtomicAttnPEHelper
+from utils.common import normalize_trans
 from .blocks.mono_depth_models import MonoDepthModel
 
 
@@ -66,6 +67,8 @@ class Reliev3R(nn.Module):
                 camera_fovs = aligned_depth_dict["camera_fovs"]
             else:
                 raise NotImplementedError("Not implemented depth aligner type '{}'".format(self.cfg.depth_aligner.type))
+            if self.cfg.decoder.camera_decoder.get("normalize_trans", False):
+                cameras0 = normalize_trans(cameras0, detach_norm_factor=False)
         
         output_dict = {
             "mono_depths":      aligned_depth_dict["mono_depth"],         # Pseudo depth label
