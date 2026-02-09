@@ -16,13 +16,31 @@ DATASETS=(
 
 # ----- model ------
 MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-CKPT="experiments/Reliev3R_bs2v8_260125_synthSup/ckpt/24000.ckpt"
-CONFIG="experiments/Reliev3R_bs2v8_260125_synthSup/config.json"
-PREFIX="Reliev3R_bs2v8_260125_synthSup_ckpt24k"
+CKPT="experiments/Reliev3R_bs2v8_260203_selfSup/ckpt/50000.ckpt"
+CONFIG="experiments/Reliev3R_bs2v8_260203_selfSup/config.json"
+PREFIX="Reliev3R_bs2v8_260203_selfSup_ckpt50k"
 
 # CKPT="experiments/Reliev3R_bs2v8_260123_sub260116_5k_alter_SCSup/ckpt/20000.ckpt"
 # CONFIG="experiments/Reliev3R_bs2v8_260123_sub260116_5k_alter_SCSup/config.json"
 # PREFIX="Reliev3R_bs2v8_260123_sub260116_5k_alter_SCSup_ckpt20k" 
+
+# MODEL="vggt" # ['vggt','pi3','reliev3r']
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch017-loss_valid0.2416-metric_valid0.1665.ckpt/pytorch_model.bin"
+# CONFIG=""
+# PREFIX="vggt_sz_ep17"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch019-loss_valid0.2314-metric_valid0.1583.ckpt/pytorch_model.bin"
+# CONFIG=""
+# PREFIX="vggt_sz_ep19"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch021-loss_valid0.2167-metric_valid0.1511.ckpt/pytorch_model.bin"
+# CONFIG=""
+# PREFIX="vggt_sz_ep21"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch023-loss_valid0.2258-metric_valid0.1446.ckpt/pytorch_model.bin"
+# CONFIG=""
+# PREFIX="vggt_sz_ep23"
 
 # ---- params ------
 SPLIT="test"

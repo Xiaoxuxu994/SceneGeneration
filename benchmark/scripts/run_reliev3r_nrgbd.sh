@@ -17,27 +17,48 @@ DATASETS=(
 
 # ----- model ------
 MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-CKPT="experiments/Reliev3R_bs2v8_260125_synthSup/ckpt/24000.ckpt"
-CONFIG="experiments/Reliev3R_bs2v8_260125_synthSup/config.json"
-PREFIX="Reliev3R_bs2v8_260125_synthSup_ckpt24k"
+CKPT="experiments/Reliev3R_bs2v8_260203_selfSup/ckpt/50000.ckpt"
+CONFIG="experiments/Reliev3R_bs2v8_260203_selfSup/config.json"
+PREFIX="Reliev3R_bs2v8_260203_selfSup_ckpt50k"
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch007-loss_valid0.3137-metric_valid0.2497.ckpt/pytorch_model.bin"
 # CONFIG=""
-# PREFIX="vggt_sz_ep7"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch005-loss_valid0.3839-metric_valid0.2823.ckpt/pytorch_model.bin"
-# CONFIG=""
-# PREFIX="vggt_sz_ep5"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch003-loss_valid0.4962-metric_valid0.3424.ckpt/pytorch_model.bin"
-# CONFIG=""
-# PREFIX="vggt_sz_ep3"
 
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch001-loss_valid0.5604-metric_valid0.4377.ckpt/pytorch_model.bin"
-# CONFIG=""
 # PREFIX="vggt_sz_ep1"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch003-loss_valid0.4962-metric_valid0.3424.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep3"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch005-loss_valid0.3839-metric_valid0.2823.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep5"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch007-loss_valid0.3137-metric_valid0.2497.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep7"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch009-loss_valid0.2741-metric_valid0.2231.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep9"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch011-loss_valid0.2917-metric_valid0.2021.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep11"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch013-loss_valid0.2557-metric_valid0.1859.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep13"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch015-loss_valid0.2459-metric_valid0.1737.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep15"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch017-loss_valid0.2416-metric_valid0.1665.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep17"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch019-loss_valid0.2314-metric_valid0.1583.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep19"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch021-loss_valid0.2167-metric_valid0.1511.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep21"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch023-loss_valid0.2258-metric_valid0.1446.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep23"
 
 # ---- params ------
 SPLIT="test"
@@ -52,7 +73,7 @@ NUM_SEQ=10
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 
-DEVICE="npu:0"
+DEVICE="npu:7"
 DTYPE="fp32"
 
 OUT_ROOT="outputs"  # "/mnt/nvme3/z00533370/3drecon/benchmark/"

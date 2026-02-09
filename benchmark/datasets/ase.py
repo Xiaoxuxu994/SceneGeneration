@@ -16,6 +16,8 @@ from vggt.utils.geometry import closed_form_inverse_se3
 
 from .base import BaseDataset, SequenceBatch
 
+from lib.utils import rdepth_to_zdepth
+
 class ASEDataset(BaseDataset):
     """
     ASE:
@@ -45,27 +47,27 @@ class ASEDataset(BaseDataset):
         self.depth_scale = depth_scale
         
         if root.endswith(".npz"):
-            self.sample_sequences = np.load(root, allow_pickle=True)["data"][-self.NUM_TEST:]
+            self.sample_sequences = np.load(root, allow_pickle=True)
         else:
             raise NotImplementedError
         
     def list_sequences(self, split):
-        return [str(i) for i in range(len(self.sample_sequences))]
+        return self.sample_sequences.files[-self.NUM_TEST:]
     
     def count_seq_len(self, seq):
-        seq = int(seq)
-        rgbs = self.sample_sequences[seq]["input_images"]
-        depths = self.sample_sequences[seq]["input_depths"]
-        poses = self.sample_sequences[seq]["input_extrs"]
+        sequence = self.sample_sequences[seq].item()
+        rgbs = sequence["input_images"]
+        depths = sequence["input_depths"]
+        poses = sequence["input_extrs"]
         
         if not (len(rgbs) == len(depths) == len(poses)):
             print(f"{seq} mismatched: rgb={len(rgbs)} depth={len(depths)} pose={len(poses)}")
         return len(rgbs)
     
     def make_paths(self, seq, frame_ids):
-        seq = int(seq)
-        images = [self.sample_sequences[seq]["input_images"][i].replace("efs-mi-east4-3", "/efs-m3ga") for i in frame_ids]
-        depths = [self.sample_sequences[seq]["input_depths"][i].replace("efs-mi-east4-3", "/efs-m3ga") for i in frame_ids]
+        sequence = self.sample_sequences[seq].item()
+        images = [sequence["input_images"][i].replace("efs-mi-east4-3", "/efs-m3ga") for i in frame_ids]
+        depths = [sequence["input_depths"][i].replace("efs-mi-east4-3", "/efs-m3ga") for i in frame_ids]
         
         return images, depths
     
@@ -74,30 +76,45 @@ class ASEDataset(BaseDataset):
         images_cpu = load_and_preprocess_images(image_paths)  # (V,3,H,W) CPU
         return image_pils, images_cpu
     
-    def _load_depth(self, depth_paths: List[str]) -> torch.Tensor:
+    def _load_depth(self, depth_paths: List[str], K_norm: torch.Tensor) -> torch.Tensor:
         d = np.stack([imageio.v2.imread(p).astype(np.float32) for p in depth_paths])  # (V,H,W)
         d = d / self.depth_scale  # mm -> m
-        return torch.from_numpy(d)  # (V,H,W) meters
+        d = torch.from_numpy(d)
+        d = rdepth_to_zdepth(d.double(), K_norm.double()).float()
+        return d # (V,H,W) meters
     
     def _load_w2c(self, seq: str, frame_ids: List[int]) -> torch.Tensor:
-        seq = int(seq)
-        poses = np.stack([self.sample_sequences[seq]["input_extrs"][i] for i in frame_ids])
+        sequence = self.sample_sequences[seq].item()
+        poses = np.stack([sequence["input_extrs"][i] for i in frame_ids])
         
         return torch.from_numpy(poses)
     
     def _load_K(self, seq: str, frame_ids: List[int]) -> torch.Tensor:
-        seq = int(seq)
-        K = np.stack([self.sample_sequences[seq]["input_intrs"][i] for i in frame_ids])
+        sequence = self.sample_sequences[seq].item()
+        K = np.stack([sequence["input_intrs"][i] for i in frame_ids])
     
         return torch.from_numpy(K)
+    
+    def _normalize_K(self, K: torch.Tensor, W: int, H: int) -> torch.Tensor:
+        K_norm = K.clone()
+        K_norm[..., 0, 0] = K[..., 0, 0] / W
+        K_norm[..., 1, 1] = K[..., 1, 1] / H
+        K_norm[..., 0, 2] = K[..., 0, 2] / W
+        K_norm[..., 1, 2] = K[..., 1, 2] / H
+        K_norm[..., 2, 2] = 1.0
+        
+        return K_norm
     
     def load_sequence(self, seq, frame_ids) -> SequenceBatch:
         image_paths, depth_paths = self.make_paths(seq, frame_ids)
         
         image_pils, images_cpu = self._load_rgb(image_paths)
-        depths = self._load_depth(depth_paths)     # (V,H,W) meters, no resize
         raw_w2c = self._load_w2c(seq, frame_ids)   # (V,4,4)
         raw_K = self._load_K(seq, frame_ids)       # (V,3,3)
+        
+        _, _, W, H = images_cpu.shape
+        norm_K = self._normalize_K(raw_K, W, H)
+        depths = self._load_depth(depth_paths, norm_K)     # (V,H,W) meters, no resize
         
         return SequenceBatch(
             seq=seq,

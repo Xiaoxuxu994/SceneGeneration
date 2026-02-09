@@ -29,6 +29,23 @@ def calc_extr_inv(extr: torch.Tensor):
     ret[..., 3, 3] = ret[..., 3, 3] + 1.0
     return ret
 
+def norm_camera_by_pcd(cameras: torch.Tensor, point_clouds: torch.Tensor):
+    """Normalize camera translation by point cloud coordinate.
+
+    Args:
+        cameras (torch.Tensor): Cameras to be normalized. Tensor of shape (B, V, 4, 4).
+        point_clouds (torch.Tensor): Point cloud to draw scaling factor from. Tensor of shape (B, V, H, W, 3)
+
+    Returns:
+        torch.Tensor: Cameras with normalized translation.
+    """
+    assert cameras.ndim == 4 and point_clouds.ndim == 5
+    B = cameras.shape[0]
+    point_clouds = point_clouds.reshape(B, -1, 3) # b vhw 3
+    norm_factor = point_clouds.norm(dim=-1).mean(dim=-1)[..., None, None].detach() # b 1 1
+    cameras_normed = cameras.clone()
+    cameras_normed[..., :3, -1] = cameras[..., :3, -1] / norm_factor # b v 3
+    return cameras_normed, norm_factor
 
 class WeightedMAD(torch.nn.Module):
     
@@ -84,3 +101,25 @@ class WeightedMAD(torch.nn.Module):
         normalized_x = (x - t_w) / (s_w + self.eps) # [..., D]
         
         return normalized_x
+
+
+def normalize_trans(extr: torch.Tensor, detach_norm_factor: bool=False, return_norm_factor=False):
+    """Normalize tranlation of extrinsics by their camera coordinate.
+
+    Args:
+        extr (torch.Tensor): Extrinsics. Tensor of shape (..., v, 4, 4)
+
+    Returns:
+        torch.Tensor: Normalized extrinsics. Tensor of shape (..., v, 4, 4)
+    """
+    # t: Tensor of shape (..., v, 4, 4)
+    t = extr[..., :3, 3] # ... v 3
+    t_magnitude = t.norm(dim=-1).mean(dim=-1)[..., None, None] # ... 1 1
+    if detach_norm_factor:
+        t_magnitude = t_magnitude.detach()
+    t = t / (t_magnitude + 1e-12)
+    extr = extr.clone()
+    extr[..., :3, 3] = t
+    if not return_norm_factor:
+        return extr
+    return extr, t_magnitude[..., 0, 0] # (..., v, 4, 4), (..., )

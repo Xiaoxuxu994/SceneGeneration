@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import imageio
 from PIL import Image
+from torchvision import transforms as TF
 
 from vggt.utils.load_fn import load_and_preprocess_images
 from vggt.utils.geometry import closed_form_inverse_se3
@@ -65,9 +66,24 @@ class ScanNetDataset(BaseDataset):
         poses  = [osp.join(seq_dir, "pose",  f"{i}.txt") for i in frame_ids]
         return images, poses, depths
 
-    def _load_rgb(self, image_paths: List[str]):
-        image_pils = [Image.open(p).convert("RGB") for p in image_paths]
-        images_cpu = load_and_preprocess_images(image_paths)  # (V,3,H,W) CPU
+    def _load_rgb(self, image_paths: List[str], target_width=518, target_height=392, border=15):
+        # image_pils = [Image.open(p).convert("RGB") for p in image_paths]
+        # images_cpu = load_and_preprocess_images(image_paths)  # (V,3,H,W) CPU
+        
+        # crop input images
+        image_pils, images_cpu = [], []
+        for image_path in image_paths:
+            img = Image.open(image_path).convert("RGB")
+            width, height = img.size
+            left, top, right, bottom = int(border), int(border), int(width-border), int(height-border)
+            img = img.crop((left, top, right, bottom))        
+            img_rs = img.resize((target_width, target_height), Image.Resampling.BICUBIC)
+            image_pils.append(img_rs)
+            img_tensor = TF.ToTensor()(img_rs)
+            images_cpu.append(img_tensor)
+            
+        images_cpu = torch.stack(images_cpu)
+        
         return image_pils, images_cpu
 
     def _load_depth(self, depth_paths: List[str]) -> torch.Tensor:

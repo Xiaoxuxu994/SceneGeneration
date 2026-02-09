@@ -25,7 +25,7 @@ from models.pi3_official.pi3.models.pi3 import Pi3
 # Reliev3R imports 
 # -----------------------------------------------
 from models.reliev3r.utils.config_loader import LoadConfig
-from models.reliev3r.model import Reliev3R
+from models.reliev3r.model.reliev3r import Reliev3R
 
 # -----------------------------------------------
 # dataset related
@@ -50,7 +50,7 @@ DATA_ROOT_DEFAULTS = {
     "scannet": BENCH_ROOT / "data" / "scannet" / "posed_images",
     "dl3dv":   "/mnt/nvme1/share/chenyouyu/dataset/DL3DV/data/1K/",
     "dl3dv_new":   "/efs-m3ga/z00818731/dl3dv-new/reliev3r_sample_list_c32.npz",
-    "ase": BENCH_ROOT / "data" / "ASE" /"reliev3r_sample_list_c32_s1.npz"
+    "ase": BENCH_ROOT / "data" / "ASE" /"reliev3r_sample_list_c32_s1.npz.update.npz"
 }
 MODEL_DEFAULTS = {
     "vggt": {
@@ -141,7 +141,7 @@ def load_model_pi3(ckpt):
     model.eval()
     return model
 
-def run_pi3_infer(model, images_cpu, device: torch.device, autocast_dtype: torch.dtype):
+def run_pi3_infer(model, images_cpu, depth_masks, device: torch.device, autocast_dtype: torch.dtype):
     images = images_cpu.unsqueeze(0).to(device)  # (B=1,...)
 
     with torch.autocast(device_type=device.type, dtype=autocast_dtype):        
@@ -156,6 +156,7 @@ def run_pi3_infer(model, images_cpu, device: torch.device, autocast_dtype: torch
             extrinsics=pred_w2c[:,:,:3],
             world_points=pred_points,
             scale_by_points=False,
+            point_masks=depth_masks.unsqueeze(0)
         )
         
     return pred_w2c_aligned.squeeze(0).numpy(), pred_depth, pred_points_aligned.squeeze(0).numpy()
@@ -179,6 +180,7 @@ def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, 
 def run_reliev3r_infer(
     model,
     images_cpu: torch.Tensor,          # (V,3,H,W) from load_and_preprocess_images, on CPU
+    depth_masks: np.ndarray,          # (V,H,W)
     gt_intrinsics_rs: np.ndarray,       # (V,3,3) from build_gt_geometry_data first return
     gt_extrinsics: np.ndarray,
     device: torch.device,
@@ -260,13 +262,15 @@ def run_reliev3r_infer(
         pred_depth.squeeze(0),
         gt_extrinsics if unproj_with_gt_extrinsics else pred_w2c.squeeze(0),
         gt_K if unproj_with_gt_intrinsics else pred_K,
-    )        
+    )
+    
 
     # print(f"[Reliev3R] normalize_camera_extrinsics & unproj pointcloud")
     pred_w2c_aligned, _, pred_unproj_aligned, _ = normalize_camera_extrinsics_and_points_batch(
         extrinsics=torch.from_numpy(gt_extrinsics).unsqueeze(0)[:,:,:3].to(dtype=torch.float32) if unproj_with_gt_extrinsics else pred_w2c[:,:,:3].cpu(),
         world_points=torch.from_numpy(pred_unproj).to(dtype=torch.float32),
-        scale_by_points = False,
+        scale_by_points=False,
+        # point_masks=torch.from_numpy(depth_masks).unsqueeze(0)
     )
     
     # from scripts.run_vis import export_cameras
@@ -332,6 +336,7 @@ def dump_one_seq(model,
         # ---- fix: convert loaded c2w back to w2c (extrinsics) ----
         gt_c2w = torch.from_numpy(gt_c2w)
         gt_extrinsics = closed_form_inverse_se3(gt_c2w).cpu().numpy() # for debug only
+        gt_depth_masks = np.load(gt_seq_dir / "gt_depth_masks.npy")
 
     # ---- infer
     with torch.inference_mode():
@@ -350,6 +355,7 @@ def dump_one_seq(model,
             pred_w2c, pred_depth_maps, pred_unproj = run_reliev3r_infer(
                 model=model,
                 images_cpu=batch.images_cpu,                  # (V,3,H,W) from load_and_preprocess_images
+                depth_masks=gt_depth_masks,
                 gt_intrinsics_rs=gt_intrinsics_rs,  # GT内参
                 gt_extrinsics=gt_extrinsics,
                 device=device,
@@ -367,7 +373,7 @@ def dump_one_seq(model,
 
         elif model_type == "pi3":
             pred_w2c, pred_depth_maps, pred_point_maps = run_pi3_infer(
-                model, batch.images_cpu, device=device, autocast_dtype=autocast_dtype
+                model, gt_depth_masks, batch.images_cpu, device=device, autocast_dtype=autocast_dtype
             )
             pred_c2w = closed_form_inverse_se3(pred_w2c)
 
