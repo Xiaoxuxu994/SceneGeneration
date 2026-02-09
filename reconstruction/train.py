@@ -22,15 +22,14 @@ from einops import rearrange
 from utils.config_loader import LoadConfig
 from utils.image_utils import visualize_prediction
 from utils.optim_utils import create_optimizer, create_lr_scheduler
-from utils.log_utils import export_pcds_and_cam_as_ply, depth2pointmap, localpoint2global
+from utils.log_utils import export_pcds_and_cam_as_ply
 from utils import make_loss_func
-from utils.common import normalize_trans, calc_extr_inv
+from utils.common import normalize_trans, calc_extr_inv, localpoint2global
 from dataset.dataloaders import create_mixed_dataloader, load_data_to_device
 
 from model import Reliev3R
-import numpy as np
 
-NPU_PROFILING = False
+
 ENABLE_TIME_PROFILING = True
 
 def clean_up():
@@ -72,48 +71,29 @@ def dataloader_step(data_iter, dataloader, step):
 
 def export_image_samples(cfg, step, subfolder, data, pred, loss_dict):
     """Visualize images and depths. """
-    is_pred_points = pred["scaled_depths"].shape[-3] == 3
     os.makedirs(os.path.join(cfg.output_dir, subfolder), exist_ok=True)
-    
-    verbose_image = visualize_prediction(pred, data, loss_dict["matching_info"][-1]) if not is_pred_points else \
-        rearrange(data["input_images"], "b v c h w -> b c h (v w)")
+    verbose_image = visualize_prediction(pred, data, loss_dict["matching_info"][-1])
     torchvision.utils.save_image(verbose_image, os.path.join(cfg.output_dir, subfolder, "iter_{:06d}.png").format(step))
     print("[ INFO ] Images saved successfully.")
 
 
 def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
     """Visualize point maps. """
-    is_pred_points = pred["scaled_depths"].shape[-3] == 3
     os.makedirs(os.path.join(cfg.output_dir, subfolder), exist_ok=True)
     
     with torch.no_grad():
         print("[ INFO ] Visualizing with GT camera: {}".format(pred.get("camera_extrs", None) is None))
         cam_poses = data["input_viewmats"] if pred.get("camera_extrs", None) is None else pred["camera_extrs"]
-        if not is_pred_points:
-            pred_points = depth2pointmap(rearrange(pred["scaled_depths"], "b v c h w -> (b v) c h w"), 
-                                         rearrange(cam_poses, "b v n m -> (b v) n m"), 
-                                         rearrange(data["input_Ks"], "b v n m -> (b v) n m"), 
-                                         depth_is_z=cfg.loss.pred_z_depth)
-            pred_points = rearrange(pred_points, "(b v) c h w -> b v c h w", b=len(cam_poses))
-        else:
-            pred_points = localpoint2global(rearrange(pred["scaled_depths"], "b v c h w -> b v h w c"), cam_poses)
-        pred_points_conf = pred["depths_conf"].mean(dim=-3, keepdim=True)
+        pred_points = localpoint2global(rearrange(pred["local_points"], "b v c h w -> b v h w c"), cam_poses)
+        pred_points_conf = pred["depths_conf"]
     
-    if not is_pred_points:
-        export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}".format(step)), 
-                                    pred_points, data["input_images"], cam_poses, data["input_Ks"], 
-                                    pred_points_conf, conf_thre=thre)
-        if data.get("input_points", None) is not None:
-            export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}_GT".format(step)), 
-                                       data["input_points"], data["input_images"], data["input_viewmats"], data["input_Ks"], 
-                                       data["input_depth_masks"], conf_thre=thre)
-    else:
-        export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}".format(step)), 
-                                    pred_points, data["input_images"], cam_poses, data["input_Ks"], 
-                                    data["input_masks"], conf_thre=thre)
+    export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}".format(step)), 
+                               pred_points, data["input_images"], cam_poses, 
+                               pred_points_conf, conf_thre=thre)
+    if data.get("input_points", None) is not None:
         export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}_GT".format(step)), 
-                                    data["input_points"], data["input_images"], data["input_viewmats"], data["input_Ks"], 
-                                    data["input_masks"], conf_thre=thre)
+                                   data["input_points"], data["input_images"], data["input_viewmats"], 
+                                   data["input_depth_masks"], conf_thre=thre)
     print("[ INFO ] Point maps saved successfully.")
 
 
@@ -141,7 +121,7 @@ def compute_depth_metrics_and_log(pred, data, step, tb_writter, eval_depth_map, 
     try:
         gt_depth = data["input_depths"][0]            # v 1 h w
         gt_mask  = data["input_depth_masks"][0] > 0.0 # v 1 h w
-        pr_depth = pred["scaled_depths"][0].detach()  # v 1 h w
+        pr_depth = pred["depths"][0].detach()  # v 1 h w
         metrics = eval_depth_map(pr_depth, gt_depth, gt_mask, align_with_lstsq=True, device=DEVICE_NAME)
         tb_writter.add_scalar("{}/depth/abs_rel".format(header), metrics["Abs Rel"], step)
         tb_writter.add_scalar("{}/depth/δ<1.25".format(header), metrics["δ < 1.25"], step)
@@ -210,23 +190,6 @@ def run(rank, cfg):
         backward_start, backward_end = torch_device_lib.Event(enable_timing=True), torch_device_lib.Event(enable_timing=True)
         time_profile_table = {"step": 0.0, "data": 0.0, "forward": 0.0, "loss": 0.0, "backward": 0.0}
     
-    # npu_profiling
-    npu_profiling = NPU_PROFILING # and global_rank<8 and global_rank>=0
-    if npu_profiling:
-        # time_fwd, time_bwd = [], []
-        experimental_config = torch_npu.profiler._ExperimentalConfig(
-            profiler_level=torch_npu.profiler.ProfilerLevel.Level1,
-            aic_metrics=torch_npu.profiler.AiCMetrics.PipeUtilization)
-        prof = torch_npu.profiler.profile(
-            activities=[torch_npu.profiler.ProfilerActivity.NPU,
-                        torch_npu.profiler.ProfilerActivity.CPU],
-            with_stack=True,
-            record_shapes=False,
-            profile_memory=False,
-            schedule=torch_npu.profiler.schedule(wait=7, warmup=7, active=2, repeat=0, skip_first=0),
-            experimental_config=experimental_config,
-            on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(cfg.output_dir))
-        
     TRAIN_PCD_VISUALIZE_THRE = 0.5
     EVAL_PCD_VISUALIZE_THRE  = 0.5
     
@@ -239,14 +202,9 @@ def run(rank, cfg):
             """Save configuration file for reproduction. """
             with open(os.path.join(cfg.output_dir, "config.json"), "w+") as f:
                 json.dump(cfg, f, indent='\t')
-        if npu_profiling:
-            prof.start()
+    
         """Training loop. """
         dataset_count = {}
-        data_tlst = []
-        forward_tlst = []
-        loss_tlst = []
-        backward_tlst = []
         while step < cfg.training.iterations:
             
             if enable_time_profiling:
@@ -290,11 +248,8 @@ def run(rank, cfg):
             lr_scheduler.step()
             optimizer.zero_grad()
             
-            if npu_profiling:
-                prof.step()
-
             """Output training time profiling"""
-            if enable_time_profiling:
+            if enable_time_profiling and global_rank == 0:
                 backward_end.record()
                 step_end.record()
                 torch_device_lib.synchronize()
@@ -308,7 +263,6 @@ def run(rank, cfg):
                 time_profile_table["forward"]  += forward_time
                 time_profile_table["loss"]     += loss_time
                 time_profile_table["backward"] += backward_time
-<<<<<<< HEAD
                 if step % 100 == 0 or step - step_begins <= 20:
                     print("======================================")
                     print("[ PROFILE - STEP ] step time:     {:.2f} seconds".format(step_time))
@@ -316,24 +270,11 @@ def run(rank, cfg):
                     print("                   forward time:  {:.2f} seconds, {:.2f}%".format(forward_time, forward_time / step_time * 100))
                     print("                   loss time:     {:.2f} seconds, {:.2f}%".format(loss_time, loss_time / step_time * 100))
                     print("                   backward time: {:.2f} seconds, {:.2f}%".format(backward_time, backward_time / step_time * 100))
-=======
-                data_tlst.append(data_time)
-                forward_tlst.append(forward_time)
-                loss_tlst.append(loss_time)
-                backward_tlst.append(backward_time)
-                if step % 100 == 0 and step < 20 and global_rank==0:
->>>>>>> 50b4d7b01751d5195692d92d82d32e50676fbc7c
                     mean_step_time     = time_profile_table["step"] / (step - step_begins)
                     mean_data_time     = time_profile_table["data"] / (step - step_begins)
                     mean_forward_time  = time_profile_table["forward"] / (step - step_begins)
                     mean_loss_time     = time_profile_table["loss"] / (step - step_begins)
                     mean_backward_time = time_profile_table["backward"] / (step - step_begins)
-                    print("======================================")
-                    print("[ PROFILE - STEP ] step time:     {:.2f} seconds".format(step_time))
-                    print("                   data time:     {:.2f} seconds, {:.2f}%".format(data_time, data_time / step_time * 100))
-                    print("                   forward time:  {:.2f} seconds, {:.2f}%".format(forward_time, forward_time / step_time * 100))
-                    print("                   loss time:     {:.2f} seconds, {:.2f}%".format(loss_time, loss_time / step_time * 100))
-                    print("                   backward time: {:.2f} seconds, {:.2f}%".format(backward_time, backward_time / step_time * 100)) 
                     print("[ PROFILE - MEAN ] step time:     {:.2f} seconds".format(mean_step_time))
                     print("                   data time:     {:.2f} seconds, {:.2f}%".format(mean_data_time, mean_data_time / mean_step_time * 100))
                     print("                   forward time:  {:.2f} seconds, {:.2f}%".format(mean_forward_time, mean_forward_time / mean_step_time * 100))
@@ -343,9 +284,10 @@ def run(rank, cfg):
             
             if global_rank == 0:
                 """Log training loss information"""
-                print("[ INFO ] Step {}; Loss: {:.5f}; Depth range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]".format(
+                print("[ INFO ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]".format(
                     step, loss_dict["total"].item(), 
-                    pred["depths"].min().item(), pred["depths"].max().item(), 
+                    pred["local_points"][..., :2, :, :].min().item(), pred["local_points"][..., :2, :, :].max().item(), 
+                    pred["local_points"][..., -1:, :, :].min().item(), pred["local_points"][..., -1:, :, :].max().item(), 
                     pred["depths_conf"].min().item(), pred["depths_conf"].max().item(), 
                     pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item()))
                 print("[ DEBUG ] dataset: {}".format(data["dataset_names"]))
@@ -367,10 +309,12 @@ def run(rank, cfg):
                     with torch.no_grad():
                         pred = model.module._forward(data)
                         loss_dict = loss_func(pred, data)
-                        print("[ INFO - val ] Step {}; Loss: {:.5f}; Depth range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]".format(
+                        print("[ INFO - val ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]".format(
                             step, loss_dict["total"].item(), 
-                            pred["depths"].min().item(), pred["depths"].max().item(), 
-                            pred["depths_conf"].min().item(), pred["depths_conf"].max().item()))
+                            pred["local_points"][..., :2, :, :].min().item(), pred["local_points"][..., :2, :, :].max().item(), 
+                            pred["local_points"][..., -1:, :, :].min().item(), pred["local_points"][..., -1:, :, :].max().item(), 
+                            pred["depths_conf"].min().item(), pred["depths_conf"].max().item(), 
+                            pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item()))
                         for loss_name, loss_value in loss_dict.items():
                             if loss_name == "matching_info":
                                 continue
@@ -391,12 +335,6 @@ def run(rank, cfg):
                         "current_iteration": step, 
                     }
                     torch.save(checkpoint, ckpt_name)
-        if npu_profiling:
-            prof.stop()
-        if enable_time_profiling:
-            arr = np.array([data_tlst, forward_tlst, loss_tlst, backward_tlst])
-            np.save(os.path.join(cfg.output_dir, f'proftime_{global_rank}.npy'), arr)
-    
     else:
         """Visualize evaluation results on eval set, not for metric computation, implemented for single GPU. """
         print("[ INFO ] Evaluation output directory: {}".format(cfg.output_dir))
@@ -408,18 +346,14 @@ def run(rank, cfg):
             step += 1
             if eval_ends or step - step_begins > 100:
                 break
-            
             with torch.no_grad():
                 pred = model.module._forward(data)
                 loss_dict = loss_func(pred, data)
-            
             """Visualize depth maps. """
             export_image_samples(cfg, step, "vis_img_eval", data, pred, loss_dict)
             """Export point cloud. """
             export_point_cloud(cfg, step, "vis_pcd_eval", data, pred, thre=EVAL_PCD_VISUALIZE_THRE)
-            
             print("[ INFO ] Eval step {} done.".format(step - step_begins))
-    
     clean_up()
 
 

@@ -9,7 +9,7 @@ from submodules.pi3.models.layers.camera_head import CameraHead
 from .depth_aligner import DepthAligner
 from utils.platform import DEVICE_NAME
 from utils.embedder import AtomicAttnPEHelper
-from utils.common import normalize_trans
+from utils.common import normalize_trans, pad_one
 from .blocks.mono_depth_models import MonoDepthModel
 
 
@@ -25,64 +25,36 @@ class Reliev3R(nn.Module):
         if not depth_preprocessed:
             self.depth_model = MonoDepthModel(cfg=self.cfg.depth_model)
         # Initialize depth-aligner and cross-predictor
-        if cfg.depth_aligner.type == "ours":
-            self.depth_aligner = DepthAligner(cfg.depth_aligner.ours)
-            if self.cfg.get("decoder", None) is not None and self.cfg.decoder.camera_decoder.enabled:
-                self.camera_decoder = TransformerDecoder(in_dim=cfg.depth_aligner.ours.d_model, 
-                                                        out_dim=cfg.depth_aligner.ours.d_model)
-                self.camera_head = CameraHead(dim=cfg.depth_aligner.ours.d_model)
-        elif cfg.depth_aligner.type == "pi3":
+        if cfg.depth_aligner.type == "pi3":
             self.depth_aligner = Pi3(cfg=cfg.depth_aligner.pi3)
+            self.pred_z_depth = cfg.depth_aligner.pi3.get("pred_z_depth", True)
         else:
             raise NotImplementedError("Not implemented depth aligner type: {}".format(cfg.depth_aligner.type))
     
     def _forward(self, data):
-        img       = data["input_images"]
-        viewmats  = data["input_viewmats"]
-        Ks        = data["input_Ks"]
-        
-        B, V, C, H, W = img.shape
-        
-        if self.cfg.get("decoder", None) is not None and self.cfg.decoder.camera_decoder.enabled:
-            unit_viewmats = self.eye4[None, None].expand_as(viewmats).clone()
-            if data.get("pseudo_viewmats", None) is not None:
-                viewmat_place_holder = data["pseudo_viewmats"].to(device=DEVICE_NAME)
-            else:
-                viewmat_place_holder = unit_viewmats
-            pe_helper_global, pe_helper_local = self.create_pe_helper_for_aligner(W, H, viewmat_place_holder, Ks) \
-                if self.cfg.depth_aligner.type == "ours" else (None, None)
-        else:
-            pe_helper_global, pe_helper_local = self.create_pe_helper_for_aligner(W, H, viewmats, Ks) \
-                if self.cfg.depth_aligner.type == "ours" else (None, None)
-        aligned_depth_dict = self.infer_aligned_depth(img, data["input_depths"], 
-                                                      pe_helper_global, pe_helper_local, f_px=Ks[0, 0, 0, 0])
-        
-        if self.cfg.get("decoder", None) is not None and self.cfg.decoder.camera_decoder.enabled:
-            if self.cfg.depth_aligner.type == "ours":
-                camera_tokens0 = self.camera_decoder(rearrange(aligned_depth_dict["aligned_depth_tokens"][-1], "b (v l) d -> (b v) l d", v=V))
-                assert H % 14 == 0 and W % 14 == 0
-                cameras0 = self.camera_head(camera_tokens0, patch_h=H//14, patch_w=W//14, v=V).reshape(B, V, 4, 4)
-            elif self.cfg.depth_aligner.type == "pi3":
-                cameras0 = aligned_depth_dict["camera_poses"]
-                camera_fovs = aligned_depth_dict["camera_fovs"]
-            else:
-                raise NotImplementedError("Not implemented depth aligner type '{}'".format(self.cfg.depth_aligner.type))
+        img = data["input_images"]
+
+        aligned_depth_dict = self.infer_aligned_depth(img, data["input_depths"])
+        if self.cfg.depth_aligner.type == "pi3":
+            cameras = aligned_depth_dict["camera_poses"]
             if self.cfg.decoder.camera_decoder.get("normalize_trans", False):
-                cameras0 = normalize_trans(cameras0, detach_norm_factor=False)
-        
-        output_dict = {
-            "mono_depths":      aligned_depth_dict["mono_depth"],         # Pseudo depth label
-            "depths":           aligned_depth_dict["aligned_depth"],      # Depth prediction
-            "depths_conf":      aligned_depth_dict["aligned_depth_conf"], # Predicted depth confidence
-            "scaled_depths":    aligned_depth_dict["scaled_depth"],       # Scaled depth prediction
-            "pred_depth_scale": aligned_depth_dict["depth_scales"],       # Predicted depth scale
-            "pred_depth_trans": aligned_depth_dict["depth_transs"],       # Predicted depth transition
-        }
-        if self.cfg.get("decoder", None) is not None and self.cfg.decoder.camera_decoder.enabled:
-            output_dict.update({
-                "camera_extrs": cameras0, # Camera pose prediction
-                "camera_fovs":  camera_fovs, # Camera field of view along x-axis and y-axis, tensor of shape b,v,2
-            })
+                cameras = normalize_trans(cameras, detach_norm_factor=False)
+            aligner_output = aligned_depth_dict["aligner_output"] # b v 3 h w
+            cam_rays = pad_one(aligner_output[..., :2, :, :], dim=-3) # b v 3 h w
+            pred_depths = aligner_output[..., -1:, :, :] # b v 1 h w
+            if not self.pred_z_depth:
+                cam_rays = cam_rays / cam_rays.norm(dim=-3, keepdim=True)
+            output_dict = {
+                "mono_depth":             aligned_depth_dict["mono_depth"], # Pseudo depth label, b v 1 h w
+                "local_points":           cam_rays * pred_depths,           # Local points, b v 3 h w
+                "local_points_detach_xy": cam_rays.detach() * pred_depths,  # Local points, intrs detached, b v 3 h w
+                "local_points_detach_z":  cam_rays * pred_depths.detach(),  # Local points, depths detached, b v 3 h w
+                "depths":                 pred_depths,                      # Predicted depth, b v 1 h w
+                "depths_conf":            aligned_depth_dict["confs"],      # Predicted depth confidence, b v 1 h w
+                "camera_extrs":           cameras,                          # Predicted camera poses, b v 4 4.
+            }
+        else:
+            raise NotImplementedError("Not implemented depth aligner type: {}".format(self.cfg.depth_aligner.type))
         
         return output_dict
         
@@ -94,93 +66,17 @@ class Reliev3R(nn.Module):
         """
         return self._forward(data)
     
-    def create_pe_helper_for_aligner(self, W, H, viewmats, Ks):
-        pe_helper_aligner_global = AtomicAttnPEHelper(pe_type="prope", 
-                                                      head_dim=self.depth_aligner.cfg.d_model//self.depth_aligner.cfg.n_heads, 
-                                                      patches_x=W//self.depth_aligner.cfg.patch_size, 
-                                                      patches_y=H//self.depth_aligner.cfg.patch_size, 
-                                                      image_width=W, image_height=H, 
-                                                      viewmats_tar=viewmats, Ks_tar=Ks, 
-                                                      viewmats_src=viewmats, Ks_src=Ks, #) 
-                                                      n_cameras=viewmats.shape[1] if self.cfg.depth_aligner.depth_scaler.enabled else None)
-        pe_helper_aligner_local = AtomicAttnPEHelper(pe_type="prope", 
-                                                     head_dim=self.depth_aligner.cfg.d_model//self.depth_aligner.cfg.n_heads, 
-                                                     patches_x=W//self.depth_aligner.cfg.patch_size, 
-                                                     patches_y=H//self.depth_aligner.cfg.patch_size, 
-                                                     image_width=W, image_height=H, 
-                                                     viewmats_tar=viewmats.view(-1, 1, 4, 4), Ks_tar=Ks.view(-1, 1, 3, 3), 
-                                                     viewmats_src=viewmats.view(-1, 1, 4, 4), Ks_src=Ks.view(-1, 1, 3, 3), #)
-                                                     n_cameras=1 if self.cfg.depth_aligner.depth_scaler.enabled else None)
-        return pe_helper_aligner_global, pe_helper_aligner_local
-    
-    def infer_aligned_depth(self, imgs, pseudo_depth=None, pe_helper_global=None, pe_helper_local=None, f_px=None):
+    def infer_aligned_depth(self, imgs, pseudo_depth):
         B, V, C, H, W = imgs.shape
         output_dict = {}
-        with torch.no_grad():
-            depth_model_output = self.depth_model.infer(imgs, f_px=f_px) if pseudo_depth is None else pseudo_depth # (BxV, 1, H, W)
-        output_dict["mono_depth"] = depth_model_output.reshape(B, V, 1, H, W)
-        
-        if self.cfg.depth_aligner.type == "ours":
-            depth_aligner_outputs = self.depth_aligner(imgs, pe_helper_global=pe_helper_global, pe_helper_local=pe_helper_local)
-            output_dict.update({
-                "aligned_depth":        depth_aligner_outputs["aligned_depths"].reshape(B, V, 1, H, W), 
-                "aligned_depth_tokens": depth_aligner_outputs["aligned_depths_tokens"], 
-                "aligned_depth_conf":   depth_aligner_outputs["aligned_depths_conf"].reshape(B, V, 1, H, W), 
-                "scaled_depth":         depth_aligner_outputs["scaled_depths"].reshape(B, V, 1, H, W), 
-                "depth_scales":         depth_aligner_outputs["depth_scales"], 
-                "depth_transs":         depth_aligner_outputs["depth_transs"], 
-            })
-        elif self.cfg.depth_aligner.type == "pi3":
+        output_dict["mono_depth"] = pseudo_depth.reshape(B, V, 1, H, W)
+        if self.cfg.depth_aligner.type == "pi3":
             depth_aligner_outputs = self.depth_aligner(imgs)
             output_dict.update({
-                "aligned_depth":        rearrange(depth_aligner_outputs["local_points"], "b v h w c -> b v c h w"), 
-                "aligned_depth_tokens": None, 
-                "aligned_depth_conf":   rearrange(depth_aligner_outputs["conf"], "b v h w c -> b v c h w"), 
-                "scaled_depth":         rearrange(depth_aligner_outputs["local_points"], "b v h w c -> b v c h w"), 
-                "depth_scales":         None, 
-                "depth_transs":         None, 
-                "camera_poses":         depth_aligner_outputs["camera_poses"], 
-                "camera_fovs":          depth_aligner_outputs["camera_fovs"], 
+                "aligner_output": rearrange(depth_aligner_outputs["local_points"], "b v h w c -> b v c h w"), # b v 3 h w
+                "confs":          rearrange(depth_aligner_outputs["conf"], "b v h w c -> b v c h w"), # b v 1 h w
+                "camera_poses":   depth_aligner_outputs["camera_poses"], # b v 4 4
             })
         else:
             raise NotImplementedError("Not implemented depth aligner type: {}".format(self.cfg.depth_aligner.type))
         return output_dict
-
-    def enable_checkpoint(self, 
-                          enc_skip_first=4,
-                          enc_skip_last=4,
-                          dec_skip_first=4,
-                          dec_skip_last=3):
-        def _apply_ckpt(module):
-            # safe enable checkpoint on each module
-            if hasattr(module, "_orig_forward"):
-                return 
-            module._orig_forward = module.forward
-            def forward(*args, module=module, **kwargs):
-                if module.training:
-                    return checkpoint(
-                        module._orig_forward,
-                        *args,
-                        use_reentrant=True,
-                        **kwargs
-                    )
-                return module._orig_forward(*args, **kwargs)
-            module.forward = forward
-
-        # DinoV2 encoder blocks
-        enc_blocks = self.depth_aligner.encoder.blocks
-        n_enc = len(enc_blocks)
-        print(f"encoder has {n_enc} layers")
-        start_enc = min(enc_skip_first, n_enc)
-        end_enc = max(start_enc, n_enc - enc_skip_last)
-        for i in range(start_enc, end_enc):
-            _apply_ckpt(enc_blocks[i])
-
-        # Decoder blocks
-        dec_blocks = self.depth_aligner.decoder
-        n_dec = len(dec_blocks)
-        print(f"decoder has {n_dec} layers")
-        start_dec = min(dec_skip_first, n_dec)
-        end_dec = max(start_dec, n_dec - dec_skip_last)
-        for i in range(start_dec, end_dec):
-            _apply_ckpt(dec_blocks[i])

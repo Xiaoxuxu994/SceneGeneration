@@ -7,4 +7,4 @@ depth_scale: 1.0
 depth_upperbound: 1000.0
 
 ## EPS for pixel matching reprojection
-match_eps: 0.001
+match_eps: 0.01

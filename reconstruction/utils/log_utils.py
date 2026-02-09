@@ -1,12 +1,8 @@
-import os
 import torch
 import numpy as np
 import open3d as o3d
 
-from einops import rearrange
-
-from .platform import DEVICE_NAME
-from .common import calc_extr_inv, calc_intr_inv
+from .common import calc_extr_inv, trans_geo_to_first_frame_and_norm
 
 
 def save_pcds_as_ply(path_prefix: str, point_maps: torch.Tensor, images: torch.Tensor):
@@ -76,36 +72,8 @@ def create_camera_frustum(position, rotation, scale=0.5, fov=60, aspect_ratio=1.
     return point_set
 
 
-def trans_geo_to_first_frame_and_norm(point_maps: torch.Tensor, extrs: torch.Tensor):
-    """Transformer point maps and camera extrinsics coordinate to the first frame.
-
-    Args:
-        point_maps (torch.Tensor): Tensor of shape (B, V, H, W, 3)
-        extrs (torch.Tensor): Tensor of shape (B, V, 4, 4)
-    """
-    def normalize_trans(point_maps: torch.Tensor, extr: torch.Tensor):
-        # t: Tensor of shape (b, v, 4, 4)
-        point_maps, extr = point_maps.detach(), extr.detach()
-        t = extr[..., :3, 3] # b v 3
-        t_magnitude = t.norm(dim=-1).mean(dim=-1).unsqueeze(-1).unsqueeze(-1) # b 1 1
-        t = t / (t_magnitude + 1e-12)
-        extr = extr.clone()
-        extr[..., :3, 3] = t
-        point_maps = point_maps / t_magnitude.unsqueeze(-1).unsqueeze(-1)
-        return point_maps, extr
-    
-    point_maps, extrs = normalize_trans(point_maps, extrs)
-    homo_point_maps = torch.cat([point_maps, torch.ones_like(point_maps[..., :1])], dim=-1) # b v h w 4
-    trans_mat = extrs[..., :1, :, :] # b 1 4 4
-    homo_point_maps = trans_mat.unsqueeze(-3).unsqueeze(-3) @ homo_point_maps.unsqueeze(-1) # world-to-c0 @ world -> c0
-    point_maps = homo_point_maps[..., :3, 0]
-    extrs = extrs @ calc_extr_inv(trans_mat) # c0-to-world @ world-to-c -> c0-to-c
-    
-    return point_maps, extrs
-
-
 def export_pcds_and_cam_as_ply(path_prefix: str, point_maps: torch.Tensor, images: torch.Tensor, 
-                               extrs: torch.Tensor, intrs: torch.Tensor, confs: torch.Tensor=None, conf_thre=0.5):
+                               extrs: torch.Tensor, confs: torch.Tensor=None, conf_thre=0.5):
     """Export batched point map and cameras to .ply file for visualization.
 
     Args:
@@ -113,14 +81,13 @@ def export_pcds_and_cam_as_ply(path_prefix: str, point_maps: torch.Tensor, image
         point_maps (torch.Tensor): Tensor of shape (B, V, H, W, 3).
         images (torch.Tensor): Tensor of shape (B, V, 3, H, W).
         extrs (torch.Tensor): Tensor of shape (B, V, 4, 4).
-        intrs (torch.Tensor): Tensor of shape (B, V, 3, 3).
         confs (torch.Tensor): Tensor of shape (B, V, H, W, 1)
     """
     assert point_maps.ndim == 5, "This function is designed to process batched data."
     cam_color_ends = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-    point_maps, extrs = trans_geo_to_first_frame_and_norm(point_maps, extrs)
+    point_maps, extrs, _ = trans_geo_to_first_frame_and_norm(point_maps, extrs)
     
-    extrs = torch.linalg.inv(extrs)
+    extrs = calc_extr_inv(extrs)
     
     batch_size = len(point_maps)
     
@@ -148,108 +115,3 @@ def export_pcds_and_cam_as_ply(path_prefix: str, point_maps: torch.Tensor, image
                                                 scale=0.05)
             merged_cameras += cam_frustum
         o3d.io.write_point_cloud(path_prefix + "_cam" + "_batch{}.ply".format(b), merged_cameras)
-
-
-def depth2pointmap(depths: torch.Tensor, extrs: torch.Tensor, intrs: torch.Tensor, device=DEVICE_NAME, is_intr_normalized=True, depth_is_z=True):
-    """Back-project depth maps into 3D point maps with given cameras. 
-
-    Args:
-        depths (torch.Tensor): Depth maps, tensor of shape (B, 1, H, W).
-        extrs (torch.Tensor): Extrinsics (world-to-camera), tensor of shape (B, 4, 4).
-        intrs (torch.Tensor): Intrinsics (not normalized, assuming c corresponds to the image center), tensor of shape (B, 3, 3).
-        device (str): The default device to perform operations on.
-        is_intr_normalized (bool): If the intrinsics are normalized or not. 
-        depth_is_z (bool): If the input depths maps are z-depth. True if they are z-depth while False if they are r-depth.
-    
-    Returns:
-        torch.Tensor: The back-projected point maps, tensor of shape (B, H, W, 3).
-    """
-    B, C, H, W = depths.shape
-    assert depths.ndim == 4 and C == 1
-    
-    if not is_intr_normalized:
-        intr_normalizer = torch.tensor([W, H, 1], dtype=torch.float32, device=device).reshape(1, 3, 1)
-        intrs = intrs / intr_normalizer
-    
-    grids = torch.cartesian_prod((torch.arange(W, device=device) + 0.5) / W, (torch.arange(H, device=device) + 0.5) / H)
-    grids = grids.reshape(1, W, H, 2).permute(0, 2, 1, 3).expand(B, -1, -1, -1) # b h w 2
-    pixel_vecs = torch.cat([grids, torch.ones_like(grids[..., :1])], dim=-1) # b h w 3
-    intrs_inv = calc_intr_inv(intrs)
-    pixel_vecs = torch.matmul(intrs_inv[..., None, None, :, :], pixel_vecs[..., None]) # b h w 3 1
-    if not depth_is_z:
-        pixel_vecs = pixel_vecs / (pixel_vecs.norm(dim=-2, keepdim=True) + 1e-8)
-    points_local = pixel_vecs * rearrange(depths, "n c h w -> n h w c")[..., None] # b h w 3 1
-    
-    extrs_inv = calc_extr_inv(extrs)
-    orth_points_local = torch.cat([points_local, torch.ones_like(points_local[..., :1, :])], dim=-2) # b h w 4 1
-    points_world = torch.matmul(extrs_inv[..., None, None, :, :], orth_points_local) # b h w 4 1
-    points_world = points_world[..., :3, 0] / points_world[..., 3:, 0] # b h w 3
-    
-    return points_world
-
-
-def localpoint2global(points: torch.Tensor, extrs: torch.Tensor):
-    """Align local point map under the global coordinate.
-
-    Args:
-        points (torch.Tensor): Local point map, tensor of shape (..., h, w, 3).
-        extrs (torch.Tensor): World-to-camera transform, tensor of shape (..., 4, 4)
-    """
-    points_homo = torch.cat([points, torch.ones_like(points[..., :1])], dim=-1).unsqueeze(-1) # ..., h, w, 4, 1
-    points_world_homo = calc_extr_inv(extrs)[..., None, None, :, :] @ points_homo
-    
-    return points_world_homo[..., :3, 0]
-
-
-def pointmap2pixel(points: torch.Tensor, extrs: torch.Tensor, intrs: torch.Tensor, device=DEVICE_NAME):
-    """Project point maps into image coordinate with given cameras. 
-
-    Args:
-        points (torch.Tensor): Point maps, tensor of shape (B, N, 3).
-        extrs (torch.Tensor): Extrinsics (world-to-camera), tensor of shape (B, 4, 4).
-        intrs (torch.Tensor): Intrinsics (not normalized, assuming c corresponds to the image center), tensor of shape (B, 3, 3).
-        device (str): The default device to perform operations on.
-    
-    Returns:
-        torch.Tensor: The back-projected point maps, tensor of shape (B, N, 2).
-    """
-    points_world_orth = torch.cat([points, torch.ones_like(points[..., :1])], dim=-1)
-    points_local_orth = torch.matmul(extrs.unsqueeze(-3), points_world_orth.unsqueeze(-1)) # B N 4 1
-    points_pixel_orth = torch.matmul(intrs.unsqueeze(-3), points_local_orth[..., :3, :] / points_local_orth[..., 3:, :])[..., 0] # B N 3
-    points_pixel      = points_pixel_orth[..., :2] / points_pixel_orth[..., 2:]
-    return points_pixel
-
-
-class Depth2PointMap(torch.autograd.Function):
-    
-    @staticmethod
-    def forward(ctx, depths: torch.Tensor, extrs: torch.Tensor, intrs: torch.Tensor):
-        ctx.save_for_backward(depths, extrs, intrs)
-        return depth2pointmap(depths, extrs, intrs)
-    
-    @staticmethod
-    def backward(ctx, d_l_points: torch.Tensor):
-        
-        with torch.enable_grad():
-            depths, extrs, intrs = ctx.saved_tensors
-            depths = depths.detach().requires_grad_()
-            extrs = extrs.detach().requires_grad_()
-            intrs = intrs.detach().requires_grad_()
-            points_world = depth2pointmap(depths, extrs, intrs)
-            # d_points_depths, d_points_extrs, d_points_intrs = torch.autograd.grad(points_world, [depths, extrs, intrs]) # b 1 h w
-            grads = torch.autograd.grad(points_world, [depths, extrs, intrs], grad_outputs=d_l_points)
-            d_l_depths = grads[0] # b 1 h w
-            d_l_extrs = grads[1]
-            d_l_intrs = grads[2]
-        
-        # print("[ DEBUG ] d_l_points.shape: {}, d_l_points norm sum: {}".format(
-        #     d_l_points.shape, d_l_points.norm(dim=-1, keepdim=True).sum().item()))
-        # print("[ DEBUG ] d_points_depths.shape: {}, d_points_depths norm median: {}, max: {}".format(
-        #     d_l_depths.shape, d_l_depths.norm(dim=-3, keepdim=True).median().item(), d_l_depths.norm(dim=-3, keepdim=True).max().item()))
-        
-        d_l_depths_normed = d_l_depths / (d_l_depths.norm(dim=-3, keepdim=True)) * \
-            d_l_points.norm(dim=-1).reshape(*d_l_depths.shape)
-        d_l_depths_normed[d_l_depths_normed.isnan()] = 0.0
-        
-        return d_l_depths_normed, d_l_extrs, d_l_intrs
-            

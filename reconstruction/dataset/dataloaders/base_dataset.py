@@ -11,14 +11,13 @@ from torch.utils.data import Dataset
 import dataset.utils.io as io
 import dataset.utils.common as cm
 from dataset.utils.preprocess import preprocess_images_for_encode, crop_images_and_intrs, crop_tracks_and_visibs
-from utils.common import calc_extr_inv, normalize_trans
-from utils.log_utils import depth2pointmap
+from utils.common import calc_extr_inv, normalize_trans, depth2pointmap, globalpoint2local, trans_geo_to_first_frame_and_norm
 
 MAX_SAMPLE_RETRY = 10
 VAL_RATIO = 0.02
 IMAGE_MAX_SIZE = 518
 VIEW_OVERLAP_THRE_REALISTIC_DATA = 0.30
-VIEW_OVERLAP_THRE_SYNTHETIC_DATA = 0.10
+VIEW_OVERLAP_THRE_SYNTHETIC_DATA = 0.25
 
 
 class Base_Dataset(Dataset):
@@ -77,15 +76,19 @@ class Base_Dataset(Dataset):
             visibs (torch.Tensor): Covisibility of pair-wise tracking pixels. Tensor of shape (V(V-1)/2, gs*gs)
             clip_viwe_num (int): Number of views in the clip.
         """
-        visib_mat = cm.deflat_visibility_mat(visibs, clip_view_num) # v v
+        visib_mat = cm.deflat_visibility_mat(visibs, clip_view_num) # v v, upper-triangle matrix.
+        visib_mat[visib_mat < thre] = 0
+        # legal_roots = ((visib_mat > 0).sum(dim=-1) >= self.sample_num - 1).nonzero()[..., 0].numpy() # v
+        # if len(legal_roots) == 0:
+        #     return None
         
         view_ids = []
         sampled_mask = torch.zeros(clip_view_num, dtype=torch.bool)
+        # first_view_id = legal_roots[np.random.randint(low=0, high=len(legal_roots))]
         first_view_id = np.random.randint(low=0, high=clip_view_num)
         view_ids.append(first_view_id)
         sampled_mask[first_view_id] = True
         sampled_view_cnt = 1
-        visib_mat[visib_mat < thre] = 0
         while sampled_view_cnt < self.sample_num:
             _visib_mat = visib_mat.clone()
             _visib_mat[sampled_mask] = 0
@@ -151,24 +154,6 @@ class Base_Dataset(Dataset):
         batch = []
         max_retries = 2
         crop_ratio = (np.random.rand() * (0.075 - 0) + 0, np.random.rand() * (0.075 - 0) + 0) # Augmentation by cropping.
-        # crop_ratio = None
-        # for _ in range(self.batch_size):
-        #     tries = 0
-        #     sample_idx = np.random.randint(low=0, high=len(self))
-        #     data = self._getitem_fn(sample_idx, crop_ratio=crop_ratio)
-        #     """
-        #     data can be None for illegal sampling, specifically:
-        #     1. Missing files.
-        #     2. Inconsistent modality file list length.
-        #     3. Clip view number < sample number, which should have been addressed.
-        #     4. Unconnected views after max retries.
-        #     5. Unexpected errors.
-        #     """
-        #     while data is None and tries < max_retries: # or (batch_shape is not None and data["input_images"].shape != batch_shape):
-        #         sample_idx = np.random.randint(low=0, high=len(self))
-        #         data = self._getitem_fn(sample_idx, crop_ratio=crop_ratio)
-        #         tries += 1
-        #     batch.append(data)
         tries = 0
         while tries < max_retries:
             sample_idx = np.random.randint(low=0, high=len(self))
@@ -224,10 +209,11 @@ class Base_Dataset(Dataset):
 
 
 class Realistic_Dataset(Base_Dataset):
-    def __init__(self, **kwargs):
+    def __init__(self, overlap_thre_real=0.25, **kwargs):
         super().__init__(**kwargs)
         self.clip_length = 32
         self.sample_list = self.get_sample_list()
+        self.overlap_thre = overlap_thre_real
         print("[ INFO ] {} samples found for {} as {}.".format(
             len(self), self.__class__.__name__,"training set" if self.is_train else "validation set"))
     
@@ -291,7 +277,8 @@ class Realistic_Dataset(Base_Dataset):
             if clip_view_num < self.sample_num:
                 return None
             
-            extrs_raw, intrs_raw = io.read_realistic_camera_npy(camera_file)
+            invert_extr = (self.__class__.__name__ == "ScanNet_Dataset" or self.__class__.__name__ == "ScanNetpp_Dataset")
+            extrs_raw, intrs_raw = io.read_realistic_camera_npy(camera_file, inv_extr=invert_extr)
             tracking_info_raw = io.read_cotracker_info_as_tensor(tracking_file)
             if self.__class__.__name__ == "WildRGBD_Dataset":
                 intrs_raw[..., 0, 2] = 0.5
@@ -351,7 +338,7 @@ class Realistic_Dataset(Base_Dataset):
             while current_try < MAX_SAMPLE_RETRY and len(batch_data) < batch_size:
                 current_try += 1
                 # samp_view_ids = self.view_sampler(clip_view_num)
-                samp_view_ids = self.view_sampler_iterative(visibs_all, clip_view_num, VIEW_OVERLAP_THRE_REALISTIC_DATA)
+                samp_view_ids = self.view_sampler_iterative(visibs_all, clip_view_num, self.overlap_thre)
                 if samp_view_ids is None:
                     continue
                 
@@ -391,6 +378,7 @@ class Realistic_Dataset(Base_Dataset):
                     input_extrs=extrs, # v 4 4
                     input_intrs=intrs, # v 3 3
                     input_points=None, 
+                    input_points_local=None, 
                     dataset_name=self.__class__.__name__, 
                 )
                 # data = self.prepare_data_for_dino_encode(data, max_size=IMAGE_MAX_SIZE)
@@ -422,7 +410,7 @@ class Realistic_Dataset(Base_Dataset):
                 timer.record_end("0_Total")
                 timer.report()
                 return batch_data
-            print("[ WARNING ] Max retries exceed!")
+            # print("[ WARNING ] Max retries exceed!")
             return None
         
         except:
@@ -430,11 +418,12 @@ class Realistic_Dataset(Base_Dataset):
 
 
 class Synthetic_Dataset(Base_Dataset):
-    def __init__(self, clip_length: int, samp_interval: int, match_eps=0.01, **kwargs):
+    def __init__(self, clip_length: int, samp_interval: int, match_eps=0.01, overlap_thre_synth=0.15, **kwargs):
         super().__init__(**kwargs)
         self.clip_length = clip_length
         self.samp_interval = samp_interval
         self.match_eps = match_eps
+        self.overlap_thre = overlap_thre_synth
         self.sample_list = self.get_sample_list()
         print("[ INFO ] {} samples found for {} as {}.".format(
             len(self), self.__class__.__name__,"training set" if self.is_train else "validation set"))
@@ -455,15 +444,21 @@ class Synthetic_Dataset(Base_Dataset):
     
     def get_sample_list(self):
         sample_list_file = os.path.join(self.data_root, "reliev3r_sample_list_c{}_s{}.npz".format(self.clip_length, self.samp_interval))
+        if self.__class__.__name__ == "ASE_Dataset":
+            sample_list_file = sample_list_file + ".update.npz"
         if os.path.exists(sample_list_file):
             print("[ INFO ] Loading preprocessed sample list for {} from '{}'".format(self.__class__.__name__, sample_list_file))
-            sample_list = np.load(sample_list_file, allow_pickle=True)['data']
+            sample_list = np.load(sample_list_file, allow_pickle=True)
+            if 'data' in sample_list.files:
+                sample_list = sample_list['data']
+            else:
+                self.data_list = sample_list
+                sample_list = sample_list.files
         else:
             print("[ INFO ] Creating sample list for {}".format(self.__class__.__name__))
             sample_list = self.create_sample_list()
             np.savez_compressed(sample_list_file, data=sample_list)
         valid_sample_num = max(int(len(sample_list) * VAL_RATIO), 1)
-        # print("[ DEBUG ] VAL RATIO: {}, len sample list: {}, valid sample num: {}".format(VAL_RATIO, len(sample_list), valid_sample_num))
         if self.is_train is not None and valid_sample_num > 0:
             sample_list = sample_list[:-valid_sample_num] if self.is_train else sample_list[-valid_sample_num:]
         return sample_list
@@ -471,11 +466,17 @@ class Synthetic_Dataset(Base_Dataset):
     def __len__(self):
         return len(self.sample_list)
     
+    def fetch_meta(self, sample_idx):
+        if hasattr(self, "data_list"):
+            return self.data_list[self.sample_list[sample_idx]].item()
+        else:
+            return self.sample_list[sample_idx]
+    
     def _getitem_fn(self, sample_idx, crop_ratio=None, batch_size=1):
         try:
             timer = cm.MyTimer()
             timer.record_start("0_Total")
-            sample_meta = self.sample_list[sample_idx]
+            sample_meta = self.fetch_meta(sample_idx)
             image_list = sample_meta["input_images"]
             depth_list = sample_meta["input_depths"]
             depth_mask_list = sample_meta["input_depth_masks"]
@@ -489,7 +490,8 @@ class Synthetic_Dataset(Base_Dataset):
                 return None
             
             timer.record_start("1_IO")
-            all_images = torch.stack([io.read_image_as_tensor(f) for f in image_list])
+            target_size = (480, 640) if self.__class__.__name__ == "ScanNetv2_Dataset" else None
+            all_images = torch.stack([io.read_image_as_tensor(f, target_size) for f in image_list])
             all_depths = torch.stack([io.read_depth_as_tensor(f) for f in depth_list])
             all_depth_masks = torch.stack([io.read_depth_mask_as_tensor(f) for f in depth_mask_list]) \
                 if depth_mask_list is not None else None
@@ -530,14 +532,15 @@ class Synthetic_Dataset(Base_Dataset):
             current_try = 0
             batch_data = []
             timer.record_start("4_exhaustive_matching")
-            _, _, visibs_all = cm.exhaustive_geo2match(all_depths, calc_extr_inv(extr_list), intr_list, eps=self.match_eps, grid_size=100)
+            grid_size = 100
+            _, _, visibs_all = cm.exhaustive_geo2match(all_depths, calc_extr_inv(extr_list), intr_list, eps=self.match_eps, grid_size=grid_size)
             visibs_all = visibs_all.to(dtype=torch.float32).mean(dim=-1) # v(v-1)/2
             timer.record_end("4_exhaustive_matching")
             while current_try < MAX_SAMPLE_RETRY and len(batch_data) < batch_size:
                 current_try += 1
                 
                 # samp_view_ids = self.view_sampler(clip_view_num=V)
-                samp_view_ids = self.view_sampler_iterative(visibs_all, clip_view_num=V, thre=VIEW_OVERLAP_THRE_SYNTHETIC_DATA)
+                samp_view_ids = self.view_sampler_iterative(visibs_all, clip_view_num=V, thre=self.overlap_thre)
                 if samp_view_ids is None:
                     continue
                 
@@ -560,19 +563,15 @@ class Synthetic_Dataset(Base_Dataset):
                 
                 timer.record_start("3_MatchCalc")
                 ## Dataset extrinsics are defined as world-to-camera. Transform to camera-to-world when passed.
-                grid_size = 100
                 tracks0, tracks1, visibs = cm.exhaustive_geo2match(
                     depths, calc_extr_inv(extrs), intrs, eps=self.match_eps, samples_to_keep=10000, grid_size=grid_size)
                 ## Validate if the image group is connected by checking covisibilitu.
-                # matched_pairs = self.is_visib_valid(visibs.sum(dim=-1) / (images.shape[-2] * images.shape[-1]), 
-                #                                     view_num=len(samp_view_ids), min_thres=0.00625/(10000/10000))
                 matched_pairs = self.is_visib_valid(visibs.sum(dim=-1) / (grid_size * grid_size), 
-                                                    view_num=len(samp_view_ids), min_thres=500 / (grid_size * grid_size))
+                                                    view_num=len(samp_view_ids), min_thres=0.0)
                 timer.record_end("3_MatchCalc")
+                assert matched_pairs is not None, "This should not happen."
                 if matched_pairs is None:
                     continue
-                # tracks0, tracks1, visibs = cm.exhaustive_geo2match(
-                #     depths, calc_extr_inv(extrs), intrs, eps=self.match_eps, samples_to_keep=400, grid_size=grid_size)
                 matched_view_i, matched_view_j = matched_pairs
                 data.update(dict(input_tracks_view_id0=torch.from_numpy(matched_view_i), # v-1
                                  input_tracks_view_id1=torch.from_numpy(matched_view_j), # v-1
@@ -589,9 +588,10 @@ class Synthetic_Dataset(Base_Dataset):
                 if not self.pred_z_depth:
                     data.update(dict(input_depths=cm.zdepth_to_rdepth(depths, intrs)))
                 
-                data["input_extrs"], norm_factor = normalize_trans(data["input_extrs"], return_norm_factor=True)
-                data["input_depths"] = data["input_depths"] / norm_factor
-                data["input_points"] = data["input_points"] / norm_factor
+                ## Normalize geometrics.
+                data["input_points"], data["input_extrs"], data["input_depths"] = \
+                    trans_geo_to_first_frame_and_norm(data["input_points"], data["input_extrs"], data["input_depths"])
+                data["input_points_local"] = globalpoint2local(data["input_points"], data["input_extrs"])
                 
                 batch_data.append(data)
             
@@ -599,8 +599,8 @@ class Synthetic_Dataset(Base_Dataset):
                 timer.record_end("0_Total")
                 timer.report()
                 return batch_data
-            print("[ WARNING ] Max retries exceed!")
-            print("[ WARNING ] Error data from max retries from {}".format(self.__class__.__name__))
+            # print("[ WARNING ] Max retries exceed!")
+            # print("[ WARNING ] Error data from max retries from {}".format(self.__class__.__name__))
             return None
 
         except:

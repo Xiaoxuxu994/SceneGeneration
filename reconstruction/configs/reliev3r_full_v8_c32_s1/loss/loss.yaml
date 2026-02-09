@@ -4,19 +4,17 @@ depth_shape:
   w: 1.0
   norm_depth: true
 geometric:
-  w: 0.5
-  detach_camera: false
+  w: 0.5 # 0.5
 camera_extr:
   w: 0.0
 camera_intr:
   w: 1.0
-
-enable_alternate_geometric_opt: false
+point:
+  w: 0.0
 
 enable_conf: true
 conf_alpha: 1.0 # 0.1
 
-enable_slide: true
+enable_alternate_geometric_opt: false
 
-pred_z_depth: false # true if predict z-depth while false is predict r-depth
-use_pred_intr: true
+enable_slide: true

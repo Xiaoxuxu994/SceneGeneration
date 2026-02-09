@@ -13,6 +13,8 @@ sample_min: 8
 ## Maximum views to sample for a batch
 sample_max: 8
 
-depth_is_z: True
+depth_is_z: true
 
 pred_z_depth: false
+
+overlap_thre: 0.25
