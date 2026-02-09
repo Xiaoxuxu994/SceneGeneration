@@ -80,7 +80,7 @@ class ASEDataset(BaseDataset):
         d = np.stack([imageio.v2.imread(p).astype(np.float32) for p in depth_paths])  # (V,H,W)
         d = d / self.depth_scale  # mm -> m
         d = torch.from_numpy(d)
-        d = rdepth_to_zdepth(d.double(), K_norm.double()).float()
+        d = rdepth_to_zdepth(d.unsqueeze(1), K_norm).squeeze(1)
         return d # (V,H,W) meters
     
     def _load_w2c(self, seq: str, frame_ids: List[int]) -> torch.Tensor:
@@ -93,7 +93,7 @@ class ASEDataset(BaseDataset):
         sequence = self.sample_sequences[seq].item()
         K = np.stack([sequence["input_intrs"][i] for i in frame_ids])
     
-        return torch.from_numpy(K)
+        return torch.from_numpy(K).float()
     
     def _normalize_K(self, K: torch.Tensor, W: int, H: int) -> torch.Tensor:
         K_norm = K.clone()
