@@ -4,15 +4,8 @@ import numpy as np
 from pathlib import Path
 from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
+import argparse
 
-
-# ---------- CONFIG ----------
-data_root = "/storage/datasets/nargenziano/scannetpp"
-colmap_rel_path = "dslr/colmap/images.txt"
-nerfstudio_rel_path = "dslr/nerfstudio/transforms_undistorted.json"
-images_rel_dir = "dslr/resized_undistorted_images"
-output_metadata_dir = os.path.join(data_root, "LVSM_metadata")
-os.makedirs(output_metadata_dir, exist_ok=True)
 
 # ---------- HELPER FUNCTIONS ----------
 def parse_colmap_images_txt(path):
@@ -62,7 +55,7 @@ def load_intrinsics(json_path):
 
 
 # ---------- MAIN ----------
-def make_scene_metadata(scene_id):
+def make_scene_metadata(data_root, output_metadata_dir, scene_id):
     scene_dir = os.path.join(data_root, "data", scene_id)
     colmap_path = os.path.join(scene_dir, colmap_rel_path)
     nerf_path = os.path.join(scene_dir, nerfstudio_rel_path)
@@ -95,8 +88,8 @@ def make_scene_metadata(scene_id):
     return metadata_out
 
 
-def process_split(split_name):
-    in_split = os.path.join(data_root, "splits", f"hq_nvs_{split_name}.txt")
+def process_split(data_root, output_metadata_dir, split_name):
+    in_split = os.path.join(f"data/scannetpp/splits/hq_nvs_{split_name}.txt")
     out_split = os.path.join(data_root, "splits", f"hq_lvsm_{split_name}.txt")
 
     with open(in_split, "r") as f:
@@ -104,7 +97,7 @@ def process_split(split_name):
 
     abs_paths = []
     for scene_id in tqdm(scene_ids):
-        meta_path = make_scene_metadata(scene_id)
+        meta_path = make_scene_metadata(data_root, output_metadata_dir, scene_id)
         abs_paths.append(os.path.abspath(meta_path))
 
     with open(out_split, "w") as f:
@@ -113,5 +106,15 @@ def process_split(split_name):
 
 
 if __name__ == "__main__":
-    process_split("train")
-    process_split("val")
+    parser = argparse.ArgumentParser(description ='Process ScanNet++v2')
+    parser.add_argument('--base_path', type=str, required=True)
+    args = parser.parse_args()
+    
+    colmap_rel_path = "dslr/colmap/images.txt"
+    nerfstudio_rel_path = "dslr/nerfstudio/transforms_undistorted.json"
+    images_rel_dir = "dslr/resized_undistorted_images"
+    output_metadata_dir = os.path.join(args.base_path, "LVSM_metadata")
+    os.makedirs(output_metadata_dir, exist_ok=True)
+    
+    process_split(args.base_path, output_metadata_dir, "train")
+    process_split(args.base_path, output_metadata_dir, "val")

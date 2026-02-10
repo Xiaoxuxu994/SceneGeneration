@@ -1,5 +1,3 @@
-# Copyright (c) 2025 Haian Jin. Created for the LVSM project (ICLR 2025).
-
 from tqdm import tqdm
 import gc
 import os
