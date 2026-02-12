@@ -15,6 +15,8 @@ from huggingface_hub import PyTorchModelHubMixin
 from torch.utils.checkpoint import checkpoint
 
 from utils.platform import DEVICE_NAME
+import utils.common as cm
+
 
 class Pi3(nn.Module, PyTorchModelHubMixin):
     def __init__(
@@ -114,7 +116,16 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 rope=self.rope,
                 use_checkpoint=True
             )
-            self.point_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=3, activation="linear")
+            self.point_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1, activation="linear")
+            self.xy_decoder = TransformerDecoder(
+                in_dim=2*self.dec_embed_dim, 
+                dec_embed_dim=1024,
+                dec_num_heads=16,
+                out_dim=1024,
+                rope=self.rope,
+                use_checkpoint=True
+            )
+            self.xy_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=2, activation="linear")
 
         # ----------------------
         #  Local Depths Decoder
@@ -133,9 +144,10 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         # ----------------------
         #     Conf Decoder
         # ----------------------
-        if hasattr(self, "point_decoder"):
+        if hasattr(self, "point_head"):
             self.conf_decoder = deepcopy(self.point_decoder)
-            self.conf_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1, activation="linear")
+            # self.conf_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1, activation="linear")
+            self.conf_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1, activation="2sigmoid")
         elif hasattr(self, "depth_head"):
             self.conf_decoder = deepcopy(self.depth_decoder)
             self.conf_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1, activation="2sigmoid")
@@ -153,7 +165,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             rope=self.rope,
             use_checkpoint=True
         )
-        self.camera_head = CameraHead(dim=512)
+        self.camera_head = CameraHead(dim=512, pred_fov=hasattr(self, "depth_head"))
 
         # For ImageNet Normalize
         image_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
@@ -223,41 +235,47 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         xpos_max = max(H//self.patch_size, W//self.patch_size)
         hidden, pos = self.decode(hidden, N, H, W, xpos_max=xpos_max)
 
-        point_hidden = self.point_decoder(hidden, xpos=pos, xpos_max=xpos_max) \
-            if hasattr(self, "point_decoder") else self.depth_decoder(hidden, xpos=pos, xpos_max=xpos_max)
+        if hasattr(self, "point_head"):
+            point_hidden = self.point_decoder(hidden, xpos=pos, xpos_max=xpos_max)
+            xy_hidden = self.xy_decoder(hidden, xpos=pos, xpos_max=xpos_max)
+        else:
+            point_hidden = self.depth_decoder(hidden, xpos=pos, xpos_max=xpos_max)
         conf_hidden = self.conf_decoder(hidden, xpos=pos, xpos_max=xpos_max)
         camera_hidden = self.camera_decoder(hidden, xpos=pos, xpos_max=xpos_max)
 
         with torch.amp.autocast(device_type=DEVICE_NAME, enabled=False):
+            # camera
+            camera_hidden = camera_hidden.float()
+            camera_poses = self.camera_head(camera_hidden[:, self.patch_start_idx:], patch_h, patch_w)
+            if hasattr(self, "depth_head"):
+                camera_poses, camera_fovs = camera_poses
+                camera_poses = camera_poses.reshape(B, N, 4, 4)
+                camera_fovs = camera_fovs.reshape(B, N, 2)
+                camera_intrs = cm.fov2intr(camera_fovs) # b n 3 3
+                xy = cm.intr2ray(camera_intrs, H, W)[..., :2, :, :] # b n 2 h w
+                xy = xy.permute(0, 1, 3, 4, 2) # b n h w 2
+            else:
+                camera_poses = camera_poses.reshape(B, N, 4, 4)
+            
             # local points
             point_hidden = point_hidden.float()
             if hasattr(self, "point_head"):
-                ret = self.point_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
-                xy, z = ret.split([2, 1], dim=-1)
+                xy_hidden = xy_hidden.float()
+                xy = self.xy_head([xy_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
+                z = self.point_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
                 z = torch.exp(z)
-                local_points = torch.cat([xy * z, z], dim=-1)
             else:
-                local_points = self.depth_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
+                z = self.depth_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
+            local_points = torch.cat([xy, z], dim=-1)
 
             # confidence
             conf_hidden = conf_hidden.float()
             conf = self.conf_head([conf_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
 
-            # camera
-            camera_hidden = camera_hidden.float()
-            camera_poses, camera_fovs = self.camera_head(camera_hidden[:, self.patch_start_idx:], patch_h, patch_w)
-            camera_poses = camera_poses.reshape(B, N, 4, 4)
-            camera_fovs = camera_fovs.reshape(B, N, 2)
-
-            # unproject local points using camera poses
-            # points = torch.einsum('bnij, bnhwj -> bnhwi', camera_poses, homogenize_points(local_points))[..., :3]
-
         return dict(
-            # points=points,
             local_points=local_points,
             conf=conf,
             camera_poses=camera_poses,
-            camera_fovs=camera_fovs, 
         )
     
     def forward(self, imgs):

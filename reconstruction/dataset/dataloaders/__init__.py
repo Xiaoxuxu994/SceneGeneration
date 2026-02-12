@@ -30,10 +30,11 @@ from .dl3dv_dataset import DL3DV_Dataset
 from .mapillary_dataset import Mapillary_Dataset
 from .re10k_dataset import Re10K_Dataset
 from .scannet_dataset import ScanNet_Dataset
+from .scannetv2_dataset import ScanNetv2_Dataset
 from .scannetpp_dataset import ScanNetpp_Dataset
 from .wildrgbd_dataset import WildRGBD_Dataset
 
-from ..utils.common import customized_collate_fn_placeholder, worker_init_fn
+from ..utils.common import customized_collate_fn_placeholder
 
 DATASET_DICT = {
     "ase":        ASE_Dataset,        # indoor
@@ -48,6 +49,7 @@ DATASET_DICT = {
     "mapillary":  Mapillary_Dataset, 
     "re10k":      Re10K_Dataset,      # indoor/outdoor
     "scannet":    ScanNet_Dataset,    # indoor
+    "scannetv2":  ScanNetv2_Dataset, 
     "scannetpp":  ScanNetpp_Dataset,  # outdoor
     "wildrgbd":   WildRGBD_Dataset, 
 }
@@ -55,19 +57,20 @@ DATASET_DICT = {
 EPOCH_SCALE = 10000
 DATASET_SAMPLES_PER_EPOCH = {
     "ase":        100 * EPOCH_SCALE, 
-    "blendedmvs": 10  * EPOCH_SCALE, 
+    "blendedmvs": 1   * EPOCH_SCALE, 
     "hypersim":   1   * EPOCH_SCALE, 
     "mvssynth":   1   * EPOCH_SCALE, 
     "replica":    1   * EPOCH_SCALE, 
-    "tartanair":  20  * EPOCH_SCALE, 
+    "tartanair":  10  * EPOCH_SCALE, 
     "vkitti":     1   * EPOCH_SCALE, 
-    "co3dv2":     40  * EPOCH_SCALE, 
-    "dl3dv":      40  * EPOCH_SCALE, 
+    "co3dv2":     25  * EPOCH_SCALE, 
+    "dl3dv":      25  * EPOCH_SCALE, 
     "mapillary":  1   * EPOCH_SCALE, 
-    "re10k":      40  * EPOCH_SCALE, 
-    "scannet":    20  * EPOCH_SCALE, 
-    "scannetpp":  20  * EPOCH_SCALE, 
-    "wildrgbd":   40  * EPOCH_SCALE, 
+    "re10k":      25  * EPOCH_SCALE, 
+    "scannet":    2   * EPOCH_SCALE, 
+    "scannetv2":  2   * EPOCH_SCALE, 
+    "scannetpp":  2   * EPOCH_SCALE, 
+    "wildrgbd":   25  * EPOCH_SCALE, 
 }
 
 
@@ -81,7 +84,6 @@ def create_mixed_dataloader(cfg: DottedDict, data_type="train", batch_size=1, ra
             datasets.append(dataset)
             dataset_batch_samples.append(DATASET_SAMPLES_PER_EPOCH[dataset_name])
     mixed_dataset = CustomizedConcatDataset(datasets, dataset_batch_samples)
-    device_id = "{}:{}".format(DEVICE_NAME, rank)
     dataloader = DataLoader(mixed_dataset, 
                             batch_size=1,  ## We implement batch function in Dataset class to ensure intra-batch image shape consistency. 
                             collate_fn=customized_collate_fn_placeholder, 
@@ -89,10 +91,9 @@ def create_mixed_dataloader(cfg: DottedDict, data_type="train", batch_size=1, ra
                                                                         shuffle=True, 
                                                                         drop_last=True) \
                                     if data_type == "train" else torch.utils.data.RandomSampler(mixed_dataset), 
-                            num_workers=num_workers, 
+                            num_workers=8, 
                             persistent_workers=True,
-                            multiprocessing_context="spawn", 
-                            worker_init_fn=partial(worker_init_fn, device_id=device_id), 
+                            multiprocessing_context="fork", 
                             )
     return dataloader
 

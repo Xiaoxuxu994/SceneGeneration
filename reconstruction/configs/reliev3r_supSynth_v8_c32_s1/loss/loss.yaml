@@ -2,25 +2,19 @@ name: ours
 
 depth_shape:
   w: 1.0
-depth_alignment:
-  w: 0.1
-rgb:
-  w: 5.0
-  w_ssim: 0.2
+  norm_depth: false
 geometric:
   w: 0.0 # 0.5
-  detach_camera: false
 camera_extr:
   w: 0.1
 camera_intr:
   w: 1.0
-
-enable_alternate_geometric_opt: false
+point:
+  w: 1.0
 
 enable_conf: true
 conf_alpha: 1.0 # 0.1
 
-enable_slide: true
+enable_alternate_geometric_opt: false
 
-pred_z_depth: false # true if predict z-depth while false is predict r-depth
-use_pred_intr: true
+enable_slide: true

@@ -8,3 +8,5 @@ depth_upperbound: 655.0
 
 ## EPS for pixel matching reprojection
 match_eps: 0.01
+
+overlap_thre_synth: 0.10

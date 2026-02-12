@@ -11,3 +11,5 @@ match_eps: 0.01
 clip_length: 8 # be equivalen with sample max because blendedmvs is extremely sparse
 ## Interval of frame sampling
 samp_interval: 1
+
+overlap_thre_synth: 0.10

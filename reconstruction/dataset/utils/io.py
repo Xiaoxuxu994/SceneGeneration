@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from justpfm import justpfm
 import json
+from utils.common import calc_extr_inv
 
 
 FINISHED_TAG = "finished"
@@ -33,7 +34,7 @@ def run_check(output_dir, sample_num=None):
     return True
 
 
-def read_image_as_tensor(file_name: str, device="cpu", dtype=torch.float32):
+def read_image_as_tensor(file_name: str, target_size=None, device="cpu", dtype=torch.float32):
     """
     Read RGB image, transform it into shape of (C, H, W), regularize value into [0, 1].
     """
@@ -48,7 +49,10 @@ def read_image_as_tensor(file_name: str, device="cpu", dtype=torch.float32):
     else:
         raise NotImplementedError("Not implemented image format '{}'".format(file_name.split('.')[-1]))
     assert image.ndim == 3 and image.shape[0] == 3, "Illegal image shape {}".format(image.shape)
-    return image.to(device=device, dtype=dtype)
+    image = image.to(device=device, dtype=dtype)
+    if target_size is not None:
+        image = torch.nn.functional.interpolate(image[None], size=target_size, mode="bilinear", antialias=True)[0]
+    return image
 
 
 def read_depth_as_tensor(file_name: str, device="cpu", dtype=torch.float32, regard_inf_as=1e9):
@@ -113,7 +117,7 @@ def read_cotracker_info_as_tensor(file_name: str, device="cpu", dtype=torch.floa
     )
 
 
-def read_realistic_camera_npy(file_name, device="cpu", dtype=torch.float32):
+def read_realistic_camera_npy(file_name, inv_extr=False, device="cpu", dtype=torch.float32):
     """
     Read preprocessed packed camera parameters.
     """
@@ -121,9 +125,22 @@ def read_realistic_camera_npy(file_name, device="cpu", dtype=torch.float32):
         cameras = np.load(file_name, allow_pickle=True).item()
         extrs = cameras["extr_mat"] # v 4 4
         intrs = cameras["intr_mat"] # v 3 3
+        if inv_extr:
+            extrs = calc_extr_inv(extrs)
     else:
         raise NotImplementedError("Not implemented camera file format '{}'".format(file_name.split('.')[-1]))
     assert extrs.ndim == 3 and extrs.shape[-2] == 4 and extrs.shape[-1] == 4
     assert intrs.ndim == 3 and intrs.shape[-2] == 3 and intrs.shape[-1] == 3
     return torch.from_numpy(extrs).to(device=device, dtype=dtype), \
            torch.from_numpy(intrs).to(device=device, dtype=dtype)
+
+
+def read_txt_as_flatten_np_array(file_name):
+    ret = []
+    with open(file_name, "r") as fp:
+        content = fp.readlines()
+    for line in content:
+        line = line.strip().split(' ')
+        for ele in line:
+            ret.append(float(ele))
+    return np.array(ret)

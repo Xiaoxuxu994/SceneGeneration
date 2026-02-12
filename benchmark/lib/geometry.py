@@ -36,6 +36,34 @@ def unproject_depth_map_to_point_map(
 
     return world_points_array
 
+def unproject_local_point_map_to_world_point_map(
+    local_point_map: np.ndarray, extrinsics_cam: np.ndarray
+) -> np.ndarray:
+    """
+    Unproject a batch of depth maps to 3D world coordinates.
+
+    Args:
+        local_point_map (np.ndarray): Batch of depth maps of shape (S, H, W, 3)
+        extrinsics_cam (np.ndarray): Batch of camera extrinsic matrices of shape (S, 3, 4)
+
+    Returns:
+        np.ndarray: Batch of 3D world coordinates of shape (S, H, W, 3)
+    """
+    if isinstance(local_point_map, torch.Tensor):
+        local_point_map = local_point_map.cpu().numpy()
+    if isinstance(extrinsics_cam, torch.Tensor):
+        extrinsics_cam = extrinsics_cam.cpu().numpy()
+
+    world_points_list = []
+    for frame_idx in range(local_point_map.shape[0]):
+        cur_world_points = cam_to_world_coords_points(
+            local_point_map[frame_idx], extrinsics_cam[frame_idx]
+        )
+        world_points_list.append(cur_world_points)
+    world_points_array = np.stack(world_points_list, axis=0)
+
+    return world_points_array
+
 def depth_to_world_coords_points(
     depth_map: np.ndarray,
     extrinsic: np.ndarray,
@@ -62,6 +90,36 @@ def depth_to_world_coords_points(
     # Convert depth map to camera coordinates
     cam_coords_points = depth_to_cam_coords_points(depth_map, intrinsic)
 
+    # # Multiply with the inverse of extrinsic matrix to transform to world coordinates
+    # # extrinsic_inv is 4x4 (note closed_form_inverse_OpenCV is batched, the output is (N, 4, 4))
+    # cam_to_world_extrinsic = closed_form_inverse_se3(extrinsic[None])[0]
+
+    # R_cam_to_world = cam_to_world_extrinsic[:3, :3]
+    # t_cam_to_world = cam_to_world_extrinsic[:3, 3]
+
+    # # Apply the rotation and translation to the camera coordinates
+    # world_coords_points = np.dot(cam_coords_points, R_cam_to_world.T) + t_cam_to_world  # HxWx3, 3x3 -> HxWx3
+    # # world_coords_points = np.einsum("ij,hwj->hwi", R_cam_to_world, cam_coords_points) + t_cam_to_world
+    
+    world_coords_points = cam_to_world_coords_points(cam_coords_points, extrinsic)
+
+    return world_coords_points, cam_coords_points, point_mask
+
+def cam_to_world_coords_points(
+    cam_coords_points: np.ndarray,
+    extrinsic: np.ndarray,
+) -> np.ndarray:
+    """
+    Convert a depth map to world coordinates.
+
+    Args:
+        cam_coords_points (np.ndarray): Point coordinates in camera space of shape (H, W, 3).
+        extrinsic (np.ndarray): Camera extrinsic matrix of shape (3, 4). OpenCV camera coordinate convention, cam from world.
+
+    Returns:
+        np.ndarray: World coordinates (H, W, 3) and valid depth mask (H, W).
+    """
+    
     # Multiply with the inverse of extrinsic matrix to transform to world coordinates
     # extrinsic_inv is 4x4 (note closed_form_inverse_OpenCV is batched, the output is (N, 4, 4))
     cam_to_world_extrinsic = closed_form_inverse_se3(extrinsic[None])[0]
@@ -73,8 +131,7 @@ def depth_to_world_coords_points(
     world_coords_points = np.dot(cam_coords_points, R_cam_to_world.T) + t_cam_to_world  # HxWx3, 3x3 -> HxWx3
     # world_coords_points = np.einsum("ij,hwj->hwi", R_cam_to_world, cam_coords_points) + t_cam_to_world
 
-    return world_coords_points, cam_coords_points, point_mask
-
+    return world_coords_points
 
 def depth_to_cam_coords_points(depth_map: np.ndarray, intrinsic: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """

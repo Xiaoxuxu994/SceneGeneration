@@ -76,7 +76,7 @@ class ScanNetDataset(BaseDataset):
             img = Image.open(image_path).convert("RGB")
             width, height = img.size
             left, top, right, bottom = int(border), int(border), int(width-border), int(height-border)
-            img = img.crop((left, top, right, bottom))        
+            img = img.crop((left, top, right, bottom))
             img_rs = img.resize((target_width, target_height), Image.Resampling.BICUBIC)
             image_pils.append(img_rs)
             img_tensor = TF.ToTensor()(img_rs)

@@ -51,7 +51,8 @@ def to_4x4_batch(T: np.ndarray) -> np.ndarray:
 def export_pointcloud(
     point_maps: np.ndarray,
     out_ply: Path,
-    mask: Optional[np.ndarray] = None,
+    pts_mask: Optional[np.ndarray] = None,
+    col_mask: Optional[np.ndarray] = None,
     colors: Optional[np.ndarray] = None,
 ) -> None:
     """
@@ -64,11 +65,14 @@ def export_pointcloud(
     #     raise ValueError("point_maps must be (S,H,W,3), got {}".format(point_maps.shape))
 
     pts = point_maps.reshape(-1, 3)
+    if pts_mask is not None:
+        m = pts_mask.reshape(-1).astype(bool)
+        pts = pts[m]
 
     cols = None
     if colors is not None:
-        if colors.shape[:3] != point_maps.shape[:3]:
-            raise ValueError(f"colors shape mismatch: colors {colors.shape} vs pts {point_maps.shape}")
+        # if colors.shape[:3] != point_maps.shape[:3]:
+        #     raise ValueError(f"colors shape mismatch: colors {colors.shape} vs pts {point_maps.shape}")
         if colors.ndim == 3:  # (S,H,W) 灰度
             colors = np.stack([colors, colors, colors], axis=-1)
         if colors.shape[-1] == 4:  # RGBA -> RGB
@@ -76,17 +80,15 @@ def export_pointcloud(
         if colors.shape[-1] != 3:
             raise ValueError(f"colors must be (...,3), got {colors.shape}")
         cols = colors.reshape(-1, 3)
-
-    if mask is not None:
-        m = mask.reshape(-1).astype(bool)
-        pts = pts[m]
-        if cols is not None:
+        
+        if col_mask is not None:
+            m = col_mask.reshape(-1).astype(bool)
             cols = cols[m]
 
-    good = np.isfinite(pts).all(axis=1)
-    pts = pts[good]
-    if cols is not None:
-        cols = cols[good]
+    # good = np.isfinite(pts).all(axis=1)
+    # pts = pts[good]
+    # if cols is not None:
+    #     cols = cols[good]
 
     pcd = o3d.geometry.PointCloud()
     if pts.shape[0] > 0:
@@ -172,115 +174,118 @@ def main() -> None:
         out_dir = vis_root / rel
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        try:
-            if is_gt:
-                extr = seq_dir / "gt_extrinsics.npy"
-                ptsf = seq_dir / "gt_point_maps.npy"
-                depf = seq_dir / "gt_depth_maps.npy"
-                maskf = seq_dir / "gt_depth_masks.npy"
-                aligned_ptsf = seq_dir / "gt_point_maps_aligned.npy"
+        # try:
+        if is_gt:
+            extr = seq_dir / "gt_extrinsics.npy"
+            ptsf = seq_dir / "gt_point_maps.npy"
+            depf = seq_dir / "gt_depth_maps.npy"
+            maskf = seq_dir / "gt_depth_masks.npy"
+            aligned_ptsf = seq_dir / "gt_point_maps_aligned.npy"
+            aligned_extrf = seq_dir / "gt_extrinsics_aligned.npy"
 
-                if not (extr.exists() and ptsf.exists() and depf.exists()):
-                    skip += 1
-                    continue
+            if not (extr.exists() and ptsf.exists() and depf.exists()):
+                skip += 1
+                continue
 
-                c2w = np.load(extr)
-                pts = np.load(ptsf)
-                dep = np.load(depf).astype(np.float32)
-                mask = np.load(maskf).astype(bool) if maskf.exists() else None
+            c2w = np.load(extr)
+            pts = np.load(ptsf)
+            dep = np.load(depf).astype(np.float32)
+            mask = np.load(maskf).astype(bool) if maskf.exists() else None
 
-                ## add image
-                imgf = seq_dir / "gt_images.npy"
-                gt_images = None
-                if imgf.exists():
-                    gt_images = np.load(imgf)  # 期望 (S,H,W,3) 或类似
-                    # 统一成 uint8 RGB
-                    if gt_images.ndim == 3:  # (S,H,W) 灰度
-                        gt_images = np.stack([gt_images, gt_images, gt_images], axis=-1)
-                    if gt_images.shape[-1] == 4:
-                        gt_images = gt_images[..., :3]
-                    if gt_images.dtype != np.uint8:
-                        x = gt_images.astype(np.float32)
-                        if x.max() <= 1.5:  # 0~1
-                            x = x * 255.0
-                        gt_images = np.clip(x, 0, 255).astype(np.uint8)
+            ## add image
+            imgf = seq_dir / "gt_images.npy"
+            gt_images = None
+            if imgf.exists():
+                gt_images = np.load(imgf)  # 期望 (S,H,W,3) 或类似
+                # 统一成 uint8 RGB
+                if gt_images.ndim == 3:  # (S,H,W) 灰度
+                    gt_images = np.stack([gt_images, gt_images, gt_images], axis=-1)
+                if gt_images.shape[-1] == 4:
+                    gt_images = gt_images[..., :3]
+                if gt_images.dtype != np.uint8:
+                    x = gt_images.astype(np.float32)
+                    if x.max() <= 1.5:  # 0~1
+                        x = x * 255.0
+                    gt_images = np.clip(x, 0, 255).astype(np.uint8)
 
-                    # 如果帧数不一致，最简单处理：截断到最小帧数
-                    S = min(int(pts.shape[0]), int(gt_images.shape[0]))
-                    if gt_images.shape[0] != pts.shape[0]:
-                        gt_images = gt_images[:S]
-                        pts = pts[:S]
-                        dep = dep[:S]
-                        if mask is not None:
-                            mask = mask[:S]
+                # 如果帧数不一致，最简单处理：截断到最小帧数
+                S = min(int(pts.shape[0]), int(gt_images.shape[0]))
+                if gt_images.shape[0] != pts.shape[0]:
+                    gt_images = gt_images[:S]
+                    pts = pts[:S]
+                    dep = dep[:S]
+                    if mask is not None:
+                        mask = mask[:S]
 
-                    # --- GT 情况下保存每一帧 png ---
-                    img_out_dir = out_dir / "images"
-                    img_out_dir.mkdir(parents=True, exist_ok=True)
-                    for i in range(gt_images.shape[0]):
-                        imageio.imwrite(str(img_out_dir / f"image_{i:03d}.png"), gt_images[i])
+                # --- GT 情况下保存每一帧 png ---
+                img_out_dir = out_dir / "images"
+                img_out_dir.mkdir(parents=True, exist_ok=True)
+                for i in range(gt_images.shape[0]):
+                    imageio.imwrite(str(img_out_dir / f"image_{i:03d}.png"), gt_images[i])
 
-            else:
-                extr = seq_dir / "pred_extrinsics.npy"
-                depf = seq_dir / "pred_depth_maps.npy"
-                aligned_ptsf = seq_dir / "pred_point_maps_aligned.npy"
-                if not (extr.exists() and depf.exists()):
-                    skip += 1
-                    continue
+        else:
+            extr = seq_dir / "pred_extrinsics.npy"
+            depf = seq_dir / "pred_depth_maps.npy"
+            aligned_ptsf = seq_dir / "pred_point_maps_aligned.npy"
+            aligned_extrf = seq_dir / "pred_extrinsics_aligned.npy"
+            if not (extr.exists() and depf.exists()):
+                skip += 1
+                continue
 
-                c2w = np.load(extr)
-                dep = np.load(depf).astype(np.float32)
-                pts = load_any(seq_dir, ["pred_point_maps_by_unprojection.npy", "pred_point_maps.npy"])
-                # pts = load_any(seq_dir, ["pred_point_maps.npy"])
-                if pts is None:
-                    skip += 1
-                    continue
-                mask = None
+            c2w = np.load(extr)
+            dep = np.load(depf).astype(np.float32)
+            pts = load_any(seq_dir, ["pred_point_maps_by_unprojection.npy", "pred_point_maps.npy"])
+            # pts = load_any(seq_dir, ["pred_point_maps.npy"])
+            if pts is None:
+                skip += 1
+                continue
+            mask = None
 
-                ## add image
-                gt_root = root.parent / "gt"
-                imgf = gt_root / rel/ "gt_images.npy"
-                gt_images = None
-                if imgf.exists():
-                    gt_images = np.load(imgf)  # 期望 (S,H,W,3) 或类似
-                    # 统一成 uint8 RGB
-                    if gt_images.ndim == 3:  # (S,H,W) 灰度
-                        gt_images = np.stack([gt_images, gt_images, gt_images], axis=-1)
-                    if gt_images.shape[-1] == 4:
-                        gt_images = gt_images[..., :3]
-                    if gt_images.dtype != np.uint8:
-                        x = gt_images.astype(np.float32)
-                        if x.max() <= 1.5:  # 0~1
-                            x = x * 255.0
-                        gt_images = np.clip(x, 0, 255).astype(np.uint8)
+            ## add image
+            gt_root = root.parent / "gt"
+            imgf = gt_root / rel/ "gt_images.npy"
+            gt_images = None
+            if imgf.exists():
+                gt_images = np.load(imgf)  # 期望 (S,H,W,3) 或类似
+                # 统一成 uint8 RGB
+                if gt_images.ndim == 3:  # (S,H,W) 灰度
+                    gt_images = np.stack([gt_images, gt_images, gt_images], axis=-1)
+                if gt_images.shape[-1] == 4:
+                    gt_images = gt_images[..., :3]
+                if gt_images.dtype != np.uint8:
+                    x = gt_images.astype(np.float32)
+                    if x.max() <= 1.5:  # 0~1
+                        x = x * 255.0
+                    gt_images = np.clip(x, 0, 255).astype(np.uint8)
 
-                    # 如果帧数不一致，最简单处理：截断到最小帧数
-                    S = min(int(pts.shape[0]), int(gt_images.shape[0]))
-                    if gt_images.shape[0] != pts.shape[0]:
-                        gt_images = gt_images[:S]
-                        pts = pts[:S]
-                        dep = dep[:S]
-                        if mask is not None:
-                            mask = mask[:S]
+                # 如果帧数不一致，最简单处理：截断到最小帧数
+                S = min(int(pts.shape[0]), int(gt_images.shape[0]))
+                if gt_images.shape[0] != pts.shape[0]:
+                    gt_images = gt_images[:S]
+                    pts = pts[:S]
+                    dep = dep[:S]
+                    if mask is not None:
+                        mask = mask[:S]
 
-            # export_pointcloud(pts, out_dir / "vis_pointcloud.ply", mask=mask)
-            export_pointcloud(pts, out_dir / "vis_pointcloud.ply", mask=mask, colors=gt_images)
-            export_cameras(c2w, out_dir / "vis_cameras.ply")            
-            export_depth(dep, out_dir / "vis_depth", vmin=args.depth_vmin, vmax=args.depth_vmax)
+        # export_pointcloud(pts, out_dir / "vis_pointcloud.ply", mask=mask)
+        export_pointcloud(pts, out_dir / "vis_pointcloud.ply", pts_mask=mask, col_mask=mask, colors=gt_images)
+        export_cameras(c2w, out_dir / "vis_cameras.ply")
+        export_depth(dep, out_dir / "vis_depth", vmin=args.depth_vmin, vmax=args.depth_vmax)
 
-            try:
-                aligned_pts = np.load(aligned_ptsf)
-                export_pointcloud(aligned_pts, out_dir / "vis_pointcloud_aligned.ply")
-            except Exception as e:
-                # print(e)
-                pass
+        # try:
+        # NOTE the aligned point maps are already filtered by GT masks
+        export_pointcloud(np.load(aligned_ptsf), out_dir / "vis_pointcloud_aligned.ply", col_mask=mask, colors=gt_images)
+        export_cameras(np.load(aligned_extrf), out_dir / "vis_cameras_aligned.ply")
+        # except Exception as e:
+        #     print(e)
+        #     pass
 
-            ok += 1
-            print("[OK] {}".format(rel))
+        ok += 1
+        print("[OK] {}".format(rel))
 
-        except Exception as e:
-            skip += 1
-            print("[SKIP] {}  err={}".format(rel, e))
+        # except Exception as e:
+        #     skip += 1
+        #     print("[SKIP] {}  err={}".format(rel, e))
 
     print("[DONE] ok={}, skip={}".format(ok, skip))
 

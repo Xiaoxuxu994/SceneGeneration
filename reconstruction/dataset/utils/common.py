@@ -60,6 +60,7 @@ def deflat_visibility_mat(visibs: torch.Tensor, clip_view_num: int):
     for v in range(clip_view_num):
         visib_mat[v, v + 1:] = visibs[get_tracking_idx_by_pair(i=v, j=v+1, total=clip_view_num): 
                                       get_tracking_idx_by_pair(i=v, j=v+1, total=clip_view_num) + clip_view_num - (v + 1)]
+        visib_mat[v + 1:, v] = visib_mat[v, v + 1:]
     return visib_mat
 
 
@@ -76,6 +77,7 @@ def customized_collate_fn(batch_inputs):
     input_extrs = []
     input_intrs = []
     input_points = []
+    input_points_local = []
     dataset_names = []
     for batch_input in batch_inputs:
         if batch_input is None:
@@ -92,6 +94,7 @@ def customized_collate_fn(batch_inputs):
         input_extrs.append(batch_input["input_extrs"])
         input_intrs.append(batch_input["input_intrs"])
         input_points.append(batch_input["input_points"])
+        input_points_local.append(batch_input["input_points_local"])
         dataset_names.append(batch_input["dataset_name"])
     return dict(
         input_images=torch.stack(input_images), 
@@ -106,6 +109,7 @@ def customized_collate_fn(batch_inputs):
         input_viewmats=torch.stack(input_extrs), 
         input_Ks=torch.stack(input_intrs), 
         input_points=torch.stack(input_points) if input_points[0] is not None else None, 
+        input_points_local=torch.stack(input_points_local) if input_points_local[0] is not None else None, 
         dataset_names=dataset_names, 
     )
 
@@ -235,7 +239,6 @@ def pair_geo2match(depth0, depth1, extr0, extr1, intr0, intr1, eps=1e-2, samples
     timer.record_end("geo2match_0_Total")
     timer.report()
     
-    # return tracks0 * factor, tracks1 * factor, matched_mask
     return filtered_tracks0 * factor, filtered_tracks1 * factor, filtered_matched_masks
 
 

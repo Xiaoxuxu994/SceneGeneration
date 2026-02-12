@@ -14,7 +14,7 @@ from _bootstrap import BENCH_ROOT
 # -----------------------------------------------
 from vggt.models.vggt import VGGT
 from vggt.utils.pose_enc import pose_encoding_to_extri_intri
-from vggt.utils.geometry import unproject_depth_map_to_point_map, closed_form_inverse_se3
+# from vggt.utils.geometry import unproject_depth_map_to_point_map, closed_form_inverse_se3
 
 # -----------------------------------------------
 # Pi3 imports 
@@ -38,6 +38,7 @@ from datasets import get_dataset
 from lib.utils import save_npy, build_gt_geometry_data, fovs_to_K_norm,K_denormalize,rdepth_to_zdepth
 from lib.utils import strip_ddp_prefix
 from lib.normalization import normalize_camera_extrinsics_and_points_batch
+from lib.geometry import unproject_depth_map_to_point_map, closed_form_inverse_se3, unproject_local_point_map_to_world_point_map
 
 # -----------------------------
 # Config
@@ -67,7 +68,7 @@ MODEL_DEFAULTS = {
     },
 }
 
-GT_OUTPUT_WIDTH = 518
+GT_OUTPUT_WIDTH = 462 # 518
 DEPTH_FAR = 10.0
 DEPTH_NEAR = 0.1
 
@@ -200,6 +201,7 @@ def run_reliev3r_infer(
         raise ValueError(f"images_cpu must be (V,3,H,W), got {type(images_cpu)} {getattr(images_cpu,'shape',None)}")
 
     V,C,H,W = images_cpu.shape
+    print("[INFO] V: {}, H: {}, W: {}".format(V, H, W))
 
     # -----------------------
     # build minimal batch
@@ -212,7 +214,7 @@ def run_reliev3r_infer(
     data = {
         "scene_names":       [scene_name],
         "input_images":      images_cpu.to(device=device, dtype=torch.float32).unsqueeze(0),  # (1,V,3,H,W)
-        "input_depths":      None,
+        "input_depths":      torch.ones(V, 1, H, W).to(device=device, dtype=torch.float32).unsqueeze(0),  # (1,V,1,H,W)
         "sample_indices":    [list(range(V))],
         "input_viewmats":    None,
         "input_Ks":          None,
@@ -224,47 +226,47 @@ def run_reliev3r_infer(
     with torch.autocast(device_type=device.type, dtype=autocast_dtype):
         pred = model.forward(data)
 
-    ray_depth = pred["scaled_depths"].permute(0, 1, 3, 4, 2).contiguous()
-    # depth_np = pred_depth.squeeze(0).squeeze(-1).detach().cpu().numpy()  # (V,H,W) np
-    # depth_np, _ = filter_depth(depth_np, far=DEPTH_FAR, near=DEPTH_NEAR)  #
-    # pred_depth = torch.from_numpy(depth_np).to(device=device, dtype=torch.float32)[None, ..., None]
 
-    pred_w2c = pred["camera_extrs"]
-    
-    # GT intrinsics (V,3,3)
-    gt_K = torch.from_numpy(gt_intrinsics_rs.astype(np.float32)).to(device=device, dtype=torch.float32)  # (V,3,3)
-
-    ## predict intrinsic (1,8,2)
-    fovs_pred = pred["camera_fovs"]      # (B,V,2)
-    K_norm = fovs_to_K_norm(fovs_pred).squeeze(0)          # (B,V,3,3)
-    pred_K  = K_denormalize(K_norm, W=W, H=H)
-
-    ## raydepth to zdepth
-    ray_depth = ray_depth.squeeze(0).permute(0,3,1,2)
-    pred_depth = rdepth_to_zdepth(ray_depth,K_norm)
-    pred_depth = pred_depth.unsqueeze(0).permute(0,1,3,4,2)
-
-    # unprojection 
-    # if unproj_with_gt:
-    #     pred_unproj = unproject_depth_map_to_point_map(
-    #         pred_depth.squeeze(0),
-    #         gt_extrinsics,
-    #         pred_K,
-    #     ) 
-    # else:
-    #     pred_unproj = unproject_depth_map_to_point_map(
-    #         pred_depth.squeeze(0),
-    #         pred_w2c.squeeze(0),
-    #         pred_K,
-    #     )  
+    if "local_points" in pred:
+        pred_local_points = pred["local_points"].permute(0, 1, 3, 4, 2) # B,V,H,W,3
+        pred_w2c = pred["camera_extrs"] # B,V,4,4
+        # pred_depth = pred["depths"].permute(0, 1, 3, 4, 2) # B,V,H,W,1
+        pred_depth = pred_local_points[..., -1:] # B,V,H,W,1
         
-    pred_unproj = unproject_depth_map_to_point_map(
-        pred_depth.squeeze(0),
-        gt_extrinsics if unproj_with_gt_extrinsics else pred_w2c.squeeze(0),
-        gt_K if unproj_with_gt_intrinsics else pred_K,
-    )
-    
+        pred_unproj = unproject_local_point_map_to_world_point_map(
+            pred_local_points.squeeze(0),
+            pred_w2c.squeeze(0)
+        )
+        
+    else:
+        ray_depth = pred["scaled_depths"].permute(0, 1, 3, 4, 2).contiguous()
+        # depth_np = pred_depth.squeeze(0).squeeze(-1).detach().cpu().numpy()  # (V,H,W) np
+        # depth_np, _ = filter_depth(depth_np, far=DEPTH_FAR, near=DEPTH_NEAR)  #
+        # pred_depth = torch.from_numpy(depth_np).to(device=device, dtype=torch.float32)[None, ..., None]
 
+        pred_depth_conf = pred["depths_conf"].permute(0, 1, 3, 4, 2) # B,V,H,W,1
+
+        ## predict intrinsic (1,8,2)
+        fovs_pred = pred["camera_fovs"]      # (B,V,2)
+        K_norm = fovs_to_K_norm(fovs_pred).squeeze(0)          # (B,V,3,3)
+        pred_K  = K_denormalize(K_norm, W=W, H=H)
+
+        ## raydepth to zdepth
+        ray_depth = ray_depth.squeeze(0).permute(0,3,1,2)
+        pred_depth = rdepth_to_zdepth(ray_depth,K_norm)
+        pred_depth = pred_depth.unsqueeze(0).permute(0,1,3,4,2)
+        
+        pred_w2c = pred["camera_extrs"]
+        
+        # GT intrinsics (V,3,3)
+        gt_K = torch.from_numpy(gt_intrinsics_rs.astype(np.float32)).to(device=device, dtype=torch.float32)  # (V,3,3)
+                    
+        pred_unproj = unproject_depth_map_to_point_map(
+            pred_depth.squeeze(0),
+            gt_extrinsics if unproj_with_gt_extrinsics else pred_w2c.squeeze(0),
+            gt_K if unproj_with_gt_intrinsics else pred_K,
+        )
+        
     # print(f"[Reliev3R] normalize_camera_extrinsics & unproj pointcloud")
     pred_w2c_aligned, _, pred_unproj_aligned, _ = normalize_camera_extrinsics_and_points_batch(
         extrinsics=torch.from_numpy(gt_extrinsics).unsqueeze(0)[:,:,:3].to(dtype=torch.float32) if unproj_with_gt_extrinsics else pred_w2c[:,:,:3].cpu(),
@@ -272,17 +274,6 @@ def run_reliev3r_infer(
         scale_by_points=False,
         # point_masks=torch.from_numpy(depth_masks).unsqueeze(0)
     )
-    
-    # from scripts.run_vis import export_cameras
-    # export_cameras(
-    #     closed_form_inverse_se3(pred_w2c.squeeze(0)).cpu().numpy(),
-    #     Path("pred_w2c.ply")
-    # ) # (1,V,4,4))
-    # # export_cameras(
-    # #     closed_form_inverse_se3(pred_w2c_aligned.squeeze(0)).cpu().numpy(),
-    # #     Path("pred_w2c_aligned.ply")
-    # # ) # (1,V,4,4))
-    # exit()
     
     return pred_w2c_aligned, pred_depth, pred_unproj_aligned.squeeze(0).numpy()
 
@@ -486,6 +477,7 @@ def main():
         model = load_model_reliev3r(args.config, args.ckpt, device=device, strict=True)
     else:
         raise ValueError(f"Unknown model_type={args.model}")
+    # model = None
 
     print(
         "[INFO] "

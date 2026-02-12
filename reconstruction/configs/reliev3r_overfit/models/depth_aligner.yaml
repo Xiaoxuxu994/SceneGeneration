@@ -52,6 +52,7 @@ pi3:
     enabled: false
   depth_head:
     enabled: true
+  pred_z_depth: false
 
 depth_scaler:
   enabled: false

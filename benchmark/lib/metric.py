@@ -2,7 +2,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+import small_gicp
+import open3d as o3d
+
 from lib.geometry import mat_to_quat, closed_form_inverse_se3
+from lib.utils import timing_decorator
 
 
 def build_pair_index(N, B=1):
@@ -157,6 +161,7 @@ def se3_to_relative_pose_error(pred_se3, gt_se3, num_frames):
 
     return rel_rangle_deg, rel_tangle_deg
 
+@timing_decorator
 def umeyama(X, Y):
     """
     Estimates the Sim(3) transformation between `X` and `Y` point sets.
@@ -194,6 +199,30 @@ def umeyama(X, Y):
     t = mu_y - c * R @ mu_x
     return c, R, t
 
+############### ICP alignment for point clouds ###############
+
+@timing_decorator
+def icp_alignment(source_open3d, target_open3d, threshold=0.1):
+    """naive ICP alignment from Open3D"""
+    trans_init = np.eye(4)
+    reg_p2p = o3d.pipelines.registration.registration_icp(
+        source_open3d,
+        target_open3d,
+        threshold,
+        trans_init,
+        o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+    )
+    
+    return reg_p2p.transformation
+
+@timing_decorator
+def icp_alignment_fast(source_open3d, target_open3d, threshold=0.1, downsampling_resolution=0.25):
+    """faster ICP alignment using small_gicp with Open3D's interface"""
+    target, target_tree = small_gicp.preprocess_points(np.asarray(target_open3d.points), downsampling_resolution=downsampling_resolution)
+    source, source_tree = small_gicp.preprocess_points(np.asarray(source_open3d.points), downsampling_resolution=downsampling_resolution)
+    result = small_gicp.align(target, source, target_tree)
+    
+    return result.T_target_source
 
 from scipy.spatial import cKDTree as KDTree
 
@@ -203,7 +232,7 @@ def completion_ratio(gt_points, rec_points, dist_th=0.05):
     comp_ratio = np.mean((distances < dist_th).astype(np.float32))
     return comp_ratio
 
-
+@timing_decorator
 def accuracy(gt_points, rec_points, gt_normals=None, rec_normals=None):
     gt_points_kd_tree = KDTree(gt_points)
     distances, idx = gt_points_kd_tree.query(rec_points, workers=-1)
@@ -219,7 +248,7 @@ def accuracy(gt_points, rec_points, gt_normals=None, rec_normals=None):
 
     return acc, acc_median
 
-
+@timing_decorator
 def completion(gt_points, rec_points, gt_normals=None, rec_normals=None):
     gt_points_kd_tree = KDTree(rec_points)
     distances, idx = gt_points_kd_tree.query(gt_points, workers=-1)

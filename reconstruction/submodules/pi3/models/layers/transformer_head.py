@@ -76,6 +76,7 @@ class LinearPts3d (nn.Module):
             self.proj = self.proj.apply(init_weights)
         elif activation == "linear":
             self.activation = lambda x: x
+            self.proj = self.proj.apply(init_weights)
         else:
             raise NotImplementedError("Activation type '{}' is not implemented.".format(activation))
 

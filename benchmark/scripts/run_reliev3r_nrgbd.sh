@@ -17,9 +17,9 @@ DATASETS=(
 
 # ----- model ------
 MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-CKPT="experiments/Reliev3R_bs2v8_260203_selfSup/ckpt/50000.ckpt"
-CONFIG="experiments/Reliev3R_bs2v8_260203_selfSup/config.json"
-PREFIX="Reliev3R_bs2v8_260203_selfSup_ckpt50k"
+CKPT="experiments/Reliev3R_bs2v8_260207_synthSup_point/ckpt/20000.ckpt"
+CONFIG="experiments/Reliev3R_bs2v8_260207_synthSup_point/config.json"
+PREFIX="Reliev3R_bs2v8_260207_synthSup_point_ckpt20k"
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 # CONFIG=""
@@ -189,7 +189,7 @@ for DATASET in "${DATASETS[@]}"; do
       MAX_SEQ_LEN_CUR=8
       ;;
     ase)
-      STRIDE_CUR=1
+      STRIDE_CUR=4
       MAX_SEQ_LEN_CUR=8
       ;;
     *)

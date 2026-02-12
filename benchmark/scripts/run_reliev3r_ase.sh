@@ -15,28 +15,25 @@ DATASETS=(
   ase
 )
 
-# ----- model ------
+# # ----- model ------
 MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-CKPT="experiments/Reliev3R_bs2v8_260203_selfSup/ckpt/80000.ckpt"
+CKPT="experiments/Reliev3R_bs2v8_260203_selfSup/ckpt/110000.ckpt"
 CONFIG="experiments/Reliev3R_bs2v8_260203_selfSup/config.json"
-PREFIX="Reliev3R_bs2v8_260203_selfSup_ckpt80k"
+PREFIX="Reliev3R_bs2v8_260203_selfSup_ckpt110k"
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
+# CONFIG=""
 
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch007-loss_valid0.3137-metric_valid0.2497.ckpt/pytorch_model.bin"
-# CONFIG=""
 # PREFIX="vggt_sz_ep7"
 
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch005-loss_valid0.3839-metric_valid0.2823.ckpt/pytorch_model.bin"
-# CONFIG=""
 # PREFIX="vggt_sz_ep5"
 
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch003-loss_valid0.4962-metric_valid0.3424.ckpt/pytorch_model.bin"
-# CONFIG=""
 # PREFIX="vggt_sz_ep3"
 
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch001-loss_valid0.5604-metric_valid0.4377.ckpt/pytorch_model.bin"
-# CONFIG=""
 # PREFIX="vggt_sz_ep1"
 
 # ---- params ------
@@ -61,6 +58,8 @@ OUT_ROOT="outputs"  # "/mnt/nvme3/z00533370/3drecon/benchmark/"
 POSE_THRESHOLD=30
 DEPTH_ALIGN="scale_shift"
 EVAL_DEVICE="${DEVICE}"
+
+SAVE_POINTMAP=1
 
 # ---- vis params ----
 DEPTH_VMIN=0.1
@@ -167,7 +166,7 @@ for DATASET in "${DATASETS[@]}"; do
       MAX_SEQ_LEN_CUR=8
       ;;
     ase)
-      STRIDE_CUR=1
+      STRIDE_CUR=4
       MAX_SEQ_LEN_CUR=8
       ;;
     *)
@@ -289,6 +288,7 @@ for DATASET in "${DATASETS[@]}"; do
     --pose_threshold "${POSE_THRESHOLD}" \
     --pointmap_threshold "${POINTMAP_THRESHOLD}" \
     --predicted_pointmap "${PREDICTED_POINTMAP}" \
+    --save_pointmap "${SAVE_POINTMAP}" \
     --depth_align "${DEPTH_ALIGN}" \
     --device "${EVAL_DEVICE}"
 

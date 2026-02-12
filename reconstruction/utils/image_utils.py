@@ -98,7 +98,8 @@ def visualize_prediction(pred, data, matching_info=None):
                 
     depths_mono    = torch.cat([data["input_depths"]], dim=1).detach().cpu()
     depths_mono    = torch.log10(depths_mono + 1.0)
-    depths_aligned = torch.cat([pred["depths"]], dim=1).detach().cpu()
+    pr_depths      = pred["depths"]
+    depths_aligned = torch.cat([pr_depths], dim=1).detach().cpu()
     depths_aligned = torch.log10(depths_aligned + 1.0)
     conf_maps      = torch.cat([pred["depths_conf"]], dim=1).detach().cpu().reshape(*depths_mono.shape)
     depths_mono    = gray2hot(depths_mono)

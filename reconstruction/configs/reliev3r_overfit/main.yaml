@@ -1,4 +1,4 @@
-output_dir: exp/debug_metricRevise_10k_camL0.1
+output_dir: exp/new_depth_rdepth_2
 
 model:
   depth_model:    !include models/depth_model.yaml

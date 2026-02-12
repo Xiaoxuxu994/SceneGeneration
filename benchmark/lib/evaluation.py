@@ -1,7 +1,7 @@
 import numpy as np
 import open3d as o3d
 
-from lib.metric import se3_to_relative_pose_error, calculate_auc, umeyama, accuracy, completion
+from lib.metric import se3_to_relative_pose_error, calculate_auc, umeyama, accuracy, completion, icp_alignment, icp_alignment_fast
 from lib.evo_utils import get_tum_poses, eval_metrics
 from lib.depth import depth_evaluation
 from lib.utils import timing_decorator
@@ -91,7 +91,8 @@ def eval_depth_map(pred_depths, gt_depths, valid_masks,
     return depth_results
 
 @timing_decorator
-def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1, return_point_maps=False):
+def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1, 
+        return_point_maps=False, pred_poses=None):
     """evaluate predicted point maps in world coordinates.
 
     Args:
@@ -117,11 +118,11 @@ def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1, return_point_ma
 
     # align predicted point clouds to the GTs
     pred_pts = pred_pts.reshape((S, -1, 3))
-    R = np.repeat(R[None, :], S, axis=0)
-    t = np.repeat(t[None, :], S, axis=0)
+    R_expand = np.repeat(R[None, :], S, axis=0)
+    t_expand = np.repeat(t[None, :], S, axis=0)
 
-    pred_pts = c * pred_pts @ R
-    pred_pts = pred_pts + np.transpose(t, (0, 2, 1))
+    pred_pts = c * pred_pts @ R_expand
+    pred_pts = pred_pts + np.transpose(t_expand, (0, 2, 1))
     pred_pts = pred_pts.reshape((S, H, W, 3))
     
     # filter invalid points
@@ -136,17 +137,46 @@ def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1, return_point_ma
     pcd_gt.points = o3d.utility.Vector3dVector(gt_pts)
     
     # ICP align refinement
-    trans_init = np.eye(4)
-    reg_p2p = o3d.pipelines.registration.registration_icp(
-        pcd,
-        pcd_gt,
-        threshold,
-        trans_init,
-        o3d.pipelines.registration.TransformationEstimationPointToPoint(),
-    )
+    # try:
+    #     print(f"[INFO] apply faster ICP alignment")
+    #     import small_gicp
+    #     target, target_tree = small_gicp.preprocess_points(np.asarray(pcd_gt.points), downsampling_resolution=0.25)
+    #     source, source_tree = small_gicp.preprocess_points(np.asarray(pcd.points), downsampling_resolution=0.25)
+    #     result = small_gicp.align(target, source, target_tree)
 
-    transformation = reg_p2p.transformation
+    #     transformation = result.T_target_source
+    # except:
+    #     print(f"[INFO] fall back to Open3D ICP alignment")
+    #     trans_init = np.eye(4)
+    #     reg_p2p = o3d.pipelines.registration.registration_icp(
+    #         pcd,
+    #         pcd_gt,
+    #         threshold,
+    #         trans_init,
+    #         o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+    #     )
+
+    #     transformation = reg_p2p.transformation
+
+    # try:
+    #     print(f"[INFO] apply faster ICP alignment")
+    #     transformation = icp_alignment_fast(pcd, pcd_gt, downsampling_resolution=0.25)
+    # except:
+    #     print(f"[INFO] fall back to Open3D ICP alignment")
+    #     transformation = icp_alignment(pcd, pcd_gt)
+
+    transformation = icp_alignment_fast(pcd, pcd_gt, downsampling_resolution=0.25)
     pcd = pcd.transform(transformation)
+    
+    if pred_poses is not None:
+        pred_t = pred_poses[:, :3, 3].T # 3,V
+        pred_t = c * R @ pred_t + t
+        
+        R_icp = transformation[:3, :3]
+        t_icp = transformation[:3, 3:]
+        pred_t = R_icp @ pred_t + t_icp
+        
+        pred_poses[:, :3, 3] = pred_t.T # V,3
     
     # # debugging
     # o3d.io.write_point_cloud("gt.ply", pcd_gt)
@@ -173,7 +203,20 @@ def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1, return_point_ma
     results["completion"] = {"mean": comp, "median": comp_med}
     results["normal_consistency_1"] = {"mean": nc1, "median": nc1_med}
     results["normal_consistency_2"] = {"mean": nc2, "median": nc2_med}
-    if return_point_maps: results["point_maps"] = {"pred": np.asarray(pcd.points), "gt": np.asarray(pcd_gt.points)}
+    if return_point_maps: 
+        results["point_maps"] = {
+            "pred": np.asarray(pcd.points), 
+            "gt": np.asarray(pcd_gt.points),
+            # "icp": np.asarray(transformation),
+            # "umeyama": {
+            #     "c": c,
+            #     "R": R,
+            #     "t": t
+            # }
+        }
+        
+    if pred_poses is not None:
+        results["point_maps"]["pred_poses"] = pred_poses
     
     return results
     

@@ -16,9 +16,9 @@ DATASETS=(
 
 # ----- model ------
 MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-CKPT="experiments/Reliev3R_bs2v8_260203_selfSup/ckpt/50000.ckpt"
+CKPT="experiments/Reliev3R_bs2v8_260203_selfSup/ckpt/80000.ckpt"
 CONFIG="experiments/Reliev3R_bs2v8_260203_selfSup/config.json"
-PREFIX="Reliev3R_bs2v8_260203_selfSup_ckpt50k"
+PREFIX="Reliev3R_bs2v8_260203_selfSup_ckpt80k"
 
 # CKPT="experiments/Reliev3R_bs2v8_260123_sub260116_5k_alter_SCSup/ckpt/20000.ckpt"
 # CONFIG="experiments/Reliev3R_bs2v8_260123_sub260116_5k_alter_SCSup/config.json"
@@ -47,7 +47,7 @@ SPLIT="test"
 SEQ=""   # e.g. chess/seq-01 ; empty means all
 
 MODE="stride"       # stride | random
-STRIDE=25            # default stride
+STRIDE=10            # default stride
 MAX_SEQ_LEN=8       # default max seq len
 SEED=0              # used when MODE=random
 NUM_SEQ=10
@@ -166,7 +166,7 @@ for DATASET in "${DATASETS[@]}"; do
       MAX_SEQ_LEN_CUR=8
       ;;
     scannet)
-      STRIDE_CUR=25
+      STRIDE_CUR=20
       MAX_SEQ_LEN_CUR=8
       ;;
     *)
