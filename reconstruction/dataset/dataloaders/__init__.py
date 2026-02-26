@@ -55,7 +55,7 @@ DATASET_DICT = {
 }
 
 EPOCH_SCALE = 10000
-DATASET_SAMPLES_PER_EPOCH = {
+DATASET_SAMPLES_PER_EPOCH_TRAIN = {
     "ase":        100 * EPOCH_SCALE, 
     "blendedmvs": 1   * EPOCH_SCALE, 
     "hypersim":   1   * EPOCH_SCALE, 
@@ -67,10 +67,27 @@ DATASET_SAMPLES_PER_EPOCH = {
     "dl3dv":      25  * EPOCH_SCALE, 
     "mapillary":  1   * EPOCH_SCALE, 
     "re10k":      25  * EPOCH_SCALE, 
-    "scannet":    2   * EPOCH_SCALE, 
+    "scannet":    10  * EPOCH_SCALE, 
     "scannetv2":  2   * EPOCH_SCALE, 
     "scannetpp":  2   * EPOCH_SCALE, 
     "wildrgbd":   25  * EPOCH_SCALE, 
+}
+DATASET_SAMPLES_PER_EPOCH_EVAL = {
+    "ase":        1 * EPOCH_SCALE, 
+    "blendedmvs": 1 * EPOCH_SCALE, 
+    "hypersim":   1 * EPOCH_SCALE, 
+    "mvssynth":   1 * EPOCH_SCALE, 
+    "replica":    1 * EPOCH_SCALE, 
+    "tartanair":  1 * EPOCH_SCALE, 
+    "vkitti":     1 * EPOCH_SCALE, 
+    "co3dv2":     1 * EPOCH_SCALE, 
+    "dl3dv":      1 * EPOCH_SCALE, 
+    "mapillary":  1 * EPOCH_SCALE, 
+    "re10k":      1 * EPOCH_SCALE, 
+    "scannet":    1 * EPOCH_SCALE, 
+    "scannetv2":  1 * EPOCH_SCALE, 
+    "scannetpp":  1 * EPOCH_SCALE, 
+    "wildrgbd":   1 * EPOCH_SCALE, 
 }
 
 
@@ -82,7 +99,8 @@ def create_mixed_dataloader(cfg: DottedDict, data_type="train", batch_size=1, ra
         dataset = DATASET_DICT[dataset_name](**dict(dataset_cfg), is_train=data_type=="train", batch_size=batch_size)
         if len(dataset) > 0:
             datasets.append(dataset)
-            dataset_batch_samples.append(DATASET_SAMPLES_PER_EPOCH[dataset_name])
+            dataset_batch_samples.append(DATASET_SAMPLES_PER_EPOCH_TRAIN[dataset_name] if data_type == "train" else \
+                                         DATASET_SAMPLES_PER_EPOCH_EVAL[dataset_name])
     mixed_dataset = CustomizedConcatDataset(datasets, dataset_batch_samples)
     dataloader = DataLoader(mixed_dataset, 
                             batch_size=1,  ## We implement batch function in Dataset class to ensure intra-batch image shape consistency. 
@@ -91,7 +109,7 @@ def create_mixed_dataloader(cfg: DottedDict, data_type="train", batch_size=1, ra
                                                                         shuffle=True, 
                                                                         drop_last=True) \
                                     if data_type == "train" else torch.utils.data.RandomSampler(mixed_dataset), 
-                            num_workers=8, 
+                            num_workers=num_workers, 
                             persistent_workers=True,
                             multiprocessing_context="fork", 
                             )

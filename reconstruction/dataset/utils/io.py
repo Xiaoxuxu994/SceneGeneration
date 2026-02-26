@@ -126,7 +126,7 @@ def read_realistic_camera_npy(file_name, inv_extr=False, device="cpu", dtype=tor
         extrs = cameras["extr_mat"] # v 4 4
         intrs = cameras["intr_mat"] # v 3 3
         if inv_extr:
-            extrs = calc_extr_inv(extrs)
+            extrs = np.linalg.inv(extrs)
     else:
         raise NotImplementedError("Not implemented camera file format '{}'".format(file_name.split('.')[-1]))
     assert extrs.ndim == 3 and extrs.shape[-2] == 4 and extrs.shape[-1] == 4

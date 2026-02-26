@@ -1,10 +1,11 @@
 iterations: 130000
-batch_size: 2
+batch_size: 1
 ckpt_interval: 5000
 verbose_interval: 1000
-warm_up_iterations: 5000
+warm_up_iterations: 2000
 eval_interval: 50
 learning_rate: 0.0001
+lr_scheduler: "cosine"
 
 optimizer:
   type: AdamW

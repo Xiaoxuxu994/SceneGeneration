@@ -107,12 +107,12 @@ def compute_camera_metrics_and_log(pred, data, step, tb_writer, eval_angle, eval
         gt_cam_norm = gt_cam_norm[:1, ...] @ calc_extr_inv(gt_cam_norm)
         rra_acc, rta_acc, auc_at_thre = eval_angle(pr_cam_norm, gt_cam_norm)
         ate, rpe_trans, rpe_rot = eval_trajectory(pr_cam_norm, gt_cam_norm)
-        tb_writer.add_scalar("{}/cam_acc/rra_acc".format(header), rra_acc, step)
-        tb_writer.add_scalar("{}/cam_acc/rta_acc".format(header), rta_acc, step)
-        tb_writer.add_scalar("{}/cam_acc/auc_at_thre".format(header), auc_at_thre, step)
-        tb_writer.add_scalar("{}/cam_err/ate".format(header), ate, step)
-        tb_writer.add_scalar("{}/cam_err/rpe_trans".format(header), rpe_trans, step)
-        tb_writer.add_scalar("{}/cam_err/rpe_rot".format(header), rpe_rot, step)
+        tb_writer.add_scalar("{}_{}/cam_acc/rra_acc".format(header, data["dataset_names"][0]), rra_acc, step)
+        tb_writer.add_scalar("{}_{}/cam_acc/rta_acc".format(header, data["dataset_names"][0]), rta_acc, step)
+        tb_writer.add_scalar("{}_{}/cam_acc/auc_at_thre".format(header, data["dataset_names"][0]), auc_at_thre, step)
+        tb_writer.add_scalar("{}_{}/cam_err/ate".format(header, data["dataset_names"][0]), ate, step)
+        tb_writer.add_scalar("{}_{}/cam_err/rpe_trans".format(header, data["dataset_names"][0]), rpe_trans, step)
+        tb_writer.add_scalar("{}_{}/cam_err/rpe_rot".format(header, data["dataset_names"][0]), rpe_rot, step)
     except:
         pass
 
@@ -123,8 +123,8 @@ def compute_depth_metrics_and_log(pred, data, step, tb_writter, eval_depth_map, 
         gt_mask  = data["input_depth_masks"][0] > 0.0 # v 1 h w
         pr_depth = pred["depths"][0].detach()  # v 1 h w
         metrics = eval_depth_map(pr_depth, gt_depth, gt_mask, align_with_lstsq=True, device=DEVICE_NAME)
-        tb_writter.add_scalar("{}/depth/abs_rel".format(header), metrics["Abs Rel"], step)
-        tb_writter.add_scalar("{}/depth/δ<1.25".format(header), metrics["δ < 1.25"], step)
+        tb_writter.add_scalar("{}_{}/depth/abs_rel".format(header, data["dataset_names"][0]), metrics["Abs Rel"], step)
+        tb_writter.add_scalar("{}_{}/depth/δ<1.25".format(header, data["dataset_names"][0]), metrics["δ < 1.25"], step)
     except:
         pass
 
@@ -160,7 +160,8 @@ def run(rank, cfg):
         
         """Create optimizers based on model parameters in checkpoint. """
         optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate)
-        lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations)
+        lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations, 
+                                           scheduler_type=cfg.training.get("lr_scheduler", "cosine"))
         optimizer.load_state_dict(ckpt_info["optimizer"])
         lr_scheduler.load_state_dict(ckpt_info["lr_scheduler"])
         
@@ -170,7 +171,8 @@ def run(rank, cfg):
     else:
         """Create optimizers from scratch. """
         optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate)
-        lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations)
+        lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations, 
+                                           scheduler_type=cfg.training.get("lr_scheduler", "cosine"))
     step_begins = step
     
     
@@ -284,13 +286,13 @@ def run(rank, cfg):
             
             if global_rank == 0:
                 """Log training loss information"""
-                print("[ INFO ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]".format(
+                print("[ INFO ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]; Dataset: {}".format(
                     step, loss_dict["total"].item(), 
                     pred["local_points"][..., :2, :, :].min().item(), pred["local_points"][..., :2, :, :].max().item(), 
                     pred["local_points"][..., -1:, :, :].min().item(), pred["local_points"][..., -1:, :, :].max().item(), 
                     pred["depths_conf"].min().item(), pred["depths_conf"].max().item(), 
-                    pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item()))
-                print("[ DEBUG ] dataset: {}".format(data["dataset_names"]))
+                    pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item(), 
+                    data["dataset_names"][0]))
                 for loss_name, loss_value in loss_dict.items():
                     if loss_name == "matching_info":
                         continue
@@ -372,6 +374,7 @@ if __name__ == '__main__':
     parser.add_argument("--ckpt_interval", type=int, default=None, help="Checkpoint save interval, overwriting the configuration file.")
     parser.add_argument("--verbose_interval", type=int, default=None, help="Prediction verbose interval, overwriting the configuration file.")
     parser.add_argument("--ckpt_path", type=str, default=None, help="Path to checkpoint.")
+    parser.add_argument("--learning_rate", type=float, default=None, help="Maximum learning rate.")
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
     args = parser.parse_args()
     
@@ -389,6 +392,8 @@ if __name__ == '__main__':
         cfg.training.ckpt_interval = args.ckpt_interval
     if args.verbose_interval is not None:
         cfg.training.verbose_interval = args.verbose_interval
+    if args.learning_rate is not None:
+        cfg.training.learning_rate = args.learning_rate
     if args.ckpt_path is not None:
         cfg.ckpt_path = args.ckpt_path
     cfg.eval = args.eval

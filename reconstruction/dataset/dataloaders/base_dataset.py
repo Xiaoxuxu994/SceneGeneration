@@ -17,7 +17,7 @@ MAX_SAMPLE_RETRY = 10
 VAL_RATIO = 0.02
 IMAGE_MAX_SIZE = 518
 VIEW_OVERLAP_THRE_REALISTIC_DATA = 0.30
-VIEW_OVERLAP_THRE_SYNTHETIC_DATA = 0.25
+VIEW_OVERLAP_THRE_SYNTHETIC_DATA = 0.20
 
 
 class Base_Dataset(Dataset):
@@ -33,6 +33,8 @@ class Base_Dataset(Dataset):
                  batch_size=1, 
                  depth_is_z=True, 
                  pred_z_depth=True, 
+                 crop_lowerbound=0.0, 
+                 crop_upperbound=0.2, 
                  **kwargs, 
                  ):
         """_summary_
@@ -53,6 +55,8 @@ class Base_Dataset(Dataset):
         self.sample_num = sample_min + int(np.round((sample_max - sample_min) * train_proc))
         self.is_train = is_train
         self.batch_size = batch_size # Ensure each batch is sampled from the same dataset to keep image shape consistency.
+        self.crop_lowerbound = crop_lowerbound
+        self.crop_upperbound = crop_upperbound
     
     def __len__(self):
         raise NotImplementedError()
@@ -78,9 +82,6 @@ class Base_Dataset(Dataset):
         """
         visib_mat = cm.deflat_visibility_mat(visibs, clip_view_num) # v v, upper-triangle matrix.
         visib_mat[visib_mat < thre] = 0
-        # legal_roots = ((visib_mat > 0).sum(dim=-1) >= self.sample_num - 1).nonzero()[..., 0].numpy() # v
-        # if len(legal_roots) == 0:
-        #     return None
         
         view_ids = []
         sampled_mask = torch.zeros(clip_view_num, dtype=torch.bool)
@@ -153,7 +154,8 @@ class Base_Dataset(Dataset):
     def __getitem__(self, _):
         batch = []
         max_retries = 2
-        crop_ratio = (np.random.rand() * (0.075 - 0) + 0, np.random.rand() * (0.075 - 0) + 0) # Augmentation by cropping.
+        crop_ratio = (np.random.rand() * (self.crop_upperbound - self.crop_lowerbound) + self.crop_lowerbound, 
+                      np.random.rand() * (self.crop_upperbound - self.crop_lowerbound) + self.crop_lowerbound) # Augmentation by cropping.
         tries = 0
         while tries < max_retries:
             sample_idx = np.random.randint(low=0, high=len(self))
@@ -278,7 +280,10 @@ class Realistic_Dataset(Base_Dataset):
                 return None
             
             invert_extr = (self.__class__.__name__ == "ScanNet_Dataset" or self.__class__.__name__ == "ScanNetpp_Dataset")
-            extrs_raw, intrs_raw = io.read_realistic_camera_npy(camera_file, inv_extr=invert_extr)
+            # extrs_raw, intrs_raw = io.read_realistic_camera_npy(camera_file, inv_extr=invert_extr)
+            extrs_raw, intrs_raw = io.read_realistic_camera_npy(camera_file)
+            if invert_extr:
+                extrs_raw = calc_extr_inv(extrs_raw)
             tracking_info_raw = io.read_cotracker_info_as_tensor(tracking_file)
             if self.__class__.__name__ == "WildRGBD_Dataset":
                 intrs_raw[..., 0, 2] = 0.5
@@ -385,7 +390,7 @@ class Realistic_Dataset(Base_Dataset):
                 
                 timer.record_start("3_MatchCalc")
                 matched_pairs = self.is_visib_valid(data["input_visibs0"].sum(dim=-1) / 625, 
-                                                    view_num=len(samp_view_ids), min_thres=0.1)
+                                                    view_num=len(samp_view_ids), min_thres=0.0)
                 timer.record_end("3_MatchCalc")
                 if matched_pairs is None:
                     continue
@@ -410,7 +415,6 @@ class Realistic_Dataset(Base_Dataset):
                 timer.record_end("0_Total")
                 timer.report()
                 return batch_data
-            # print("[ WARNING ] Max retries exceed!")
             return None
         
         except:
@@ -492,7 +496,7 @@ class Synthetic_Dataset(Base_Dataset):
             timer.record_start("1_IO")
             target_size = (480, 640) if self.__class__.__name__ == "ScanNetv2_Dataset" else None
             all_images = torch.stack([io.read_image_as_tensor(f, target_size) for f in image_list])
-            all_depths = torch.stack([io.read_depth_as_tensor(f) for f in depth_list])
+            all_depths = torch.stack([io.read_depth_as_tensor(f, regard_inf_as=65536) for f in depth_list])
             all_depth_masks = torch.stack([io.read_depth_mask_as_tensor(f) for f in depth_mask_list]) \
                 if depth_mask_list is not None else None
             timer.record_end("1_IO")

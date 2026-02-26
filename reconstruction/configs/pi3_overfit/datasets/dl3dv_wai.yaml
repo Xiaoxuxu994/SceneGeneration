@@ -1,4 +1,0 @@
-# Path to the dataset
-data_root: /mnt/diskb/chenyouyu/workspace/data/DL3DV_WAI
-train_data_list_file: /mnt/diskb/chenyouyu/workspace/code/SSFF3D-1101/dl3dv_wai_train_list.json
-eval_data_list_file: /mnt/diskb/chenyouyu/workspace/code/SSFF3D-1101/dl3dv_wai_train_list.json
