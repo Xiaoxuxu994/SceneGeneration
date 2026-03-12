@@ -4,12 +4,14 @@ depth_shape:
   w: 1.0
   norm_depth: false
 geometric:
-  w: 0.0 # 0.5
+  w: 0.5
 camera_extr:
   w: 0.1
 camera_intr:
   w: 1.0
 point:
+  w: 1.0
+normalize:
   w: 1.0
 
 enable_conf: true

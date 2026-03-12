@@ -300,8 +300,8 @@ class LossFunction(torch.nn.Module):
         input_masks  = torch.ones_like(output_dict["depths_conf"]) if data["input_depth_masks"] is None else data["input_depth_masks"]
         output_dict["depths_conf"] = output_dict["depths_conf"] * input_masks.clamp(min=lower)
         ds_loss = depth_shape_loss(depths, input_depths, 
-            conf_map=output_dict["depths_conf"] if enable_conf else None, 
-            alpha=self.conf_alpha, norm_depth=self.norm_depth)
+                                   conf_map=output_dict["depths_conf"] if enable_conf else None, 
+                                   alpha=self.conf_alpha, norm_depth=self.norm_depth)
         return ds_loss
     
     def geometric_loss(self, output_dict, data, detach_camera=False, detach_depth=False):
@@ -390,6 +390,19 @@ class LossFunction(torch.nn.Module):
         return ray_dirs_dot
     
     
+    def normalize_loss(self, output_dict):
+        pr_local_points = rearrange(output_dict["local_points_detach_xy"], "b v c h w -> b v h w c") 
+        B = pr_local_points.shape[0]
+        pr_global_points = localpoint2global(pr_local_points, output_dict["camera_extrs"])
+        point_scale = pr_global_points.norm(dim=-1).reshape(B, -1).mean(dim=-1)
+        return (point_scale - 1).abs().mean()
+    
+        # depths = output_dict["depths"] # b v 1 h w
+        # B = depths.shape[0]
+        # depth_scale = depths.reshape(B, -1).mean(dim=-1)
+        # return (depth_scale - 1).abs().mean()
+    
+    
     def forward(self, output_dict, data):
         ### Compute loss weight
         w_ds        = self.cfg.depth_shape.w if self.cfg.get("depth_shape", None) is not None else 0.0
@@ -397,6 +410,7 @@ class LossFunction(torch.nn.Module):
         w_intr      = self.cfg.camera_intr.w if self.cfg.get("camera_intr", None) is not None else 0.0
         w_extr      = self.cfg.camera_extr.w if self.cfg.get("camera_extr", None) is not None else 0.0
         w_point     = self.cfg.point.w if self.cfg.get("point", None) is not None else 0.0
+        w_normalize = self.cfg.normalize.w if self.cfg.get("normalize", None) is not None else 0.0
         
         ### Compute loss value
         ds_loss_value = self.ds_loss(output_dict, data, enable_conf=self.enable_conf, lower=1e-2)
@@ -413,12 +427,14 @@ class LossFunction(torch.nn.Module):
             self.opt_flag = not self.opt_flag
         intr_loss_value = self.intr_loss(output_dict, data)
         extr_loss_value, extr_r_loss_value, extr_t_loss_value = self.relative_camera_loss(output_dict, data, S_opt_local)
+        normalize_loss_value = self.normalize_loss(output_dict)
         
         total_loss = (w_ds * ds_loss_value + 
                       w_geometric * geometric_loss_value + 
                       w_point * point_loss + 
                       w_intr * intr_loss_value + 
-                      w_extr * extr_loss_value)
+                      w_extr * extr_loss_value + 
+                      w_normalize * normalize_loss_value)
         
         ### Return loss information
         loss_dict = {
@@ -429,6 +445,7 @@ class LossFunction(torch.nn.Module):
             "extr_rel":      extr_loss_value, 
             "extr_r":        extr_r_loss_value, 
             "extr_t":        extr_t_loss_value, 
+            "normalize":     normalize_loss_value, 
             "matching_info": matching_info, 
         }
         if data.get("input_points_local", None) is not None:

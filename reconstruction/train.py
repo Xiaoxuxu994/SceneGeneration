@@ -154,19 +154,24 @@ def run(rank, cfg):
     step = 0
     if cfg.get("ckpt_path") is not None:
         print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
-        ckpt_info = torch.load(cfg.ckpt_path, map_location="cpu")
+        ckpt_info = torch.load(cfg.ckpt_path, map_location="cpu", weights_only=False)
         model.load_state_dict(ckpt_info["model"])
         model = model.to(device=DEVICE_NAME)    
+        del ckpt_info
         
         """Create optimizers based on model parameters in checkpoint. """
         optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate)
         lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations, 
                                            scheduler_type=cfg.training.get("lr_scheduler", "cosine"))
-        optimizer.load_state_dict(ckpt_info["optimizer"])
-        lr_scheduler.load_state_dict(ckpt_info["lr_scheduler"])
-        
-        step = ckpt_info["current_iteration"]
-        del ckpt_info
+        if not cfg.no_load_optim:
+            ckpt_optim_info = torch.load(cfg.ckpt_path[:-5] + "_optim.ckpt", map_location="cpu", weights_only=False)
+            optimizer.load_state_dict(ckpt_optim_info["optimizer"])
+            lr_scheduler.load_state_dict(ckpt_optim_info["lr_scheduler"])
+            step = ckpt_optim_info["current_iteration"]
+            del ckpt_optim_info
+            print("[ DEBUG ] Optimizer loading enabled.")
+        else:
+            print("[ DEBUG ] Optimizer loading disabled.")
         print("[ INFO ] Checkpoint loaded successfully")
     else:
         """Create optimizers from scratch. """
@@ -329,14 +334,22 @@ def run(rank, cfg):
                 if (step % cfg.training.ckpt_interval == 0 or step == cfg.training.iterations) and global_rank == 0:
                     print("[ INFO ] Saving checkpoint at iteration {}".format(step))
                     os.makedirs(os.path.join(cfg.output_dir, "ckpt"), exist_ok=True)
+                    ## Save model weights
                     ckpt_name = os.path.join(cfg.output_dir, "ckpt", "{}.ckpt".format(step))
                     checkpoint = {
                         "model": model.module.state_dict() if isinstance(model, DDP) else model.state_dict(), 
+                    }
+                    torch.save(checkpoint, ckpt_name)
+                    ## Save model weights
+                    ckpt_optim_name = os.path.join(cfg.output_dir, "ckpt", "{}_optim.ckpt".format(step))
+                    checkpoint_optim = {
                         "optimizer": optimizer.state_dict(), 
                         "lr_scheduler": lr_scheduler.state_dict(), 
                         "current_iteration": step, 
                     }
-                    torch.save(checkpoint, ckpt_name)
+                    torch.save(checkpoint_optim, ckpt_optim_name)
+                    del checkpoint
+                    del checkpoint_optim
     else:
         """Visualize evaluation results on eval set, not for metric computation, implemented for single GPU. """
         print("[ INFO ] Evaluation output directory: {}".format(cfg.output_dir))
@@ -374,6 +387,7 @@ if __name__ == '__main__':
     parser.add_argument("--ckpt_interval", type=int, default=None, help="Checkpoint save interval, overwriting the configuration file.")
     parser.add_argument("--verbose_interval", type=int, default=None, help="Prediction verbose interval, overwriting the configuration file.")
     parser.add_argument("--ckpt_path", type=str, default=None, help="Path to checkpoint.")
+    parser.add_argument("--no_load_optim", action="store_true", help="Set to disable loading optimizer when ckpt is given.")
     parser.add_argument("--learning_rate", type=float, default=None, help="Maximum learning rate.")
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
     args = parser.parse_args()
@@ -397,5 +411,6 @@ if __name__ == '__main__':
     if args.ckpt_path is not None:
         cfg.ckpt_path = args.ckpt_path
     cfg.eval = args.eval
+    cfg.no_load_optim = args.no_load_optim
     
     main(cfg)
