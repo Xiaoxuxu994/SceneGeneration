@@ -5,6 +5,8 @@ depth_shape:
   norm_depth: true
 geometric:
   w: 0.5 # 0.5
+dist:
+  w: 0.1
 camera_extr:
   w: 0.0
 camera_intr:

@@ -210,6 +210,35 @@ def matching_error_3D(points: torch.Tensor,
     return cossim_loss.mean()
 
 
+def matching_error_3D_dist(points: torch.Tensor, 
+                           extrs: torch.Tensor, 
+                           matching_info: dict,  view_per_batch: int):
+    """Compute 3d error between two group of (depths, cameras).
+
+    Args:
+        points (torch.Tensor): Points in world camera, tensor of shape (B*V*2, H, W, 3).
+        extrs (torch.Tensor): Extrinsics, tensor of shape (B*V*2, 4, 4). world to camera.
+        matching_info (dict): Containing tracks, a tensor of shape (B*V, 2, K, 2), and visibilities, a tensor of shape (B*V, 2, K).
+        depth_is_z (bool): If the depth maps are z-depths. False if they are ray-depths. 
+        enable_depth_weight (bool): If weight the matching error by pixel depth.
+    """
+    points = points.permute(0, 3, 1, 2) # b 3 h w
+    
+    assert len(points) % view_per_batch == 0
+    
+    tracks = matching_info["matches"] # b*v 2 k 2
+    vis = matching_info["visibilities"] # b*v 2 k
+    mask = torch.all(vis, dim=1) # b*v k
+    
+    points = samp_points_by_pixel(points, tracks.reshape(-1, *tracks.shape[-2:])) # bv k c
+    points = points.reshape(-1, view_per_batch, *points.shape[-2:]) # b v k c
+    
+    dist_loss = (points[..., 0, :, :] - points[..., 1, :, :]).square().sum(dim=-1)
+    dist_loss = ((dist_loss * mask).sum(dim=-1) / (mask.sum(dim=-1) + 1e-8)).mean()
+    
+    return dist_loss
+
+
 class LossFunction(torch.nn.Module):
 
     def __init__(self, cfg, matching_model):
@@ -339,8 +368,13 @@ class LossFunction(torch.nn.Module):
                                            extrs=paired_extrs.reshape(-1, 4, 4), 
                                            matching_info=matching_info, 
                                            view_per_batch=2)
+        matching_error_dist = matching_error_3D_dist(points=paired_points.reshape(-1, H, W, 3), 
+                                                     extrs=paired_extrs.reshape(-1, 4, 4), 
+                                                     matching_info=matching_info, 
+                                                     view_per_batch=2)
         
-        return matching_error, [matching_info, ]
+        
+        return matching_error, matching_error_dist, [matching_info, ]
     
     def relative_camera_loss(self, output_dict: dict[str, torch.Tensor], data: dict[str, torch.Tensor], S_opt_local: torch.Tensor):
         def huber_loss(x: torch.Tensor, y: torch.Tensor, delta: float):
@@ -392,6 +426,7 @@ class LossFunction(torch.nn.Module):
     
     def normalize_loss(self, output_dict):
         pr_local_points = rearrange(output_dict["local_points_detach_xy"], "b v c h w -> b v h w c") 
+        # pr_local_points = rearrange(output_dict["local_points_detach_z"], "b v c h w -> b v h w c") 
         B = pr_local_points.shape[0]
         pr_global_points = localpoint2global(pr_local_points, output_dict["camera_extrs"])
         point_scale = pr_global_points.norm(dim=-1).reshape(B, -1).mean(dim=-1)
@@ -407,6 +442,7 @@ class LossFunction(torch.nn.Module):
         ### Compute loss weight
         w_ds        = self.cfg.depth_shape.w if self.cfg.get("depth_shape", None) is not None else 0.0
         w_geometric = self.cfg.geometric.w if self.cfg.get("geometric", None) is not None else 0.0
+        w_dist      = self.cfg.dist.w if self.cfg.get("dist", None) is not None else 0.0
         w_intr      = self.cfg.camera_intr.w if self.cfg.get("camera_intr", None) is not None else 0.0
         w_extr      = self.cfg.camera_extr.w if self.cfg.get("camera_extr", None) is not None else 0.0
         w_point     = self.cfg.point.w if self.cfg.get("point", None) is not None else 0.0
@@ -416,9 +452,9 @@ class LossFunction(torch.nn.Module):
         ds_loss_value = self.ds_loss(output_dict, data, enable_conf=self.enable_conf, lower=1e-2)
         detach_camera = self.enable_alternate_geometric_opt and not self.opt_flag or self.cfg.geometric.get("detach_camera", False)
         detach_depth  = self.enable_alternate_geometric_opt and self.opt_flag
-        geometric_loss_value, matching_info = self.geometric_loss(output_dict, data, 
-                                                                  detach_camera=detach_camera, 
-                                                                  detach_depth=detach_depth)
+        geometric_loss_value, dist_loss_value, matching_info = self.geometric_loss(output_dict, data, 
+                                                                                   detach_camera=detach_camera, 
+                                                                                   detach_depth=detach_depth)
         if data.get("input_points_local", None) is not None:
             point_loss, point_loss_details, S_opt_local = self.point_loss(output_dict, data)
         else:
@@ -431,6 +467,7 @@ class LossFunction(torch.nn.Module):
         
         total_loss = (w_ds * ds_loss_value + 
                       w_geometric * geometric_loss_value + 
+                      w_dist * dist_loss_value + 
                       w_point * point_loss + 
                       w_intr * intr_loss_value + 
                       w_extr * extr_loss_value + 
@@ -440,7 +477,8 @@ class LossFunction(torch.nn.Module):
         loss_dict = {
             "total":         total_loss, 
             "depth_shape":   ds_loss_value, 
-            "geometric":     geometric_loss_value, 
+            "match_cosine":  geometric_loss_value, 
+            "match_dist":    dist_loss_value, 
             "intr_fov":      intr_loss_value, 
             "extr_rel":      extr_loss_value, 
             "extr_r":        extr_r_loss_value, 
