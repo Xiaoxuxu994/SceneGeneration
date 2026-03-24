@@ -10,13 +10,15 @@ from .layers.block import BlockRope
 from .layers.attention import FlashAttentionRope
 from .layers.transformer_head import TransformerDecoder, LinearPts3d
 from .layers.camera_head import CameraHead
-from .dinov2.hub.backbones import dinov2_vitl14, dinov2_vitl14_reg, dinov2_vits14_reg, dinov2_vitb14_reg
+from .dinov2.hub.backbones import dinov2_vitl14, dinov2_vitg14_reg, dinov2_vitl14_reg, dinov2_vits14_reg, dinov2_vitb14_reg
 from huggingface_hub import PyTorchModelHubMixin
 from torch.utils.checkpoint import checkpoint
 
 from utils.platform import DEVICE_NAME
 import utils.common as cm
 
+import os
+USE_CHECKPOINT = os.environ.get('USE_CHECKPOINT', True)
 
 class Pi3(nn.Module, PyTorchModelHubMixin):
     def __init__(
@@ -28,7 +30,9 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         # ----------------------
         #        Encoder
         # ----------------------
-        if cfg.decoder_size == "large":
+        if cfg.decoder_size == "giant":
+            self.encoder = dinov2_vitg14_reg(pretrained=True, model_dir="ckpt/dinov2-giant")
+        elif cfg.decoder_size == "large" or cfg.decoder_size == "large-double":
             self.encoder = dinov2_vitl14_reg(pretrained=True, model_dir="ckpt/dinov2-large")
         elif cfg.decoder_size == "base":
             self.encoder = dinov2_vitb14_reg(pretrained=True, model_dir="ckpt/dinov2-base")
@@ -57,6 +61,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         #        Decoder
         # ----------------------
         enc_embed_dim = self.encoder.blocks[0].attn.qkv.in_features        # 1024
+        head_depth = 5
         if cfg.decoder_size == 'small':
             dec_embed_dim = 384
             dec_num_heads = 6
@@ -72,6 +77,18 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             dec_num_heads = 16
             mlp_ratio = 4
             dec_depth = 36
+        elif cfg.decoder_size == 'large-double':
+            dec_embed_dim = 1024
+            dec_num_heads = 16
+            mlp_ratio = 4
+            dec_depth = 72
+            head_depth = 10
+        elif cfg.decoder_size == 'giant':
+            dec_embed_dim = 1536
+            dec_num_heads = 16
+            mlp_ratio = 4
+            dec_depth = 72
+            head_depth = 10
         else:
             raise NotImplementedError
         self.decoder = nn.ModuleList([
@@ -114,7 +131,8 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 dec_num_heads=16,
                 out_dim=1024,
                 rope=self.rope,
-                use_checkpoint=True
+                depth=head_depth,
+                use_checkpoint=USE_CHECKPOINT
             )
             self.point_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1, activation="linear")
             self.xy_decoder = TransformerDecoder(
@@ -123,7 +141,8 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 dec_num_heads=16,
                 out_dim=1024,
                 rope=self.rope,
-                use_checkpoint=True
+                depth=head_depth,
+                use_checkpoint=USE_CHECKPOINT
             )
             self.xy_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=2, activation="linear")
 
@@ -137,7 +156,8 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 dec_num_heads=16,
                 out_dim=1024,
                 rope=self.rope,
-                use_checkpoint=True
+                depth=head_depth,
+                use_checkpoint=USE_CHECKPOINT
             )
             self.depth_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1, activation="exp")
 
@@ -163,7 +183,8 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             dec_num_heads=16,                # 8
             out_dim=512,
             rope=self.rope,
-            use_checkpoint=True
+            depth=head_depth,
+            use_checkpoint=USE_CHECKPOINT
         )
         self.camera_head = CameraHead(dim=512, pred_fov=hasattr(self, "depth_head"))
 
@@ -209,7 +230,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 pos = pos.reshape(B, N*hw, -1)
                 hidden = hidden.reshape(B, N*hw, -1)
 
-            if self.training:
+            if self.training and USE_CHECKPOINT:
                 hidden = checkpoint(blk, hidden, pos, xpos_max, use_reentrant=True)
             else:
                 hidden = blk(hidden, xpos=pos, xpos_max=xpos_max)

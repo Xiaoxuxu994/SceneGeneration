@@ -13,3 +13,4 @@ numpy==1.26.4
 torch==2.6.0
 torch_npu==2.6.0
 torchvision==0.21.0
+deepspeed==0.17.6
