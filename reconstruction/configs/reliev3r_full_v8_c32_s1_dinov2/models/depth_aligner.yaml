@@ -45,7 +45,8 @@ ours:
 
 pi3:
   pos_type: rope100
-  decoder_size: large-double
+  decoder_size: giant
+  model_size: dinov2_giant_3.57B
   depth_scaler:
     enabled: false
   point_head:

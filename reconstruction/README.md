@@ -21,7 +21,7 @@ This is the codebase of Reliev3R.
 
 ### Dependencies
 * In the default conda environment (PyTorch-2.1.0) of the specified docker above, run `pip install -r requirements.txt`.
-* Download DINOv2 checkpoints into directory `ckpt` (https://github.com/facebookresearch/dinov2), 
+* Download DINOv2 & DINOv3 checkpoints into directory `ckpt` (https://github.com/facebookresearch/dinov2), 
     ```
     |- ckpt
         |- dinov2-small
@@ -30,6 +30,16 @@ This is the codebase of Reliev3R.
             |- dinov2_vitb14_reg4_pretrain.pth
         |- dinov2-large
             |- dinov2_vitl14_reg4_pretrain.pth
+        |- dinov3_vits16
+            |- dinov3_vits16_pretrain_lvd1689m-08c60483.pth
+        |- dinov3_vits16plus
+            |- dinov3_vits16plus_pretrain_lvd1689m-4057cbaa.pth
+        |- dinov3_vitb16
+            |- dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth
+        |- dinov3_vitl16
+            |- dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+        |- dinov3_vith16plus
+            |- dinov3_vith16plus_pretrain_lvd1689m-7c1da9a5.pth
     ```
 
 ## Quick Start
@@ -66,3 +76,5 @@ More specifically, we have the following experiment setups now:
 * `pi3_overfit`: Train Pi3 on a sample of DL3DV-10K dataset annotated with map-anything annotation pipeline (i.e., moge2 and mvsanywhere). Typically for debug. 
 * `pi3_cut3r_full`: Train Pi3 on DL3DV-10K dataset annotated with colmap (i.e., labels released by CUt3R). 
 * `pi3_cut3r_overfit`: Train Pi3 on a sample of DL3DV-10K dataset annotated with colmap (i.e., labels released by CUt3R). Typically for debug. 
+* `reliev3r_full_v8_c32_s1_dinov2`: Train Pi3 based on dinov2-vit, `pi3:model_size` in depth_aligner.yaml should be one of [`dinov2_large_0.95B` `dinov2_large_1.6B` `dinov2_giant_3.57B`]
+* `reliev3r_full_v8_c32_s1_dinov3`: Train Pi3 based on dinov3-vit, `pi3:model_size` in depth_aligner.yaml should be one of [`dinov3_huge+_2.81B` `dinov3_huge+_3.2B` `dinov3_huge+_4.24B` `dinov3_huge+_3.51B` `dinov3_huge+_5.17B`]

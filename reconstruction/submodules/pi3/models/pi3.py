@@ -11,6 +11,7 @@ from .layers.attention import FlashAttentionRope
 from .layers.transformer_head import TransformerDecoder, LinearPts3d
 from .layers.camera_head import CameraHead
 from .dinov2.hub.backbones import dinov2_vitl14, dinov2_vitg14_reg, dinov2_vitl14_reg, dinov2_vits14_reg, dinov2_vitb14_reg
+from .dinov3.hub.backbones import dinov3_vits16, dinov3_vits16plus, dinov3_vitb16, dinov3_vitl16, dinov3_vith16plus
 from huggingface_hub import PyTorchModelHubMixin
 from torch.utils.checkpoint import checkpoint
 
@@ -18,8 +19,8 @@ from utils.platform import DEVICE_NAME
 import utils.common as cm
 
 import os
-USE_CHECKPOINT = os.environ.get('USE_CHECKPOINT', True)
-
+USE_CHECKPOINT = os.environ.get('USE_CHECKPOINT', 'True')
+print("USE_CHEKCPOINT = ", USE_CHECKPOINT)
 class Pi3(nn.Module, PyTorchModelHubMixin):
     def __init__(
             self,
@@ -28,20 +29,52 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         super().__init__()
 
         # ----------------------
-        #        Encoder
+        #        Encoder - dinov3
         # ----------------------
-        if cfg.decoder_size == "giant":
-            self.encoder = dinov2_vitg14_reg(pretrained=True, model_dir="ckpt/dinov2-giant")
-        elif cfg.decoder_size == "large" or cfg.decoder_size == "large-double":
-            self.encoder = dinov2_vitl14_reg(pretrained=True, model_dir="ckpt/dinov2-large")
-        elif cfg.decoder_size == "base":
-            self.encoder = dinov2_vitb14_reg(pretrained=True, model_dir="ckpt/dinov2-base")
-        elif cfg.decoder_size == "small":
-            self.encoder = dinov2_vits14_reg(pretrained=True, model_dir="ckpt/dinov2-small")
-        else:
-            raise NotImplementedError("Not implemented decode size: '{}'".format(cfg.decoder_size))
-        self.patch_size = 14
-        del self.encoder.mask_token
+        if hasattr(cfg, 'model_size'):
+            enc_type, encoder_size, model_size = cfg.model_size.split('_')
+        else: # Compatible with old configurations
+            if cfg.decoder_size == 'large':
+                enc_type = 'dinov2'
+                encoder_size = 'large'
+                model_size = '0.95B'
+            elif cfg.decoder_size == 'large-double':
+                enc_type = 'dinov2'
+                encoder_size = 'large'
+                model_size = '1.6B'
+            elif cfg.decoder_size == 'giant':
+                enc_type = 'dinov2'
+                encoder_size = 'giant'
+                model_size = '3.57B'
+            else:
+                raise NotImplementedError("Not implemented encode size: '{}'".format(cfg.decoder_size))
+        if enc_type == 'dinov3':
+            if encoder_size == "huge+":
+                self.encoder = dinov3_vith16plus(pretrained=True, model_dir="ckpt/dinov3_vith16plus")
+            elif encoder_size == "large":
+                self.encoder = dinov3_vitl16(pretrained=True, model_dir="ckpt/dinov3_vitl16")
+            elif encoder_size == "base":
+                self.encoder = dinov3_vitb16(pretrained=True, model_dir="ckpt/dinov3_vitb16")
+            elif encoder_size == "small+":
+                self.encoder = dinov3_vits16plus(pretrained=True, model_dir="ckpt/dinov3_vits16plus")
+            elif encoder_size == "small":
+                self.encoder = dinov3_vits16(pretrained=True, model_dir="ckpt/dinov3_vits16")
+            else:
+                raise NotImplementedError("Not implemented encode size: '{}_{}'".format(enc_type, encoder_size))
+        if enc_type == 'dinov2':
+            if encoder_size == "giant":
+                self.encoder = dinov2_vitg14_reg(pretrained=True, model_dir="ckpt/dinov2-giant")
+            elif encoder_size == "large":
+                self.encoder = dinov2_vitl14_reg(pretrained=True, model_dir="ckpt/dinov2-large")
+            elif encoder_size == "base":
+                self.encoder = dinov2_vitb14_reg(pretrained=True, model_dir="ckpt/dinov2-base")
+            elif encoder_size == "small":
+                self.encoder = dinov2_vits14_reg(pretrained=True, model_dir="ckpt/dinov2-small")
+            else:
+                raise NotImplementedError("Not implemented encode size: '{}_{}'".format(enc_type, encoder_size))
+            del self.encoder.mask_token
+
+        self.patch_size = self.encoder.patch_size
 
         # ----------------------
         #  Positonal Encoding
@@ -60,37 +93,64 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         # ----------------------
         #        Decoder
         # ----------------------
-        enc_embed_dim = self.encoder.blocks[0].attn.qkv.in_features        # 1024
+        self.enc_embed_dim = self.encoder.blocks[0].attn.qkv.in_features        # 1024
         head_depth = 5
-        if cfg.decoder_size == 'small':
-            dec_embed_dim = 384
-            dec_num_heads = 6
-            mlp_ratio = 4
-            dec_depth = 24
-        elif cfg.decoder_size == 'base':
-            dec_embed_dim = 768
-            dec_num_heads = 12
-            mlp_ratio = 4
-            dec_depth = 24
-        elif cfg.decoder_size == 'large':
-            dec_embed_dim = 1024
-            dec_num_heads = 16
-            mlp_ratio = 4
-            dec_depth = 36
-        elif cfg.decoder_size == 'large-double':
-            dec_embed_dim = 1024
-            dec_num_heads = 16
-            mlp_ratio = 4
-            dec_depth = 72
-            head_depth = 10
-        elif cfg.decoder_size == 'giant':
-            dec_embed_dim = 1536
-            dec_num_heads = 16
-            mlp_ratio = 4
-            dec_depth = 72
-            head_depth = 10
-        else:
-            raise NotImplementedError
+        ## pi3 decoder size
+        if enc_type == 'dinov2':
+            if model_size == '0.95B':
+                dec_embed_dim = 1024
+                dec_num_heads = 16
+                mlp_ratio = 4
+                dec_depth = 36
+            elif model_size == '1.6B':
+                dec_embed_dim = 1024
+                dec_num_heads = 16
+                mlp_ratio = 4
+                dec_depth = 72
+                head_depth = 10
+            elif model_size == '3.57B':
+                dec_embed_dim = 1536
+                dec_num_heads = 16
+                mlp_ratio = 4
+                dec_depth = 72
+                head_depth = 10
+            else:
+                raise NotImplementedError
+            
+        if enc_type == 'dinov3':
+            if model_size == '2.81B':
+                dec_embed_dim = 1280
+                dec_num_heads = 16
+                mlp_ratio = 4
+                dec_depth = 80
+                head_depth = 10
+            elif model_size == '3.2B':
+                dec_embed_dim = 1280
+                dec_num_heads = 16
+                mlp_ratio = 4
+                dec_depth = 100
+                head_depth = 10
+            elif model_size == '4.24B':
+                dec_embed_dim = 2560
+                dec_num_heads = 16
+                mlp_ratio = 4
+                dec_depth = 40
+                head_depth = 6
+            elif model_size == '3.51B':
+                dec_embed_dim = 2048
+                dec_num_heads = 16
+                mlp_ratio = 4
+                dec_depth = 48
+                head_depth = 6
+            elif model_size == '5.17B':
+                dec_embed_dim = 3072
+                dec_num_heads = 16
+                mlp_ratio = 4
+                dec_depth = 36
+                head_depth = 6
+            else:
+                raise NotImplementedError
+
         self.decoder = nn.ModuleList([
             BlockRope(
                 dim=dec_embed_dim,
@@ -109,6 +169,12 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 rope=self.rope
             ) for _ in range(dec_depth)])
         self.dec_embed_dim = dec_embed_dim
+
+        # ----------------------
+        #     Project & Norm Layer (as decoder dim ≠ encoder dim)
+        # ----------------------
+        self.project_e2d = nn.Linear(self.enc_embed_dim, self.dec_embed_dim, bias=False) if self.enc_embed_dim != self.dec_embed_dim else nn.Identity()
+        self.project_norm = nn.LayerNorm(self.dec_embed_dim) if self.enc_embed_dim != self.dec_embed_dim else nn.Identity()
 
         # ----------------------
         #     Register_token
@@ -132,9 +198,9 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 out_dim=1024,
                 rope=self.rope,
                 depth=head_depth,
-                use_checkpoint=USE_CHECKPOINT
+                use_checkpoint=(USE_CHECKPOINT=='True')
             )
-            self.point_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1, activation="linear")
+            self.point_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="linear")
             self.xy_decoder = TransformerDecoder(
                 in_dim=2*self.dec_embed_dim, 
                 dec_embed_dim=1024,
@@ -142,9 +208,9 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 out_dim=1024,
                 rope=self.rope,
                 depth=head_depth,
-                use_checkpoint=USE_CHECKPOINT
+                use_checkpoint=(USE_CHECKPOINT=='True')
             )
-            self.xy_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=2, activation="linear")
+            self.xy_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=2, activation="linear")
 
         # ----------------------
         #  Local Depths Decoder
@@ -157,20 +223,20 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 out_dim=1024,
                 rope=self.rope,
                 depth=head_depth,
-                use_checkpoint=USE_CHECKPOINT
+                use_checkpoint=(USE_CHECKPOINT=='True')
             )
-            self.depth_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1, activation="exp")
+            self.depth_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="exp")
 
         # ----------------------
         #     Conf Decoder
         # ----------------------
         if hasattr(self, "point_head"):
             self.conf_decoder = deepcopy(self.point_decoder)
-            # self.conf_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1, activation="linear")
-            self.conf_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1, activation="2sigmoid")
+            # self.conf_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="linear")
+            self.conf_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="2sigmoid")
         elif hasattr(self, "depth_head"):
             self.conf_decoder = deepcopy(self.depth_decoder)
-            self.conf_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1, activation="2sigmoid")
+            self.conf_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="2sigmoid")
         else:
             raise NotImplementedError()
 
@@ -184,7 +250,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             out_dim=512,
             rope=self.rope,
             depth=head_depth,
-            use_checkpoint=USE_CHECKPOINT
+            use_checkpoint=(USE_CHECKPOINT=='True')
         )
         self.camera_head = CameraHead(dim=512, pred_fov=hasattr(self, "depth_head"))
 
@@ -230,7 +296,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 pos = pos.reshape(B, N*hw, -1)
                 hidden = hidden.reshape(B, N*hw, -1)
 
-            if self.training and USE_CHECKPOINT:
+            if self.training and (USE_CHECKPOINT=='True'):
                 hidden = checkpoint(blk, hidden, pos, xpos_max, use_reentrant=True)
             else:
                 hidden = blk(hidden, xpos=pos, xpos_max=xpos_max)
@@ -244,14 +310,18 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         imgs = (imgs - self.image_mean) / self.image_std
 
         B, N, _, H, W = imgs.shape
-        patch_h, patch_w = H // 14, W // 14
+        patch_h, patch_w = H // self.patch_size, W // self.patch_size
         
-        # encode by dinov2
+        # encode by dinov2 / dinov3
         imgs = imgs.reshape(B*N, _, H, W)
         hidden = self.encoder(imgs, is_training=True)
 
         if isinstance(hidden, dict):
             hidden = hidden["x_norm_patchtokens"]
+
+        # project encoder dim to docoder dim
+        hidden = self.project_e2d(hidden)
+        hidden = self.project_norm(hidden)
 
         xpos_max = max(H//self.patch_size, W//self.patch_size)
         hidden, pos = self.decode(hidden, N, H, W, xpos_max=xpos_max)

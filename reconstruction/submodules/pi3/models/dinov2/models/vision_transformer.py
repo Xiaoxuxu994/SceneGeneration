@@ -21,7 +21,7 @@ from ..layers import Mlp, PatchEmbed, SwiGLUFFNFused, MemEffAttention, NestedTen
 from ...layers.attention import FlashAttention
 
 import os
-USE_CHECKPOINT = os.environ.get('USE_CHECKPOINT', True) 
+USE_CHECKPOINT = os.environ.get('USE_CHECKPOINT', 'True') 
 # logger = logging.getLogger("dinov2")
 
 
@@ -237,7 +237,7 @@ class DinoVisionTransformer(nn.Module):
     def forward_features_list(self, x_list, masks_list):
         x = [self.prepare_tokens_with_masks(x, masks) for x, masks in zip(x_list, masks_list)]
         for blk in self.blocks:
-            if self.training and USE_CHECKPOINT:
+            if self.training and USE_CHECKPOINT == 'True':
                 x = checkpoint(blk, x, use_reentrant=True)
             else:
                 x = blk(x)
@@ -264,7 +264,7 @@ class DinoVisionTransformer(nn.Module):
         x = self.prepare_tokens_with_masks(x, masks)
 
         for blk in self.blocks:
-            if self.training and USE_CHECKPOINT:
+            if self.training and USE_CHECKPOINT == 'True':
                 x = checkpoint(blk, x, use_reentrant=True)
             else:
                 x = blk(x)
