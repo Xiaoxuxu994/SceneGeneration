@@ -104,7 +104,6 @@ def export_pointcloud(
     o3d.io.write_point_cloud(str(out_ply), pcd)
 
 
-
 def export_cameras(c2w: np.ndarray, out_ply: Path) -> None:
     """export_cam_as_ply expects torch tensor (B,S,4,4)."""
     c2w = to_4x4_batch(c2w).astype(np.float32)  # (S,4,4)
@@ -153,6 +152,10 @@ def main() -> None:
     )
     ap.add_argument("--depth_vmin", type=float, default=0.1)
     ap.add_argument("--depth_vmax", type=float, default=10.0)
+    
+    ap.add_argument("--scene_list", type=str, default="", 
+        help="a string of scene IDs separated by blank space, e.g. 1 2 3 4")
+    
     args = ap.parse_args()
 
     root = Path(args.dir)
@@ -161,6 +164,10 @@ def main() -> None:
 
     is_gt = (root.name.lower() == "gt")
 
+    scene_list = []
+    if len(args.scene_list) > 0:
+        scene_list = args.scene_list.split(' ')
+
     # 在 dir 同目录下新建 <basename>_vis（按你要求取最后一个 basename）
     vis_root = root.parent / (root.name + "_vis")
     vis_root.mkdir(parents=True, exist_ok=True)
@@ -168,9 +175,11 @@ def main() -> None:
     print("[INFO] src:", root)
     print("[INFO] dst:", vis_root)
     print("[INFO] is_gt:", is_gt)
+    if len(scene_list) > 0: print("[INFO] scene_list:", scene_list)
 
     ok, skip = 0, 0
     for seq_dir, rel in iter_seq_dirs(root):
+        if len(scene_list) > 0 and not any(scene_id in str(seq_dir) for scene_id in scene_list): continue
         out_dir = vis_root / rel
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -239,7 +248,9 @@ def main() -> None:
             if pts is None:
                 skip += 1
                 continue
-            mask = None
+
+            maskf = seq_dir.parent.parent / "gt" / seq_dir.stem / "gt_depth_masks.npy"
+            mask = np.load(maskf).astype(bool)
 
             ## add image
             gt_root = root.parent / "gt"
@@ -266,19 +277,24 @@ def main() -> None:
                     dep = dep[:S]
                     if mask is not None:
                         mask = mask[:S]
-
-        # export_pointcloud(pts, out_dir / "vis_pointcloud.ply", mask=mask)
-        export_pointcloud(pts, out_dir / "vis_pointcloud.ply", pts_mask=mask, col_mask=mask, colors=gt_images)
+        
         export_cameras(c2w, out_dir / "vis_cameras.ply")
-        export_depth(dep, out_dir / "vis_depth", vmin=args.depth_vmin, vmax=args.depth_vmax)
+        
+        try:
+            export_pointcloud(pts, out_dir / "vis_pointcloud.ply", pts_mask=mask, col_mask=mask, colors=gt_images)
+            export_depth(dep, out_dir / "vis_depth", vmin=args.depth_vmin, vmax=args.depth_vmax)
+        except Exception as e:
+            print(e)
+            pass
 
-        # try:
+        try:
         # NOTE the aligned point maps are already filtered by GT masks
-        export_pointcloud(np.load(aligned_ptsf), out_dir / "vis_pointcloud_aligned.ply", col_mask=mask, colors=gt_images)
-        export_cameras(np.load(aligned_extrf), out_dir / "vis_cameras_aligned.ply")
-        # except Exception as e:
-        #     print(e)
-        #     pass
+            export_cameras(np.load(aligned_extrf), out_dir / "vis_cameras_aligned.ply")
+            if mask.sum() != 0:
+                export_pointcloud(np.load(aligned_ptsf), out_dir / "vis_pointcloud_aligned.ply", col_mask=mask, colors=gt_images)
+        except Exception as e:
+            print(e)
+            pass
 
         ok += 1
         print("[OK] {}".format(rel))

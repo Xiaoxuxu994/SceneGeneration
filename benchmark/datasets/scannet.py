@@ -11,9 +11,10 @@ import torch
 import imageio
 from PIL import Image
 from torchvision import transforms as TF
+import cv2
 
-from vggt.utils.load_fn import load_and_preprocess_images
-from vggt.utils.geometry import closed_form_inverse_se3
+from lib.load_fn import load_and_preprocess_images
+from lib.geometry import closed_form_inverse_se3
 
 from .base import BaseDataset, SequenceBatch
 
@@ -36,14 +37,15 @@ class ScanNetDataset(BaseDataset):
     """
 
     DEPTH_SCALE = 1000.0  # mm -> m
+    NUM_TEST = 10
 
-    def __init__(self, root: str | Path,
-                 depth_scale: float = DEPTH_SCALE,):
-        super().__init__(root)
+    def __init__(self, root: str | Path, num_seq: int = NUM_TEST,
+                 depth_scale: float = DEPTH_SCALE):
+        super().__init__(root, num_seq)
         self.depth_scale = depth_scale
 
     def list_sequences(self, split: str = "all") -> List[str]:
-        return sorted([d for d in os.listdir(self.root) if osp.isdir(osp.join(self.root, d))])
+        return sorted([d for d in os.listdir(self.root) if osp.isdir(osp.join(self.root, d))])[-self.num_seq:]
 
     def count_seq_len(self, seq: str) -> int:
         seq_path = osp.join(self.root, seq)
@@ -74,9 +76,13 @@ class ScanNetDataset(BaseDataset):
         image_pils, images_cpu = [], []
         for image_path in image_paths:
             img = Image.open(image_path).convert("RGB")
+            
+            # crop borders 15px
             width, height = img.size
             left, top, right, bottom = int(border), int(border), int(width-border), int(height-border)
             img = img.crop((left, top, right, bottom))
+            
+            # resize to 392x518
             img_rs = img.resize((target_width, target_height), Image.Resampling.BICUBIC)
             image_pils.append(img_rs)
             img_tensor = TF.ToTensor()(img_rs)
@@ -86,10 +92,31 @@ class ScanNetDataset(BaseDataset):
         
         return image_pils, images_cpu
 
-    def _load_depth(self, depth_paths: List[str]) -> torch.Tensor:
-        d = np.stack([imageio.v2.imread(p).astype(np.float32) for p in depth_paths])  # (V,H,W)
-        d = d / self.depth_scale  # mm -> m
-        return torch.from_numpy(d)  # (V,H,W) meters
+    # def _load_depth(self, depth_paths: List[str]) -> torch.Tensor:
+    #     d = np.stack([imageio.v2.imread(p).astype(np.float32) for p in depth_paths])  # (V,H,W)
+    #     d = d / self.depth_scale  # mm -> m
+    #     return torch.from_numpy(d)  # (V,H,W) meters
+    
+    def _load_depth(self, depth_paths: List[str], 
+            target_width=518, target_height=392, border=15) -> torch.Tensor:
+        
+        depths = []
+        for depth_path in depth_paths:
+            # loading with PIL has value issues
+            depth = imageio.v2.imread(depth_path).astype(np.float32)
+            
+            # resize to 392x518
+            depth = cv2.resize(depth, (target_width, target_height), interpolation = cv2.INTER_NEAREST)
+
+            # to tensor
+            depth = np.array(depth).astype(np.float32)
+            depths.append(depth)
+            
+        depths = np.stack(depths)
+        depths = depths / self.depth_scale  # mm -> m
+        depths = torch.from_numpy(depths)
+        
+        return depths
 
     def _load_w2c(self, pose_paths: List[str]) -> torch.Tensor:
         # pose.txt is c2w (4x4)
@@ -98,11 +125,20 @@ class ScanNetDataset(BaseDataset):
         w2c = closed_form_inverse_se3(c2w)  # (V,4,4)
         return w2c
 
-    def _load_K(self, seq: str, num_frames: int) -> torch.Tensor:
+    def _load_K(self, seq: str, num_frames: int,
+            target_width=518, target_height=392) -> torch.Tensor:
         intr_path = osp.join(self.root, seq, "intrinsic", "intrinsic_depth.txt")
         intr = np.loadtxt(intr_path).astype(np.float32)
         K = intr[:3, :3].astype(np.float32)
-        return torch.from_numpy(K).view(1, 3, 3).repeat(num_frames, 1, 1)
+        K = torch.from_numpy(K)
+        
+        K_rs = K.clone()
+        K_rs[0, 0] = K[0, 0] / (K[0, 2] * 2) * target_width
+        K_rs[0, 2] = K[0, 2] / (K[0, 2] * 2) * target_width
+        K_rs[1, 1] = K[1, 1] / (K[1, 2] * 2) * target_height
+        K_rs[1, 2] = K[1, 2] / (K[1, 2] * 2) * target_height
+        
+        return K_rs.view(1, 3, 3).repeat(num_frames, 1, 1)
 
     def load_sequence(self, seq: str, frame_ids: List[int]) -> SequenceBatch:
         image_paths, pose_paths, depth_paths = self.make_paths(seq, frame_ids)
@@ -111,6 +147,18 @@ class ScanNetDataset(BaseDataset):
         depths = self._load_depth(depth_paths)                     # (V,H,W) meters, no resize
         raw_w2c = self._load_w2c(pose_paths)                       # (V,4,4)
         raw_K = self._load_K(seq, num_frames=len(frame_ids))       # (V,3,3)
+
+        # from lib.geometry import depth_to_cam_coords_points
+        # local_points = depth_to_cam_coords_points(depths.numpy()[0], raw_K.numpy()[0])
+        
+        # import open3d as o3d
+        # pcd = o3d.geometry.PointCloud()
+        # pts = local_points.reshape(-1, 3)
+        # pcd.points = o3d.utility.Vector3dVector(pts.astype(np.float32))
+        # c = images_cpu.numpy()[0].transpose((1, 2, 0)).reshape(-1, 3)
+        # pcd.colors = o3d.utility.Vector3dVector(c.astype(np.float32))
+        # o3d.io.write_point_cloud("temp.ply", pcd)
+        # exit()
 
         return SequenceBatch(
             seq=seq,

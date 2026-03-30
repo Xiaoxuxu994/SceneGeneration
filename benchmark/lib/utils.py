@@ -53,54 +53,98 @@ def build_gt_geometry_data(
         raw_K: torch.Tensor, 
         output_width: int,
         depth_far: float=10.0,
-        depth_near: float=1e-3,):
+        depth_near: float=1e-3,
+        has_gt_depth: bool=True
+    ):
+    """
+        build normalized geometry GTs
+        
+        Args:
+            image_pils: list of Pillow Images, length S
+            depths: GT depth maps of shape (B, S, H, W)
+            raw_w2c: GT world-to-camera matrices of shape (B, 4, 4)
+            raw_K: GT camera intrinsic matrices of shape (B, 3, 3)
+            output_width: expected output width for images and depth maps
+            depth_far: upper bound for clamping depth maps
+            depth_near: lower bound for clamping depth maps
+            has_gt_depth: boolen value indicating whether GT depth is present
+            
+        Returns:
+            new_intrinsics: camera intrinsics of shape (B, S, 3, 3)
+            new_extrinsics: camera extrinsics of shape (B, S, 3, 4)
+            new_cam_points: points in camera space of shape (B, S, H, W, 3), set to all zeros if has_gt_depth is False
+            new_world_points: points in world space of shape (B, S, H, W, 3), set to all zeros if has_gt_depth is False
+            new_depthmaps: depth maps of shape (B, S, H, W), set to all zeros if has_gt_depth is False
+            depth_masks: depth masks of shape (B, S, H, W), set to all zeros if has_gt_depth is False
+            new_images: RGB images of shape (B, S, H, W, 3)
+    """
     
-    S = depths.shape[0]
-    new_depthmaps, extrinsics_3x4, cam_points, world_points = [], [], [], []
-    new_intrinsics = []
-    new_images = []
+    S, H, W = depths.shape
 
-    for i in range(S):
-        depth_map = depths[i].numpy()
-        extrinsic = raw_w2c[i, :3].numpy()   # (3,4)
-        intrinsic = raw_K[i].numpy()       # (3,3)
+    if has_gt_depth:
+        new_depthmaps, extrinsics_3x4, cam_points, world_points = [], [], [], []
+        new_intrinsics = []
+        new_images = []
+        for i in range(S):
+            depth_map = depths[i].numpy()
+            extrinsic = raw_w2c[i, :3].numpy()   # (3,4)
+            intrinsic = raw_K[i].numpy()       # (3,3)
 
-        img_rs, depth_map, intrinsic = resize_image_depth_and_intrinsic(
-            image=image_pils[i],
-            depth_map=depth_map,
-            intrinsic=intrinsic,
-            output_width=output_width
+            img_rs, depth_map, intrinsic = resize_image_depth_and_intrinsic(
+                image=image_pils[i],
+                depth_map=depth_map,
+                intrinsic=intrinsic,
+                output_width=output_width
+            )
+
+            # save resized rgb (same H,W as depth_map)
+            if img_rs.mode != "RGB":
+                img_rs = img_rs.convert("RGB")
+            new_images.append(np.asarray(img_rs, dtype=np.uint8))  # (H,W,3)
+
+            world_pts, cam_pts, _ = depth_to_world_coords_points(depth_map, extrinsic, intrinsic)
+
+            new_depthmaps.append(depth_map)
+            new_intrinsics.append(intrinsic)
+            extrinsics_3x4.append(extrinsic)
+            cam_points.append(cam_pts)
+            world_points.append(world_pts)
+
+        new_depthmaps = np.stack(new_depthmaps)
+        new_intrinsics = np.stack(new_intrinsics)
+        extrinsics_3x4 = np.stack(extrinsics_3x4)
+        cam_points = np.stack(cam_points)
+        world_points = np.stack(world_points)
+        new_images = np.stack(new_images, axis=0)
+
+        new_depthmaps, depth_masks = filter_depth(new_depthmaps,far=depth_far,near=depth_near)
+
+        new_extrinsics, new_cam_points, new_world_points, new_depthmaps = normalize_camera_extrinsics_and_points_batch(
+            extrinsics=torch.from_numpy(extrinsics_3x4).unsqueeze(0),
+            cam_points=torch.from_numpy(cam_points).unsqueeze(0),
+            world_points=torch.from_numpy(world_points).unsqueeze(0),
+            depths=torch.from_numpy(new_depthmaps).unsqueeze(0),
+            point_masks=torch.from_numpy(depth_masks).unsqueeze(0),
         )
-
-        # save resized rgb (same H,W as depth_map)
-        if img_rs.mode != "RGB":
-            img_rs = img_rs.convert("RGB")
-        new_images.append(np.asarray(img_rs, dtype=np.uint8))  # (H,W,3)
-
-        world_pts, cam_pts, _ = depth_to_world_coords_points(depth_map, extrinsic, intrinsic)
-
-        new_depthmaps.append(depth_map)
-        new_intrinsics.append(intrinsic)
-        extrinsics_3x4.append(extrinsic)
-        cam_points.append(cam_pts)
-        world_points.append(world_pts)
-
-    new_depthmaps = np.stack(new_depthmaps)
-    new_intrinsics = np.stack(new_intrinsics)
-    extrinsics_3x4 = np.stack(extrinsics_3x4)
-    cam_points = np.stack(cam_points)
-    world_points = np.stack(world_points)
-    new_images = np.stack(new_images, axis=0)
-
-    new_depthmaps, depth_masks = filter_depth(new_depthmaps,far=depth_far,near=depth_near)
-
-    new_extrinsics, new_cam_points, new_world_points, new_depthmaps = normalize_camera_extrinsics_and_points_batch(
-        extrinsics=torch.from_numpy(extrinsics_3x4).unsqueeze(0),
-        cam_points=torch.from_numpy(cam_points).unsqueeze(0),
-        world_points=torch.from_numpy(world_points).unsqueeze(0),
-        depths=torch.from_numpy(new_depthmaps).unsqueeze(0),
-        point_masks=torch.from_numpy(depth_masks).unsqueeze(0),
-    )
+    else:
+        new_intrinsics = raw_K.numpy()
+        new_cam_points = torch.zeros(1, S, H, W, 3)
+        new_world_points = torch.zeros(1, S, H, W, 3)
+        new_depthmaps = torch.zeros(1, S, H, W)
+        depth_masks = torch.zeros(1, S, H, W)
+        
+        new_images = []
+        for i in range(S):
+            img_rs = image_pils[i]
+            # save resized rgb (same H,W as depth_map)
+            if img_rs.mode != "RGB": img_rs = img_rs.convert("RGB")
+            new_images.append(np.asarray(img_rs, dtype=np.uint8))  # (H,W,3)
+        new_images = np.stack(new_images, axis=0)
+        
+        new_extrinsics, *_ = normalize_camera_extrinsics_and_points_batch(
+            extrinsics=raw_w2c[:, :3].unsqueeze(0), # S, 3, 4
+            scale_by_points=False
+        )
 
     return new_intrinsics, new_extrinsics, new_cam_points, new_world_points, new_depthmaps, depth_masks, new_images
 

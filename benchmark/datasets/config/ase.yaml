@@ -1,0 +1,11 @@
+sampling:
+  mode: "random"  # str, stride or random
+  stride: 1       # frame interval, only for stride mode
+  seq_len: 8      # number of views in sampled sequence
+  max_seq_len: 32 # total maximum length of the original clip, -1 to use all
+  num_seq: 10     # number of sequences to be evaluated
+  seed: 42
+
+depth:
+  vmin: 0.1
+  vmax: 10.0

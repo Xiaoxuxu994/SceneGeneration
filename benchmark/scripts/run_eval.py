@@ -354,7 +354,7 @@ def main():
     ap.add_argument("--pointmap_threshold", type=float, default=0.1)
     
     ap.add_argument("--predicted_pointmap", type=int, default=0)
-    ap.add_argument("--save_pointmap", type=int, default=0)
+    ap.add_argument("--save_pointmap", type=int, default=1)
     
     ap.add_argument("--depth_align", type=str, default="scale_shift", choices=["scale", "scale_shift"])
     ap.add_argument("--device", type=str, default="npu:0",
@@ -435,23 +435,37 @@ def main():
             gt_d = np_load(gt_depth_p).astype(np.float32)
             mask = np_load(gt_mask_p).astype(bool)
 
-            # refer to https://github.com/yyfz/Pi3/blob/evaluation/videodepth/eval.py#L54
-            if args.depth_align == "scale":
-                depth_res = eval_depth_map(
-                    pred_d, gt_d, mask,
-                    align_with_scale=True,
-                    device=args.device,
-                )
-            elif args.depth_align == "scale_shift":
-                depth_res = eval_depth_map(
-                    pred_d, gt_d, mask,
-                    align_with_lstsq=True,
-                    # align_with_lad=True,
-                    # align_with_lad2=True,
-                    device=args.device,
-                )
+            if gt_d.sum() == 0:
+                # gt_depth and gt_mask are all zeros
+                depth_res = {
+                    "Abs Rel": 0,
+                    "Sq Rel": 0,
+                    "RMSE": 0,
+                    "Log RMSE": 0,
+                    "δ < 1.": 0,
+                    "δ < 1.25": 0,
+                    "δ < 1.25^2": 0,
+                    "δ < 1.25^3": 0,
+                    "valid_pixels": 0,
+                }
             else:
-                raise NotImplementedError
+                # refer to https://github.com/yyfz/Pi3/blob/evaluation/videodepth/eval.py#L54
+                if args.depth_align == "scale":
+                    depth_res = eval_depth_map(
+                        pred_d, gt_d, mask,
+                        align_with_scale=True,
+                        device=args.device,
+                    )
+                elif args.depth_align == "scale_shift":
+                    depth_res = eval_depth_map(
+                        pred_d, gt_d, mask,
+                        align_with_lstsq=True,
+                        # align_with_lad=True,
+                        # align_with_lad2=True,
+                        device=args.device,
+                    )
+                else:
+                    raise NotImplementedError
             
             # print(depth_res)
             row.update(flatten_depth_dict(depth_res, prefix="depth_"))
@@ -470,11 +484,38 @@ def main():
             gt_pm = np_load(gt_pm_p).astype(np.float32)
             mask = np_load(gt_mask_p).astype(bool)
 
-            results = eval_point_map(
-                pred_pm, gt_pm, mask, threshold=args.pointmap_threshold, 
-                return_point_maps=(args.save_pointmap != 0),
-                pred_poses=pred_extr.numpy()
-            )
+            if gt_pm.sum() == 0:
+                # gt_depth and gt_mask are all zeros
+                results = {
+                    "accuracy": {"mean": 0, "median": 0},
+                    "completion": {"mean": 0, "median": 0},
+                    "normal_consistency_1": {"mean": 0, "median": 0},
+                    "normal_consistency_2": {"mean": 0, "median": 0},
+                }
+            else:
+                results = eval_point_map(
+                    pred_pm, gt_pm, mask, threshold=args.pointmap_threshold, 
+                    return_point_maps=(args.save_pointmap != 0),
+                    pred_poses=pred_extr.numpy()
+                )
+                
+                # save aligned point maps
+                if args.save_pointmap != 0:
+                    # export_root_gt = Path(str(gt_root)+"_vis") / rel
+                    # export_root_gt.mkdir(exist_ok=True, parents=True)
+                    
+                    # export_root_pred = Path(str(pred_root)+"_vis") / rel
+                    # export_root_pred.mkdir(exist_ok=True, parents=True)
+                    
+                    # o3d.io.write_point_cloud(str(export_root_gt / "vis_pointcloud_aligned.ply"), results["point_maps"]["gt"])
+                    # o3d.io.write_point_cloud(str(export_root_pred / "vis_pointcloud_aligned.ply"), results["point_maps"]["pred"])
+                    
+                    np.save(gt_seq / "gt_point_maps_aligned.npy", results["point_maps"]["gt"])
+                    np.save(pred_seq / "pred_point_maps_aligned.npy", results["point_maps"]["pred"])
+                    np.save(gt_seq / "gt_extrinsics_aligned.npy", gt_extr.numpy())
+                    np.save(pred_seq / "pred_extrinsics_aligned.npy", results["point_maps"]["pred_poses"])
+            
+            # aggregate results
             row["pm_acc_mean"] = float(results["accuracy"]["mean"])
             row["pm_acc_med"] = float(results["accuracy"]["median"])
             row["pm_nc1_mean"] = float(results["normal_consistency_1"]["mean"])
@@ -483,22 +524,6 @@ def main():
             row["pm_comp_med"] = float(results["completion"]["median"])
             row["pm_nc2_mean"] = float(results["normal_consistency_2"]["mean"])
             row["pm_nc2_med"] = float(results["normal_consistency_2"]["median"])
-            
-            # save aligned point maps
-            if args.save_pointmap != 0:
-                # export_root_gt = Path(str(gt_root)+"_vis") / rel
-                # export_root_gt.mkdir(exist_ok=True, parents=True)
-                
-                # export_root_pred = Path(str(pred_root)+"_vis") / rel
-                # export_root_pred.mkdir(exist_ok=True, parents=True)
-                
-                # o3d.io.write_point_cloud(str(export_root_gt / "vis_pointcloud_aligned.ply"), results["point_maps"]["gt"])
-                # o3d.io.write_point_cloud(str(export_root_pred / "vis_pointcloud_aligned.ply"), results["point_maps"]["pred"])
-                
-                np.save(gt_seq / "gt_point_maps_aligned.npy", results["point_maps"]["gt"])
-                np.save(pred_seq / "pred_point_maps_aligned.npy", results["point_maps"]["pred"])
-                np.save(gt_seq / "gt_extrinsics_aligned.npy", gt_extr.numpy())
-                np.save(pred_seq / "pred_extrinsics_aligned.npy", results["point_maps"]["pred_poses"])
         else:
             row["status"] = "missing_pointmap_or_mask"
 

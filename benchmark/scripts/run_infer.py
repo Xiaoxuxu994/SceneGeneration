@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch_npu  
 from tqdm import tqdm
+from omegaconf import OmegaConf
 
 from _bootstrap import BENCH_ROOT 
 
@@ -49,8 +50,8 @@ DATA_ROOT_DEFAULTS = {
     "dtu":     BENCH_ROOT / "data" / "DTU" / "spann3r_version" / "dtu_test_mvsnet_release",
     "nrgbd":   BENCH_ROOT / "data" / "NRGBD" / "data",
     "scannet": BENCH_ROOT / "data" / "scannet" / "posed_images",
-    "dl3dv":   "/mnt/nvme1/share/chenyouyu/dataset/DL3DV/data/1K/",
-    "dl3dv_new":   "/efs-m3ga/z00818731/dl3dv-new/reliev3r_sample_list_c32.npz",
+    # "dl3dv":   "/mnt/nvme1/share/chenyouyu/dataset/DL3DV/data/1K/",
+    "dl3dv":   "/efs-m3ga/z00818731/dl3dv-new/reliev3r_sample_list_c32.npz",
     "ase": BENCH_ROOT / "data" / "ASE" /"reliev3r_sample_list_c32_s1.npz.update.npz"
 }
 MODEL_DEFAULTS = {
@@ -68,7 +69,7 @@ MODEL_DEFAULTS = {
     },
 }
 
-GT_OUTPUT_WIDTH = 462 # 518
+# GT_OUTPUT_WIDTH = 518
 DEPTH_FAR = 10.0
 DEPTH_NEAR = 0.1
 
@@ -157,7 +158,7 @@ def run_pi3_infer(model, images_cpu, depth_masks, device: torch.device, autocast
             extrinsics=pred_w2c[:,:,:3],
             world_points=pred_points,
             scale_by_points=False,
-            point_masks=depth_masks.unsqueeze(0)
+            # point_masks=torch.from_numpy(depth_masks).unsqueeze(0)
         )
         
     return pred_w2c_aligned.squeeze(0).numpy(), pred_depth, pred_points_aligned.squeeze(0).numpy()
@@ -227,45 +228,54 @@ def run_reliev3r_infer(
         pred = model.forward(data)
 
 
-    if "local_points" in pred:
-        pred_local_points = pred["local_points"].permute(0, 1, 3, 4, 2) # B,V,H,W,3
-        pred_w2c = pred["camera_extrs"] # B,V,4,4
-        # pred_depth = pred["depths"].permute(0, 1, 3, 4, 2) # B,V,H,W,1
-        pred_depth = pred_local_points[..., -1:] # B,V,H,W,1
+    # if "local_points" in pred:
+    #     pred_local_points = pred["local_points"].permute(0, 1, 3, 4, 2) # B,V,H,W,3
+    #     pred_w2c = pred["camera_extrs"] # B,V,4,4
+    #     # pred_depth = pred["depths"].permute(0, 1, 3, 4, 2) # B,V,H,W,1
+    #     pred_depth = pred_local_points[..., -1:] # B,V,H,W,1
         
-        pred_unproj = unproject_local_point_map_to_world_point_map(
-            pred_local_points.squeeze(0),
-            pred_w2c.squeeze(0)
-        )
+    #     pred_unproj = unproject_local_point_map_to_world_point_map(
+    #         pred_local_points.squeeze(0),
+    #         pred_w2c.squeeze(0)
+    #     )
         
-    else:
-        ray_depth = pred["scaled_depths"].permute(0, 1, 3, 4, 2).contiguous()
-        # depth_np = pred_depth.squeeze(0).squeeze(-1).detach().cpu().numpy()  # (V,H,W) np
-        # depth_np, _ = filter_depth(depth_np, far=DEPTH_FAR, near=DEPTH_NEAR)  #
-        # pred_depth = torch.from_numpy(depth_np).to(device=device, dtype=torch.float32)[None, ..., None]
+    # else:
+    #     ray_depth = pred["scaled_depths"].permute(0, 1, 3, 4, 2).contiguous()
+    #     # depth_np = pred_depth.squeeze(0).squeeze(-1).detach().cpu().numpy()  # (V,H,W) np
+    #     # depth_np, _ = filter_depth(depth_np, far=DEPTH_FAR, near=DEPTH_NEAR)  #
+    #     # pred_depth = torch.from_numpy(depth_np).to(device=device, dtype=torch.float32)[None, ..., None]
 
-        pred_depth_conf = pred["depths_conf"].permute(0, 1, 3, 4, 2) # B,V,H,W,1
+    #     pred_depth_conf = pred["depths_conf"].permute(0, 1, 3, 4, 2) # B,V,H,W,1
 
-        ## predict intrinsic (1,8,2)
-        fovs_pred = pred["camera_fovs"]      # (B,V,2)
-        K_norm = fovs_to_K_norm(fovs_pred).squeeze(0)          # (B,V,3,3)
-        pred_K  = K_denormalize(K_norm, W=W, H=H)
+    #     ## predict intrinsic (1,8,2)
+    #     fovs_pred = pred["camera_fovs"]      # (B,V,2)
+    #     K_norm = fovs_to_K_norm(fovs_pred).squeeze(0)          # (B,V,3,3)
+    #     pred_K  = K_denormalize(K_norm, W=W, H=H)
 
-        ## raydepth to zdepth
-        ray_depth = ray_depth.squeeze(0).permute(0,3,1,2)
-        pred_depth = rdepth_to_zdepth(ray_depth,K_norm)
-        pred_depth = pred_depth.unsqueeze(0).permute(0,1,3,4,2)
+    #     ## raydepth to zdepth
+    #     ray_depth = ray_depth.squeeze(0).permute(0,3,1,2)
+    #     pred_depth = rdepth_to_zdepth(ray_depth,K_norm)
+    #     pred_depth = pred_depth.unsqueeze(0).permute(0,1,3,4,2)
         
-        pred_w2c = pred["camera_extrs"]
+    #     pred_w2c = pred["camera_extrs"]
         
-        # GT intrinsics (V,3,3)
-        gt_K = torch.from_numpy(gt_intrinsics_rs.astype(np.float32)).to(device=device, dtype=torch.float32)  # (V,3,3)
+    #     # GT intrinsics (V,3,3)
+    #     gt_K = torch.from_numpy(gt_intrinsics_rs.astype(np.float32)).to(device=device, dtype=torch.float32)  # (V,3,3)
                     
-        pred_unproj = unproject_depth_map_to_point_map(
-            pred_depth.squeeze(0),
-            gt_extrinsics if unproj_with_gt_extrinsics else pred_w2c.squeeze(0),
-            gt_K if unproj_with_gt_intrinsics else pred_K,
-        )
+    #     pred_unproj = unproject_depth_map_to_point_map(
+    #         pred_depth.squeeze(0),
+    #         gt_extrinsics if unproj_with_gt_extrinsics else pred_w2c.squeeze(0),
+    #         gt_K if unproj_with_gt_intrinsics else pred_K,
+    #     )
+    
+    pred_local_points = pred["local_points"].permute(0, 1, 3, 4, 2) # B,V,H,W,3
+    pred_w2c = pred["camera_extrs"] # B,V,4,4
+    pred_depth = pred_local_points[..., -1:] # B,V,H,W,1
+    
+    pred_unproj = unproject_local_point_map_to_world_point_map(
+        pred_local_points.squeeze(0),
+        pred_w2c.squeeze(0)
+    )
         
     # print(f"[Reliev3R] normalize_camera_extrinsics & unproj pointcloud")
     pred_w2c_aligned, _, pred_unproj_aligned, _ = normalize_camera_extrinsics_and_points_batch(
@@ -302,15 +312,26 @@ def dump_one_seq(model,
     
     if dump_gt_flag:
         # --- build GT (resized + normalized) ---
+        assert batch.images_cpu.shape[-1] == batch.depths.shape[-1] \
+            and batch.images_cpu.shape[-2] == batch.depths.shape[-2], \
+                "input shape mismatch, got images of {}x{} image and {}x{} depth".format(
+                    batch.images_cpu.shape[-2], batch.images_cpu.shape[-1],
+                    batch.depths.shape[-2], batch.depths.shape[-1]
+                )
+                
+        V,C,H,W = batch.images_cpu.shape
+        has_gt_depth = batch.meta.get("has_gt_depth", True)
+        
         gt_intrinsics_rs, gt_extrinsics, _, gt_point_maps, gt_depth_maps, gt_depth_masks, gt_images = build_gt_geometry_data(
             image_pils=batch.image_pils, 
             depths=batch.depths, 
             raw_w2c=batch.raw_w2c,
             raw_K=batch.raw_K,
-            output_width=GT_OUTPUT_WIDTH,
+            output_width=W, # GT_OUTPUT_WIDTH
             depth_far=DEPTH_FAR,
             depth_near=DEPTH_NEAR,
-            )
+            has_gt_depth=has_gt_depth
+        )
         
         gt_extrinsics = gt_extrinsics.squeeze(0)
         gt_c2w = closed_form_inverse_se3(gt_extrinsics)
@@ -321,6 +342,7 @@ def dump_one_seq(model,
         save_npy(gt_seq_dir, "gt_point_maps.npy", gt_point_maps.squeeze(0))
         save_npy(gt_seq_dir, "gt_depth_masks.npy", gt_depth_masks)
         save_npy(gt_seq_dir, "gt_images.npy", gt_images) 
+        print(f"[INFO] GT dumped to {str(gt_seq_dir)}")
     else: # load dumped GT data for inference
         gt_intrinsics_rs = np.load(gt_seq_dir / "gt_intrinsics.npy")
         gt_c2w = np.load(gt_seq_dir / "gt_extrinsics.npy")
@@ -328,7 +350,8 @@ def dump_one_seq(model,
         gt_c2w = torch.from_numpy(gt_c2w)
         gt_extrinsics = closed_form_inverse_se3(gt_c2w).cpu().numpy() # for debug only
         gt_depth_masks = np.load(gt_seq_dir / "gt_depth_masks.npy")
-
+        print(f"[INFO] GT loaded from {str(gt_seq_dir)}")
+        
     # ---- infer
     with torch.inference_mode():
         if model_type == "vggt":
@@ -364,7 +387,7 @@ def dump_one_seq(model,
 
         elif model_type == "pi3":
             pred_w2c, pred_depth_maps, pred_point_maps = run_pi3_infer(
-                model, gt_depth_masks, batch.images_cpu, device=device, autocast_dtype=autocast_dtype
+                model, batch.images_cpu, gt_depth_masks, device=device, autocast_dtype=autocast_dtype
             )
             pred_c2w = closed_form_inverse_se3(pred_w2c)
 
@@ -374,6 +397,7 @@ def dump_one_seq(model,
         else:
             raise ValueError(f"Unknown model_type={model_type}")
 
+        print(f"[INFO] predictions dumped to {str(pred_seq_dir)}")
 
 def main():
     import argparse
@@ -390,7 +414,8 @@ def main():
     # view sample
     p.add_argument("--mode", type=str, default="stride", choices=["stride", "random"])
     p.add_argument("--stride", type=int, default=40)
-    p.add_argument("--max_seq_len", type=int, default=8)  # stride: 截断数量; random: 采样数量(0=全量)
+    p.add_argument("--seq_len", type=int, default=8)  # number of views, actual length of the sequence, -1 means the whole sequence
+    p.add_argument("--max_seq_len", type=int, default=-1)  # stride: 截断数量; random: 采样数量(0=全量)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--reuse_frame_ids", type=int, default=1)
     
@@ -452,19 +477,31 @@ def main():
     unproj_with_gt_intrinsics = True if args.use_gt_k != 0 else False
 
     # dataset
-    ds = get_dataset(args.dataset, args.data_root)
-    stride = args.stride or ds.default_stride(args.view)
+    ds = get_dataset(args.dataset, args.data_root, args.num_seq)
+    stride = args.stride # args.stride or ds.default_stride(args.view)
     sequences = [args.seq] if args.seq else ds.list_sequences(args.split)
     if args.num_seq > 0: sequences = sequences[:args.num_seq]
 
     # outdir
     setting_dir = Path(args.out_root) / args.dataset / (
         f"{args.split}_" +
-        (f"stride{stride}_max{args.max_seq_len if args.max_seq_len>0 else 'all'}"
+        (f"stride{stride}_max{args.max_seq_len if args.max_seq_len>0 else 'all'}_len{args.seq_len}_numseq{args.num_seq}"
         if args.mode == "stride"
-        else f"rand{args.max_seq_len if args.max_seq_len>0 else 'all'}_seed{args.seed}")
+        else f"rand_max{args.max_seq_len if args.max_seq_len>0 else 'all'}_len{args.seq_len}_numseq{args.num_seq}")
     )
     setting_dir.mkdir(parents=True, exist_ok=True)
+
+    print(
+        "[INFO] "
+        f"dataset={args.dataset} | split={args.split} | "
+        f"model={args.model} | num_seqs={len(sequences)} | "
+        f"mode={args.mode} | stride={stride} | max_seq_len={args.max_seq_len if args.max_seq_len>0 else 'all'} | "
+        f"seq_len={args.seq_len} | num_seq={args.num_seq} | seed={args.seed} | "
+        f"reuse_frame_ids={args.reuse_frame_ids} | device={device}\n"
+        f"[INFO] use_gt_pose={args.use_gt_pose} use_gt_K={args.use_gt_k}\n"
+        f"[INFO] data_root={args.data_root}\n"
+        f"[INFO] out={setting_dir}"
+    )
 
     # load model by branch
     if args.model == "vggt":
@@ -479,17 +516,6 @@ def main():
         raise ValueError(f"Unknown model_type={args.model}")
     # model = None
 
-    print(
-        "[INFO] "
-        f"dataset={args.dataset} | split={args.split} | "
-        f"model={args.model} | num_seqs={len(sequences)} | "
-        f"mode={args.mode} | stride={stride} | max_seq_len={args.max_seq_len} | num_seq={args.num_seq} | seed={args.seed} | "
-        f"reuse_frame_ids={args.reuse_frame_ids} | device={device}\n"
-        f"[INFO] use_gt_pose={args.use_gt_pose} use_gt_K={args.use_gt_k}\n"
-        f"[INFO] data_root={args.data_root}\n"
-        f"[INFO] out={setting_dir}"
-    )
-
     pbar = tqdm(sequences, desc=args.dataset, unit="seq")
     for seq in pbar:
         name = args.model if not args.prefix else f"{args.model}_{args.prefix}"
@@ -500,7 +526,7 @@ def main():
         pred_seq_dir.mkdir(parents=True, exist_ok=True)
         gt_seq_dir.mkdir(parents=True, exist_ok=True)
         
-        seq_len = ds.count_seq_len(seq)
+        seq_len = ds.count_seq_len(seq) if args.seq_len < 0 else args.seq_len
         frame_ids = ds.get_frame_ids(
             seq=seq,
             seq_len=seq_len,
@@ -511,7 +537,12 @@ def main():
             seed=args.seed,
             reuse=(args.reuse_frame_ids != 0),
         )
-
+        if not np.any(frame_ids): 
+            print("[INFO] Sequence:", seq, "frame IDs:", frame_ids)
+            continue
+        
+        print("[INFO] Sequence:", seq, "frame IDs:", frame_ids)
+        
         batch = ds.load_sequence(seq, frame_ids)
 
         dump_one_seq(

@@ -9,9 +9,10 @@ import numpy as np
 import torch
 import imageio
 from PIL import Image
+import cv2
 
-from vggt.utils.load_fn import load_and_preprocess_images
-from vggt.utils.geometry import closed_form_inverse_se3
+from lib.load_fn import load_and_preprocess_images
+from lib.geometry import closed_form_inverse_se3
 
 from .base import BaseDataset, SequenceBatch
 
@@ -59,14 +60,16 @@ class NRGBDDataset(BaseDataset):
     CX = 320.0
     CY = 240.0
     DEPTH_SCALE = 1000.0  # mm -> m
+    NUM_TEST = 10
 
     def __init__(
         self,
         root: str | Path,
+        num_seq: int = NUM_TEST,
         fx: float = FX, fy: float = FY, cx: float = CX, cy: float = CY,
         depth_scale: float = DEPTH_SCALE,
     ):
-        super().__init__(root)
+        super().__init__(root, num_seq)
         self.fx, self.fy, self.cx, self.cy = fx, fy, cx, cy
         self.depth_scale = depth_scale
 
@@ -121,10 +124,31 @@ class NRGBDDataset(BaseDataset):
         images_cpu = load_and_preprocess_images(image_paths)  # (V,3,H,W) CPU
         return image_pils, images_cpu
 
-    def _load_depth(self, depth_paths: List[str]) -> torch.Tensor:
-        d = np.stack([imageio.v2.imread(p).astype(np.float32) for p in depth_paths])  # (V,H,W)
-        d = d / self.depth_scale  # mm -> m
-        return torch.from_numpy(d)  # (V,H,W) meters
+    # def _load_depth(self, depth_paths: List[str]) -> torch.Tensor:
+    #     d = np.stack([imageio.v2.imread(p).astype(np.float32) for p in depth_paths])  # (V,H,W)
+    #     d = d / self.depth_scale  # mm -> m
+    #     return torch.from_numpy(d)  # (V,H,W) meters
+    
+    def _load_depth(self, depth_paths: List[str], 
+            target_width=518, target_height=392) -> torch.Tensor:
+        
+        depths = []
+        for depth_path in depth_paths:
+            # loading with PIL has value issues
+            depth = imageio.v2.imread(depth_path).astype(np.float32)
+            
+            # resize to 518x518
+            depth = cv2.resize(depth, (target_width, target_height), interpolation = cv2.INTER_NEAREST)
+            
+            # to tensor
+            depth = np.array(depth).astype(np.float32)
+            depths.append(depth)
+            
+        depths = np.stack(depths)
+        depths = depths / self.depth_scale  # mm -> m
+        depths = torch.from_numpy(depths)
+            
+        return depths # (V,392,518) meters
 
     def _load_w2c(self, seq: str, frame_ids: List[int]) -> torch.Tensor:
         w2c_all = self._w2c_cache[seq]  # (N,4,4)
@@ -145,6 +169,10 @@ class NRGBDDataset(BaseDataset):
         depths = self._load_depth(depth_paths)                 # (V,H,W) meters (no resize)
         raw_w2c = self._load_w2c(seq, frame_ids)               # (V,4,4)
         raw_K = self._load_K(num_frames=len(frame_ids))        # (V,3,3)
+        
+        *_, H, W = images_cpu.shape
+        norm_K = self._normalize_K(raw_K, self.CY*2, self.CX*2)
+        raw_K = self._denormalize_K(norm_K, H, W)
 
         return SequenceBatch(
             seq=seq,

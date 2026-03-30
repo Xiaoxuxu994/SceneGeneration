@@ -231,7 +231,7 @@ def depth_evaluation(
     if custom_mask is not None and isinstance(custom_mask, np.ndarray):
         custom_mask = torch.from_numpy(custom_mask)
         assert custom_mask.shape == ground_truth_depth_original.shape
-
+    # print(predicted_depth_original.shape, ground_truth_depth_original.shape)
     # if the dimension is 3, flatten to 2d along the batch dimension
     if predicted_depth_original.dim() == 3:
         _, h, w = predicted_depth_original.shape

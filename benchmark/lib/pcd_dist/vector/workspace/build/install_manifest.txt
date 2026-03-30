@@ -1,0 +1,4 @@
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/out/lib64/libascendc_kernels_npu_pcd_dist.so
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/out/include/ascendc_kernels_npu_pcd_dist/aclrtlaunch_kernel_pcd_dist.h
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/out/include/ascendc_kernels_npu_pcd_dist/aclrtlaunch_triple_chevrons_func.h
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/out/bin/ascendc_kernels_pcd_dist

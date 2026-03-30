@@ -6,56 +6,69 @@ SCRIPT="scripts/run_infer.py"
 EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
-# ---- all dataset ----
+# ----- model ------
+# MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+# CKPT="experiments/Reliev3R_bs2v8_260302_ase10p_fullSup/ckpt/60000.ckpt"
+# CONFIG="experiments/Reliev3R_bs2v8_260302_ase10p_fullSup/config.json"
+# PREFIX="Reliev3R_bs2v8_260302_ase10p_fullSup_ckpt60k"
+
+# CKPT="experiments/Reliev3R-260324-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1/ckpt/45000.ckpt"
+# CONFIG="experiments/Reliev3R-260324-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1/config.json"
+# PREFIX="Reliev3R-260324-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1_ckpt45k"
+
+MODEL="pi3" # ['vggt','pi3','reliev3r']
+CKPT="./ckpt/Pi3/"
+PREFIX="pi3_official"
+CONFIG=""
+
+# MODEL="vggt" # ['vggt','pi3','reliev3r']
+
+# CONFIG="./ckpt/VGGT-1B/config.json"
+# CKPT="./ckpt/VGGT-1B/model.pt"
+# PREFIX="vggt_official"
+
+# CONFIG=""
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch023-loss_valid0.2258-metric_valid0.1446.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep23"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch007-loss_valid0.3137-metric_valid0.2497.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep7"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch005-loss_valid0.3839-metric_valid0.2823.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep5"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch003-loss_valid0.4962-metric_valid0.3424.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep3"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch001-loss_valid0.5604-metric_valid0.4377.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep1"
+
+# ---- params ------
 DATASETS=(
   # 7scenes
   # nrgbd
   # dtu
   scannet
+  # dl3dv
+  # ase
 )
 
-# ----- model ------
-MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-CKPT="experiments/Reliev3R_bs2v8_260203_selfSup/ckpt/80000.ckpt"
-CONFIG="experiments/Reliev3R_bs2v8_260203_selfSup/config.json"
-PREFIX="Reliev3R_bs2v8_260203_selfSup_ckpt80k"
-
-# CKPT="experiments/Reliev3R_bs2v8_260123_sub260116_5k_alter_SCSup/ckpt/20000.ckpt"
-# CONFIG="experiments/Reliev3R_bs2v8_260123_sub260116_5k_alter_SCSup/config.json"
-# PREFIX="Reliev3R_bs2v8_260123_sub260116_5k_alter_SCSup_ckpt20k" 
-
-# MODEL="vggt" # ['vggt','pi3','reliev3r']
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch017-loss_valid0.2416-metric_valid0.1665.ckpt/pytorch_model.bin"
-# CONFIG=""
-# PREFIX="vggt_sz_ep17"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch019-loss_valid0.2314-metric_valid0.1583.ckpt/pytorch_model.bin"
-# CONFIG=""
-# PREFIX="vggt_sz_ep19"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch021-loss_valid0.2167-metric_valid0.1511.ckpt/pytorch_model.bin"
-# CONFIG=""
-# PREFIX="vggt_sz_ep21"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch023-loss_valid0.2258-metric_valid0.1446.ckpt/pytorch_model.bin"
-# CONFIG=""
-# PREFIX="vggt_sz_ep23"
-
-# ---- params ------
 SPLIT="test"
 SEQ=""   # e.g. chess/seq-01 ; empty means all
 
 MODE="stride"       # stride | random
-STRIDE=10            # default stride
-MAX_SEQ_LEN=8       # default max seq len
-SEED=0              # used when MODE=random
+STRIDE=25           # default stride
+SEQ_LEN=8           # use N frames in sequence
+MAX_SEQ_LEN=-1      # default max seq len, default -1 to use all
+SEED=42             # used when MODE=random
 NUM_SEQ=10
 
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 
-DEVICE="npu:7"
+NPU_ID="4"
+DEVICE="npu:0"
 DTYPE="fp32"
 
 OUT_ROOT="outputs"  # "/mnt/nvme3/z00533370/3drecon/benchmark/"
@@ -134,7 +147,8 @@ run_vis_if_needed () {
   ${PYTHON} ${VIS_SCRIPT} \
     --dir "${DIR}" \
     --depth_vmin "${DEPTH_VMIN}" \
-    --depth_vmax "${DEPTH_VMAX}"
+    --depth_vmax "${DEPTH_VMAX}" \
+    # --scene_list "1512246 1512275 1512279 1512288 1512262 1512277 1512245 1512247 1512272"
 }
 
 TOTAL=${#DATASETS[@]}
@@ -150,35 +164,36 @@ for DATASET in "${DATASETS[@]}"; do
   # -------------------------
   MODE_CUR="${MODE}"
   STRIDE_CUR="${STRIDE}"
+  SEQ_LEN_CUR="${SEQ_LEN}"
   MAX_SEQ_LEN_CUR="${MAX_SEQ_LEN}"
 
-  case "${DATASET}" in
-    7scenes)
-      STRIDE_CUR=40
-      MAX_SEQ_LEN_CUR=8
-      ;;
-    nrgbd)
-      STRIDE_CUR=100
-      MAX_SEQ_LEN_CUR=8
-      ;;
-    dtu)
-      STRIDE_CUR=1
-      MAX_SEQ_LEN_CUR=8
-      ;;
-    scannet)
-      STRIDE_CUR=20
-      MAX_SEQ_LEN_CUR=8
-      ;;
-    *)
-      ;;
-  esac
+  # case "${DATASET}" in
+  #   7scenes)
+  #     STRIDE_CUR=40
+  #     MAX_SEQ_LEN_CUR=8
+  #     ;;
+  #   nrgbd)
+  #     STRIDE_CUR=100
+  #     MAX_SEQ_LEN_CUR=8
+  #     ;;
+  #   dtu)
+  #     STRIDE_CUR=1
+  #     MAX_SEQ_LEN_CUR=8
+  #     ;;
+  #   scannet)
+  #     STRIDE_CUR=25
+  #     MAX_SEQ_LEN_CUR=8
+  #     ;;
+  #   *)
+  #     ;;
+  # esac
 
   echo "[RUNTIME] device=${DEVICE} dtype=${DTYPE} eval_device=${EVAL_DEVICE}"
   echo "[CONFIG ] model=${MODEL} prefix=${PREFIX}"
   echo "[CONFIG ] ckpt=${CKPT}"
   echo "[CONFIG ] config=${CONFIG}"
   echo "[CONFIG ] OUT_ROOT=${OUT_ROOT}"
-  echo "[CONFIG ] split=${SPLIT} mode=${MODE_CUR} stride=${STRIDE_CUR} max_seq_len=${MAX_SEQ_LEN_CUR} num_seq=${NUM_SEQ} seed=${SEED}"
+  echo "[CONFIG ] split=${SPLIT} mode=${MODE_CUR} stride=${STRIDE_CUR} seq_len=${SEQ_LEN_CUR} max_seq_len=${MAX_SEQ_LEN_CUR} num_seq=${NUM_SEQ} seed=${SEED}"
   [[ -n "${SEQ}" ]] && echo "[CONFIG ] seq=${SEQ}"
 
   # -------------------------
@@ -206,9 +221,9 @@ for DATASET in "${DATASETS[@]}"; do
   fi
 
   if [ "${MODE_CUR}" = "stride" ]; then
-    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_stride${STRIDE_CUR}_max${MSL}"
+    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_stride${STRIDE_CUR}_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}"
   else
-    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_rand${MSL}_seed${SEED}"
+    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_rand_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}"
   fi
 
   GT_DIR="${ROOT_DIR}/gt"
@@ -231,13 +246,14 @@ for DATASET in "${DATASETS[@]}"; do
     [[ -n "${PREFIX}" ]] && EXTRA_ARGS+=(--prefix "${PREFIX}")
 
     echo "[INFER] dataset=${DATASET} split=${SPLIT} mode=${MODE_CUR}"
-    echo "[INFER] stride=${STRIDE_CUR} max_seq_len=${MAX_SEQ_LEN_CUR} num_seq=${NUM_SEQ}"
+    echo "[INFER] stride=${STRIDE_CUR} max_seq_len=${MSL} seq_len=${SEQ_LEN_CUR} num_seq=${NUM_SEQ}"
     echo "[INFER] use_gt_pose=${USE_GT_POSE} use_gt_k=${USE_GT_K}"
-    ${PYTHON} ${SCRIPT} \
+    ASCEND_RT_VISIBLE_DEVICES=${NPU_ID} ${PYTHON} ${SCRIPT} \
       --dataset "${DATASET}" \
       --split "${SPLIT}" \
       --mode "${MODE_CUR}" \
       --stride "${STRIDE_CUR}" \
+      --seq_len "${SEQ_LEN_CUR}" \
       --max_seq_len "${MAX_SEQ_LEN_CUR}" \
       --num_seq "${NUM_SEQ}" \
       --model "${MODEL}" \
@@ -280,7 +296,7 @@ for DATASET in "${DATASETS[@]}"; do
   echo "[PATH] GT_DIR=${GT_DIR}"
   echo "[PATH] PRED_DIR=${PRED_DIR}"
 
-  ${PYTHON} ${EVAL_SCRIPT} \
+  ASCEND_RT_VISIBLE_DEVICES=${NPU_ID} ${PYTHON} ${EVAL_SCRIPT} \
     --root "${ROOT_DIR}" \
     --dataset_name "${DATASET}" \
     --gt_subdir "gt" \
@@ -294,21 +310,21 @@ for DATASET in "${DATASETS[@]}"; do
   t1=$(date +%s)
   echo "[TIME] EVAL seconds=$((t1-t0))"
 
-  # -------------------------
-  # 2) VIS
-  # -------------------------
-  banner_stage "VIS"
-  t0=$(date +%s)
+  # # -------------------------
+  # # 2) VIS
+  # # -------------------------
+  # banner_stage "VIS"
+  # t0=$(date +%s)
 
-  echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
-  echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
+  # echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
+  # echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
 
-  # requirement: if gt has no gt_vis -> run; if exists -> skip
-  run_vis_if_needed "${GT_DIR}"
-  run_vis_if_needed "${PRED_DIR}"
+  # # requirement: if gt has no gt_vis -> run; if exists -> skip
+  # run_vis_if_needed "${GT_DIR}"
+  # run_vis_if_needed "${PRED_DIR}"
 
-  t1=$(date +%s)
-  echo "[TIME] VIS seconds=$((t1-t0))"
+  # t1=$(date +%s)
+  # echo "[TIME] VIS seconds=$((t1-t0))"
 
   banner_done "${IDX}" "${TOTAL}" "${DATASET}"
 done
