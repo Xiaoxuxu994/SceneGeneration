@@ -19,7 +19,7 @@ class Reliev3R(nn.Module):
         """
         super().__init__()
         self.cfg = cfg
-        self.eye4 = torch.eye(4, device=DEVICE_NAME)
+        self.register_buffer('eye4', torch.eye(4))
         
         # Load monocular depth model.
         if not depth_preprocessed:
@@ -37,6 +37,10 @@ class Reliev3R(nn.Module):
         aligned_depth_dict = self.infer_aligned_depth(img, data["input_depths"])
         if self.cfg.depth_aligner.type == "pi3":
             cameras = aligned_depth_dict["camera_poses"]
+            if self.cfg.decoder.camera_decoder.get("sigmoid_trans", False):
+                cameras_tmp = cameras.clone()
+                cameras_tmp[..., :3, 3] = torch.nn.functional.sigmoid(cameras[..., :3, 3]) * 2 - 1
+                cameras = cameras_tmp.clone()
             if self.cfg.decoder.camera_decoder.get("normalize_trans", False):
                 cameras = normalize_trans(cameras, detach_norm_factor=False)
             aligner_output = aligned_depth_dict["aligner_output"] # b v 3 h w

@@ -307,11 +307,11 @@ def trans_geo_to_first_frame_and_norm(point_maps: torch.Tensor, extrs: torch.Ten
             depths = depths / norm_magnitude[..., None, None, None, None]
         return point_maps, extr, depths
     V = point_maps.shape[-4]
-    point_maps, extrs, depths = normalize_trans(point_maps, extrs, depths)
     homo_point_maps = pad_one(point_maps, dim=-1)
     trans_mat = torch.cat([extrs[..., :1, :, :] for _ in range(V)], dim=-3) # ... v 4 4
     homo_point_maps = mat_mul_vec_by_conv(homo_point_maps, trans_mat)
     point_maps = homo_point_maps[..., :3]
     extrs = extrs @ calc_extr_inv(trans_mat) # c0-to-world @ world-to-c -> c0-to-c
+    point_maps, extrs, depths = normalize_trans(point_maps, extrs, depths)
     return point_maps, extrs, depths
 

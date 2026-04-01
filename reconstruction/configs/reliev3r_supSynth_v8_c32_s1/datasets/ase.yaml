@@ -8,3 +8,5 @@ depth_is_z: false
 
 ## EPS for pixel matching reprojection
 match_eps: 0.01
+
+crop_lowerbound: 0.11
