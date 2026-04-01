@@ -7,19 +7,23 @@ EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
-# MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # CKPT="experiments/Reliev3R_bs2v8_260302_ase10p_fullSup/ckpt/70000.ckpt"
 # CONFIG="experiments/Reliev3R_bs2v8_260302_ase10p_fullSup/config.json"
 # PREFIX="Reliev3R_bs2v8_260302_ase10p_fullSup_ckpt70k"
 
-# CKPT="experiments/Reliev3R-260324-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1/ckpt/45000.ckpt"
-# CONFIG="experiments/Reliev3R-260324-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1/config.json"
-# PREFIX="Reliev3R-260324-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1_ckpt45k"
+# CKPT="experiments/Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1Flow5-Pi3/ckpt/35000.ckpt"
+# CONFIG="experiments/Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1Flow5-Pi3/config.json"
+# PREFIX="Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1Flow5-Pi3_ckpt35k"
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-CKPT="./ckpt/Pi3/"
-PREFIX="pi3_official"
-CONFIG=""
+CKPT="experiments/Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT/ckpt/20000.ckpt"
+CONFIG="experiments/Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT/config.json"
+PREFIX="Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT_ckpt20k"
+
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# CKPT="./ckpt/Pi3/"
+# PREFIX="pi3_official"
+# CONFIG=""
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 
@@ -54,18 +58,21 @@ DATASETS=(
   ase
 )
 
-SPLIT="test"
-SEQ=""   # e.g. chess/seq-01 ; empty means all
+# SPLIT="test"
+# SEQ=""   # e.g. chess/seq-01 ; empty means all
 
-MODE="random"       # stride | random
-STRIDE=5            # default stride
-SEQ_LEN=8           # use N frames in sequence
-MAX_SEQ_LEN=-1      # default max seq len, default -1 to use all
-SEED=42             # used when MODE=random
-NUM_SEQ=10
+# MODE="random"       # stride | random
+# STRIDE=5            # default stride
+# SEQ_LEN=8           # use N frames in sequence
+# MAX_SEQ_LEN=32      # default max seq len, default -1 to use all
+# SEED=42             # used when MODE=random
+# NUM_SEQ=10
 
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
+
+SKIP_POINTMAP=0 # 1 if skip pointmap evaluation
+SKIP_NORMAL=1 # 1 if skip point normal evaluation
 
 NPU_ID="4"
 DEVICE="npu:0"
@@ -158,14 +165,14 @@ for DATASET in "${DATASETS[@]}"; do
   IDX=$((IDX+1))
   banner_dataset "${IDX}" "${TOTAL}" "${DATASET}"
 
-  # -------------------------
-  # per-dataset override (STRIDE / MAX_SEQ_LEN / optional MODE)
-  # edit these to your desired values
-  # -------------------------
-  MODE_CUR="${MODE}"
-  STRIDE_CUR="${STRIDE}"
-  SEQ_LEN_CUR="${SEQ_LEN}"
-  MAX_SEQ_LEN_CUR="${MAX_SEQ_LEN}"
+  # # -------------------------
+  # # per-dataset override (STRIDE / MAX_SEQ_LEN / optional MODE)
+  # # edit these to your desired values
+  # # -------------------------
+  # MODE_CUR="${MODE}"
+  # STRIDE_CUR="${STRIDE}"
+  # SEQ_LEN_CUR="${SEQ_LEN}"
+  # MAX_SEQ_LEN_CUR="${MAX_SEQ_LEN}"
 
   # case "${DATASET}" in
   #   7scenes)
@@ -187,6 +194,71 @@ for DATASET in "${DATASETS[@]}"; do
   #   *)
   #     ;;
   # esac
+
+  # -------------------------
+  # per-dataset override (STRIDE / MAX_SEQ_LEN / optional MODE)
+  # edit these to your desired values
+  # -------------------------
+
+  case "${DATASET}" in
+    7scenes)
+      SPLIT="test"
+      SEQ=""   # e.g. chess/seq-01 ; empty means all
+
+      MODE_CUR="stride"   # stride | random
+      STRIDE_CUR=40       # default stride
+      SEQ_LEN_CUR=8       # use N frames in sequence
+      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
+      SEED=42             # used when MODE=random
+      NUM_SEQ=10
+      ;;
+    ase)
+      SPLIT="test"
+      SEQ=""   # e.g. chess/seq-01 ; empty means all
+
+      MODE_CUR="random"   # stride | random
+      STRIDE_CUR=5        # default stride
+      SEQ_LEN_CUR=8       # use N frames in sequence
+      MAX_SEQ_LEN_CUR=32  # default max seq len, default -1 to use all
+      SEED=42             # used when MODE=random
+      NUM_SEQ=10
+      ;;
+    nrgbd)
+      SPLIT="test"
+      SEQ=""   # e.g. chess/seq-01 ; empty means all
+
+      MODE_CUR="stride"   # stride | random
+      STRIDE_CUR=100      # default stride
+      SEQ_LEN_CUR=8       # use N frames in sequence
+      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
+      SEED=42             # used when MODE=random
+      NUM_SEQ=10
+      ;;
+    dl3dv)
+      SPLIT="test"
+      SEQ=""   # e.g. chess/seq-01 ; empty means all
+
+      MODE_CUR="stride"   # stride | random
+      STRIDE_CUR=5        # default stride
+      SEQ_LEN_CUR=8       # use N frames in sequence
+      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
+      SEED=42             # used when MODE=random
+      NUM_SEQ=100
+      ;;
+    scannet)
+      SPLIT="test"
+      SEQ=""   # e.g. chess/seq-01 ; empty means all
+
+      MODE_CUR="stride"   # stride | random
+      STRIDE_CUR=25       # default stride
+      SEQ_LEN_CUR=8       # use N frames in sequence
+      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
+      SEED=42             # used when MODE=random
+      NUM_SEQ=10
+      ;;
+    *)
+      ;;
+  esac
 
   echo "[RUNTIME] device=${DEVICE} dtype=${DTYPE} eval_device=${EVAL_DEVICE}"
   echo "[CONFIG ] model=${MODEL} prefix=${PREFIX}"
@@ -293,6 +365,7 @@ for DATASET in "${DATASETS[@]}"; do
   echo "[EVAL] root=${ROOT_DIR}"
   echo "[EVAL] gt_subdir=gt  pred_subdir=${PRED_SUBDIR}"
   echo "[EVAL] pointmap_threshold=${POINTMAP_THRESHOLD}  predicted_pointmap=${PREDICTED_POINTMAP}"
+  echo "[EVAL] skip_pointmap=${SKIP_POINTMAP}  skip_normal=${SKIP_NORMAL}"
   echo "[PATH] GT_DIR=${GT_DIR}"
   echo "[PATH] PRED_DIR=${PRED_DIR}"
 
@@ -304,6 +377,8 @@ for DATASET in "${DATASETS[@]}"; do
     --pose_threshold "${POSE_THRESHOLD}" \
     --pointmap_threshold "${POINTMAP_THRESHOLD}" \
     --predicted_pointmap "${PREDICTED_POINTMAP}" \
+    --skip_pointmap "${SKIP_POINTMAP}" \
+    --skip_normal "${SKIP_NORMAL}" \
     --depth_align "${DEPTH_ALIGN}" \
     --device "${EVAL_DEVICE}"
 

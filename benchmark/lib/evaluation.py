@@ -1,6 +1,8 @@
 import numpy as np
 import open3d as o3d
 
+from scipy.spatial import cKDTree as KDTree
+
 from lib.metric import se3_to_relative_pose_error, calculate_auc, umeyama, accuracy, completion, icp_alignment, icp_alignment_fast
 from lib.evo_utils import get_tum_poses, eval_metrics
 from lib.depth import depth_evaluation
@@ -92,7 +94,7 @@ def eval_depth_map(pred_depths, gt_depths, valid_masks,
 
 @timing_decorator
 def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1, 
-        return_point_maps=False, pred_poses=None):
+        return_point_maps=False, pred_poses=None, skip_normal=True):
     """evaluate predicted point maps in world coordinates.
 
     Args:
@@ -102,6 +104,7 @@ def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1,
         
         all point maps must be aligned to the first frame and averaged by the average metric-scale depth
         
+        skip normal computation will make evaluation much faster
     """
     
     assert pred_pts.shape == gt_pts.shape
@@ -184,17 +187,21 @@ def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1,
     # exit()
     
     # 9. estimate normals
-    pcd.estimate_normals()
-    pcd_gt.estimate_normals()
-    pred_normal = np.asarray(pcd.normals)
-    gt_normal = np.asarray(pcd_gt.normals)
+    if skip_normal: # experimental for boosting performance
+        pred_normal = None
+        gt_normal = None
+    else:
+        pcd.estimate_normals()
+        pcd_gt.estimate_normals()
+        pred_normal = np.asarray(pcd.normals)
+        gt_normal = np.asarray(pcd_gt.normals)
     
     # compute metrics
     acc, acc_med, nc1, nc1_med = accuracy(
-        pcd_gt.points, pcd.points, gt_normal, pred_normal
+        pcd_gt.points, pcd.points, None, gt_normal, pred_normal
     )
     comp, comp_med, nc2, nc2_med = completion(
-        pcd_gt.points, pcd.points, gt_normal, pred_normal
+        pcd_gt.points, pcd.points, None, gt_normal, pred_normal
     )
     
     # pack outputs

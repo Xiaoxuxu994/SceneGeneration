@@ -5,6 +5,8 @@ import torch.nn.functional as F
 import small_gicp
 import open3d as o3d
 
+from scipy.spatial import cKDTree as KDTree
+
 from lib.geometry import mat_to_quat, closed_form_inverse_se3
 from lib.utils import timing_decorator
 
@@ -224,8 +226,6 @@ def icp_alignment_fast(source_open3d, target_open3d, threshold=0.1, downsampling
     
     return result.T_target_source
 
-from scipy.spatial import cKDTree as KDTree
-
 def completion_ratio(gt_points, rec_points, dist_th=0.05):
     gen_points_kd_tree = KDTree(rec_points)
     distances, _ = gen_points_kd_tree.query(gt_points)
@@ -233,8 +233,8 @@ def completion_ratio(gt_points, rec_points, dist_th=0.05):
     return comp_ratio
 
 @timing_decorator
-def accuracy(gt_points, rec_points, gt_normals=None, rec_normals=None):
-    gt_points_kd_tree = KDTree(gt_points)
+def accuracy(gt_points, rec_points, gt_points_kd_tree=None, gt_normals=None, rec_normals=None):
+    if gt_points_kd_tree is None: gt_points_kd_tree = KDTree(gt_points)
     distances, idx = gt_points_kd_tree.query(rec_points, workers=-1)
     acc = np.mean(distances)
 
@@ -245,13 +245,13 @@ def accuracy(gt_points, rec_points, gt_normals=None, rec_normals=None):
         normal_dot = np.abs(normal_dot)
 
         return acc, acc_median, np.mean(normal_dot), np.median(normal_dot)
-
-    return acc, acc_median
+    else:
+        return acc, acc_median, 0.0, 0.0
 
 @timing_decorator
-def completion(gt_points, rec_points, gt_normals=None, rec_normals=None):
-    gt_points_kd_tree = KDTree(rec_points)
-    distances, idx = gt_points_kd_tree.query(gt_points, workers=-1)
+def completion(gt_points, rec_points, rec_points_kd_tree=None, gt_normals=None, rec_normals=None):
+    if rec_points_kd_tree is None: rec_points_kd_tree = KDTree(rec_points)
+    distances, idx = rec_points_kd_tree.query(gt_points, workers=-1)
     comp = np.mean(distances)
     comp_median = np.median(distances)
 
@@ -260,8 +260,8 @@ def completion(gt_points, rec_points, gt_normals=None, rec_normals=None):
         normal_dot = np.abs(normal_dot)
 
         return comp, comp_median, np.mean(normal_dot), np.median(normal_dot)
-
-    return comp, comp_median
+    else:
+        return comp, comp_median, 0.0, 0.0
 
 
 def compute_iou(pred_vox, target_vox):

@@ -355,6 +355,8 @@ def main():
     
     ap.add_argument("--predicted_pointmap", type=int, default=0)
     ap.add_argument("--save_pointmap", type=int, default=1)
+    ap.add_argument("--skip_pointmap", type=int, default=0)
+    ap.add_argument("--skip_normal", type=int, default=0)
     
     ap.add_argument("--depth_align", type=str, default="scale_shift", choices=["scale", "scale_shift"])
     ap.add_argument("--device", type=str, default="npu:0",
@@ -484,7 +486,7 @@ def main():
             gt_pm = np_load(gt_pm_p).astype(np.float32)
             mask = np_load(gt_mask_p).astype(bool)
 
-            if gt_pm.sum() == 0:
+            if gt_pm.sum() == 0 or args.skip_pointmap == 1:
                 # gt_depth and gt_mask are all zeros
                 results = {
                     "accuracy": {"mean": 0, "median": 0},
@@ -496,7 +498,8 @@ def main():
                 results = eval_point_map(
                     pred_pm, gt_pm, mask, threshold=args.pointmap_threshold, 
                     return_point_maps=(args.save_pointmap != 0),
-                    pred_poses=pred_extr.numpy()
+                    pred_poses=pred_extr.numpy(),
+                    skip_normal=(args.skip_normal==1)
                 )
                 
                 # save aligned point maps
