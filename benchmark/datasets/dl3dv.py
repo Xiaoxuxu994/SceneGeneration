@@ -18,13 +18,7 @@ from .base import BaseDataset, SequenceBatch
 
 class NewDL3DVDataset(BaseDataset):
     """
-    ASE:
-      NRGBD/<seq>/
-        undistort_rgb/vignette{id}.jpg # id is zero-padded 7 digits
-        undistort_depth/depth{id}.png  # id is zero-padded 7 digits
-        trajectory.csv                 # each line is a 3-dim T & 4-dim quaterion
-        
-    or simply input the sample sequence list:
+    simply input the sample sequence list:
         [
             {
                 "input_images": <path>,    # read this
@@ -68,8 +62,9 @@ class NewDL3DVDataset(BaseDataset):
         
         return images, cameras
     
-    def _load_rgb(self, image_paths: List[str]):
-        image_pils = [Image.open(p).convert("RGB") for p in image_paths]
+    def _load_rgb(self, image_paths: List[str], target_width=518, target_height=294):
+        image_pils = [Image.open(p).convert("RGB").resize((target_width, target_height), Image.Resampling.BICUBIC) \
+                      for p in image_paths]
         images_cpu = load_and_preprocess_images(image_paths)  # (V,3,H,W) CPU
         return image_pils, images_cpu
     

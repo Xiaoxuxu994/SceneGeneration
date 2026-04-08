@@ -19,7 +19,6 @@ class Reliev3R(nn.Module):
         """
         super().__init__()
         self.cfg = cfg
-        self.register_buffer('eye4', torch.eye(4))
         
         # Load monocular depth model.
         if not depth_preprocessed:

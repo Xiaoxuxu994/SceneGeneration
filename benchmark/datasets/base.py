@@ -50,53 +50,6 @@ class BaseDataset(ABC):
     @abstractmethod
     def load_sequence(self, seq: str, frame_ids: List[int]) -> SequenceBatch:
         ...
-
-    # def get_frame_ids(
-    #     self,
-    #     seq: str,
-    #     seq_len: int,
-    #     out_dir: str | Path,
-    #     *,
-    #     mode: str = "stride",          # "stride" | "random"
-    #     stride: int = 1,
-    #     max_seq_len: int = 0,          # stride mode: take first max_seq_len; random mode: sample n=max_seq_len (or all if 0)
-    #     seed: int = 0,
-    #     reuse: bool = True,
-    #     fname: str = "frame_ids.npy"
-    # ) -> List[int]:
-    #     out_dir = Path(out_dir)
-    #     frame_id_dir = out_dir / "frame_ids" / seq
-    #     frame_id_dir.mkdir(parents=True, exist_ok=True)
-    #     fp = frame_id_dir / fname
-
-    #     if reuse and fp.exists():
-    #         ids = np.load(fp).astype(np.int64).tolist()
-    #         print(f"[INFO] Load frame id from {fp}\n")
-    #         return sorted({i for i in ids if 0 <= i < seq_len})
-
-    #     mode = str(mode).lower()
-    #     stride = max(1, int(stride))
-    #     max_seq_len = int(max_seq_len)
-
-    #     if seq_len <= 0:
-    #         ids: List[int] = []
-
-    #     elif mode == "stride":
-    #         ids = list(range(0, seq_len, stride))
-    #         if max_seq_len > 0:
-    #             ids = ids[:max_seq_len]
-
-    #     elif mode == "random":
-    #         n = seq_len if max_seq_len <= 0 else min(max_seq_len, seq_len)
-    #         n = max(1, n)
-    #         np.random.seed(int(seed))
-    #         ids = np.random.choice(seq_len, size=n, replace=False).astype(np.int64).tolist()
-    #         ids.sort()
-    #     else:
-    #         raise ValueError(f"Unknown mode={mode}, expected stride|random")
-
-    #     np.save(fp, np.array(ids, dtype=np.int32))
-    #     return ids
     
     def _normalize_K(self, pix_K, H, W):
         norm_K = pix_K.clone()
@@ -164,7 +117,11 @@ class BaseDataset(ABC):
         seed: int = 0,
         reuse: bool = True,
         fname: str = "frame_ids.npy",
-        max_retry: int = 10
+        max_retry: int = 10,
+        grid_size: int = 100,
+        match_eps: float = 0.01,
+        samples_to_keep: int = 10000,
+        min_thres: float = 0.1
     ) -> List[int]:
         out_dir = Path(out_dir)
         frame_id_dir = out_dir / "frame_ids" / seq
@@ -199,10 +156,6 @@ class BaseDataset(ABC):
                 depths          = batch.depths           # V,H,W
                 w2c             = batch.raw_w2c.float()  # V,4,4
                 raw_K           = batch.raw_K            # V,3,3
-                grid_size       = 100
-                match_eps       = 0.01
-                samples_to_keep = 10000
-                min_thres       = 0.08
                 
                 # if the intrinsics is not normalized
                 if raw_K[0, 0, 0] - 0.5 > 0.05 or raw_K[0, 1, 1] - 0.5 > 0.05:
@@ -220,7 +173,8 @@ class BaseDataset(ABC):
                     if ids is None:
                         ids = np.zeros_like(ids)
                         print(f"[INFO] not a valid sequence - starting sampling trial {try_id+1}")
-                        continue
+                    else:
+                        break
                             
             else:
                 raise ValueError(f"Unknown mode={mode}, expected stride|random")

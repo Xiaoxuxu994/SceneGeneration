@@ -7,37 +7,42 @@ EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
-MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-# CKPT="experiments/Reliev3R_bs2v8_260302_ase10p_fullSup/ckpt/70000.ckpt"
-# CONFIG="experiments/Reliev3R_bs2v8_260302_ase10p_fullSup/config.json"
-# PREFIX="Reliev3R_bs2v8_260302_ase10p_fullSup_ckpt70k"
+# MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 
-# CKPT="experiments/Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1Flow5-Pi3/ckpt/35000.ckpt"
-# CONFIG="experiments/Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1Flow5-Pi3/config.json"
-# PREFIX="Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1Flow5-Pi3_ckpt35k"
-
-CKPT="experiments/Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT/ckpt/20000.ckpt"
-CONFIG="experiments/Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT/config.json"
-PREFIX="Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT_ckpt20k"
+# CKPT="experiments/Reliev3R_bs2v8_260211_ase/ckpt/130000.ckpt"
+# CONFIG="experiments/Reliev3R_bs2v8_260211_ase/config.json"
+# PREFIX="Reliev3R_bs2v8_260211_ase_ckpt130k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # CKPT="./ckpt/Pi3/"
 # PREFIX="pi3_official"
 # CONFIG=""
 
-# MODEL="vggt" # ['vggt','pi3','reliev3r']
+MODEL="vggt" # ['vggt','pi3','reliev3r']
 
 # CONFIG="./ckpt/VGGT-1B/config.json"
 # CKPT="./ckpt/VGGT-1B/model.pt"
 # PREFIX="vggt_official"
 
-# CONFIG=""
+CONFIG=""
 
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch023-loss_valid0.2258-metric_valid0.1446.ckpt/pytorch_model.bin"
 # PREFIX="vggt_sz_ep23"
 
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch007-loss_valid0.3137-metric_valid0.2497.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep7"
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch015-loss_valid0.2459-metric_valid0.1737.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep15"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch013-loss_valid0.2557-metric_valid0.1859.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep13"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch011-loss_valid0.2917-metric_valid0.2021.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep11"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch009-loss_valid0.2741-metric_valid0.2231.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep9"
+
+CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch007-loss_valid0.3137-metric_valid0.2497.ckpt/pytorch_model.bin"
+PREFIX="vggt_sz_ep7"
 
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch005-loss_valid0.3839-metric_valid0.2823.ckpt/pytorch_model.bin"
 # PREFIX="vggt_sz_ep5"
@@ -219,7 +224,7 @@ for DATASET in "${DATASETS[@]}"; do
       MODE_CUR="random"   # stride | random
       STRIDE_CUR=5        # default stride
       SEQ_LEN_CUR=8       # use N frames in sequence
-      MAX_SEQ_LEN_CUR=32  # default max seq len, default -1 to use all
+      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
       SEED=42             # used when MODE=random
       NUM_SEQ=10
       ;;
@@ -401,5 +406,5 @@ for DATASET in "${DATASETS[@]}"; do
   # t1=$(date +%s)
   # echo "[TIME] VIS seconds=$((t1-t0))"
 
-  banner_done "${IDX}" "${TOTAL}" "${DATASET}"
+  # banner_done "${IDX}" "${TOTAL}" "${DATASET}"
 done

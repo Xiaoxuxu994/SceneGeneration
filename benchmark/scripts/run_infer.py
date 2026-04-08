@@ -7,6 +7,7 @@ import torch
 import torch_npu  
 from tqdm import tqdm
 from omegaconf import OmegaConf
+from safetensors.torch import load_file
 
 from _bootstrap import BENCH_ROOT 
 
@@ -52,7 +53,8 @@ DATA_ROOT_DEFAULTS = {
     "scannet": BENCH_ROOT / "data" / "scannet" / "posed_images",
     # "dl3dv":   "/mnt/nvme1/share/chenyouyu/dataset/DL3DV/data/1K/",
     "dl3dv":   "/efs-m3ga/z00818731/dl3dv-new/reliev3r_sample_list_c32.npz",
-    "ase": BENCH_ROOT / "data" / "ASE" /"reliev3r_sample_list_c32_s1.npz.update.npz"
+    "ase":     BENCH_ROOT / "data" / "ASE" /"reliev3r_sample_list_c32_s1.npz.update.npz",
+    "re10k":   "/efs-m3ga/h00548084/relive3r_dataset/re10k_12.19/reliev3r_sample_list_c32.npz"
 }
 MODEL_DEFAULTS = {
     "vggt": {
@@ -169,10 +171,14 @@ def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, 
     cfg.eval = True
     model = Reliev3R(cfg.model).to(device).eval()
 
-    ckpt = torch.load(ckpt_path, map_location="cpu")
-    state = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
-    state = strip_ddp_prefix(state)
-    model.load_state_dict(state, strict=strict)
+    if "Pi3" in ckpt_path:
+        state = load_file(ckpt_path)
+        model.load_state_dict(state, strict=strict)
+    else:
+        ckpt = torch.load(ckpt_path, map_location="cpu")
+        state = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
+        state = strip_ddp_prefix(state)
+        model.load_state_dict(state, strict=strict)
     print(f"[OK] Reliev3R loaded ckpt: {ckpt_path} (strict={strict})")
 
     num_params = sum(p.numel() for p in model.parameters())
@@ -511,7 +517,7 @@ def main():
     elif args.model == 'reliev3r':
         if not args.ckpt:
             raise ValueError("--reliev3r_ckpt is required when --model reliev3r")
-        model = load_model_reliev3r(args.config, args.ckpt, device=device, strict=True)
+        model = load_model_reliev3r(args.config, args.ckpt, device=device, strict=False)
     else:
         raise ValueError(f"Unknown model_type={args.model}")
     # model = None

@@ -64,6 +64,12 @@ def export_pointcloud(
     # if point_maps.ndim != 4 or point_maps.shape[-1] != 3:
     #     raise ValueError("point_maps must be (S,H,W,3), got {}".format(point_maps.shape))
 
+    print("[INFO] point map:", point_maps.shape, 
+          "color:", colors.shape)
+    if pts_mask is not None and col_mask is not None:
+        print("[INFO] point mask:", pts_mask.shape, 
+            "color mask:", col_mask.shape)
+
     pts = point_maps.reshape(-1, 3)
     if pts_mask is not None:
         m = pts_mask.reshape(-1).astype(bool)
@@ -281,7 +287,11 @@ def main() -> None:
         export_cameras(c2w, out_dir / "vis_cameras.ply")
         
         try:
-            export_pointcloud(pts, out_dir / "vis_pointcloud.ply", pts_mask=mask, col_mask=mask, colors=gt_images)
+            export_pointcloud(pts, out_dir / "vis_pointcloud.ply", 
+                pts_mask=mask if np.sum(mask) > 0 else None, 
+                col_mask=mask if np.sum(mask) > 0 else None, 
+                colors=gt_images
+            )
             export_depth(dep, out_dir / "vis_depth", vmin=args.depth_vmin, vmax=args.depth_vmax)
         except Exception as e:
             print(e)

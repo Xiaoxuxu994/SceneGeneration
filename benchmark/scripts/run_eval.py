@@ -16,6 +16,7 @@ import open3d as o3d
 import _bootstrap  # noqa: F401
 
 from lib.evaluation import eval_angle, eval_trajectory, eval_depth_map, eval_point_map
+from lib.normalization import normalize_trans
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -350,6 +351,8 @@ def main():
     ap.add_argument("--gt_subdir", type=str, default="gt")
     ap.add_argument("--pred_subdir", type=str, default="vggt_vggt_sz_ep1")
 
+    ap.add_argument("--normalize_trans", type=int, default=1)
+    
     ap.add_argument("--pose_threshold", type=int, default=30)
     ap.add_argument("--pointmap_threshold", type=float, default=0.1)
     
@@ -410,6 +413,10 @@ def main():
 
         pred_extr = torch_f32(np_load(pred_extr_p))
         gt_extr = torch_f32(np_load(gt_extr_p))
+        
+        if args.normalize_trans == 1:
+            pred_extr = normalize_trans(pred_extr)
+            gt_extr = normalize_trans(gt_extr)
 
         # ---------- pose metrics ----------
         rra_acc, rta_acc, auc = eval_angle(pred_extr, gt_extr, threshold=args.pose_threshold)

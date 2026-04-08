@@ -69,9 +69,6 @@ class ScanNetDataset(BaseDataset):
         return images, poses, depths
 
     def _load_rgb(self, image_paths: List[str], target_width=518, target_height=392, border=15):
-        # image_pils = [Image.open(p).convert("RGB") for p in image_paths]
-        # images_cpu = load_and_preprocess_images(image_paths)  # (V,3,H,W) CPU
-        
         # crop input images
         image_pils, images_cpu = [], []
         for image_path in image_paths:
@@ -91,11 +88,6 @@ class ScanNetDataset(BaseDataset):
         images_cpu = torch.stack(images_cpu)
         
         return image_pils, images_cpu
-
-    # def _load_depth(self, depth_paths: List[str]) -> torch.Tensor:
-    #     d = np.stack([imageio.v2.imread(p).astype(np.float32) for p in depth_paths])  # (V,H,W)
-    #     d = d / self.depth_scale  # mm -> m
-    #     return torch.from_numpy(d)  # (V,H,W) meters
     
     def _load_depth(self, depth_paths: List[str], 
             target_width=518, target_height=392, border=15) -> torch.Tensor:

@@ -12,9 +12,13 @@ MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # CONFIG="experiments/Reliev3R_bs2v8_260302_ase10p_fullSup/config.json"
 # PREFIX="Reliev3R_bs2v8_260302_ase10p_fullSup_ckpt70k"
 
-CKPT="experiments/Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1Flow5-Pi3/ckpt/35000.ckpt"
-CONFIG="experiments/Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1Flow5-Pi3/config.json"
-PREFIX="Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1Flow5-Pi3_ckpt35k"
+CKPT="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_distL1_sigT_cotracker/ckpt/45000.ckpt"
+CONFIG="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_distL1_sigT_cotracker/config.json"
+PREFIX="Reliev3R_bs2v8_260402_dl3dv_ss_distL1_sigT_cotracker_ckpt45k"
+
+# CKPT="./ckpt/Pi3/model.safetensors"
+# CONFIG="experiments/Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1-Pi3/config.json"
+# PREFIX="Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1-Pi3_ckptpi3"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # CKPT="./ckpt/Pi3/"
@@ -31,6 +35,18 @@ PREFIX="Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-
 
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch023-loss_valid0.2258-metric_valid0.1446.ckpt/pytorch_model.bin"
 # PREFIX="vggt_sz_ep23"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch015-loss_valid0.2459-metric_valid0.1737.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep15"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch013-loss_valid0.2557-metric_valid0.1859.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep13"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch011-loss_valid0.2917-metric_valid0.2021.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep11"
+
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch009-loss_valid0.2741-metric_valid0.2231.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep9"
 
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch007-loss_valid0.3137-metric_valid0.2497.ckpt/pytorch_model.bin"
 # PREFIX="vggt_sz_ep7"
@@ -352,7 +368,7 @@ for DATASET in "${DATASETS[@]}"; do
 
   # per-model PREDICTED_POINTMAP
   case "${MODEL}" in
-    vggt)     PREDICTED_POINTMAP=0 ;;
+    vggt)     PREDICTED_POINTMAP=1 ;;
     pi3)      PREDICTED_POINTMAP=1 ;;
     reliev3r) PREDICTED_POINTMAP=0 ;;
     *)        PREDICTED_POINTMAP=0 ;;
