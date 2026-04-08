@@ -1,6 +1,8 @@
 # @package hydra.job_logging
 # python logging configuration for tasks
 version: 1
+# work_dir: /efs-mi-east4-2/z00533370/proj_3dgs/3drecon/
+work_dir: /efs-m3ga/c50041401/exp/pi3sup/
 formatters:
   simple:
     format: '%(message)s'

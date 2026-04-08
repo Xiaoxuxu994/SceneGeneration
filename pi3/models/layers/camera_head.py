@@ -71,23 +71,76 @@ class CameraHead(nn.Module):
         pose[:, 3, 3] = 1.
         return pose
 
+    # def svd_orthogonalize(self, m):
+    #     """Convert 9D representation to SO(3) using SVD orthogonalization.
+
+    #     Args:
+    #       m: [BATCH, 3, 3] 3x3 matrices.
+
+    #     Returns:
+    #       [BATCH, 3, 3] SO(3) rotation matrices.
+    #     """
+    #     if m.dim() < 3:
+    #         m = m.reshape((-1, 3, 3))
+    #     m_transpose = torch.transpose(torch.nn.functional.normalize(m, p=2, dim=-1), dim0=-1, dim1=-2)
+    #     u, s, v = torch.svd(m_transpose)
+    #     det = torch.det(torch.matmul(v, u.transpose(-2, -1)))
+    #     # Check orientation reflection.
+    #     r = torch.matmul(
+    #         torch.cat([v[:, :, :-1], v[:, :, -1:] * det.view(-1, 1, 1)], dim=2),
+    #         u.transpose(-2, -1)
+    #     )
+    #     return r
+
+    # def svd_orthogonalize(self, m):
+    #     """Convert 9D representation to SO(3) using SVD orthogonalization.
+
+    #     Args:
+    #       m: [BATCH, 3, 3] 3x3 matrices.
+
+    #     Returns:
+    #       [BATCH, 3, 3] SO(3) rotation matrices.
+    #     """
+    #     if m.dim() < 3:
+    #         m = m.reshape(-1, 3, 3)
+
+    #     with torch.autocast(device_type=m.device.type, enabled=False):
+    #         m = torch.nn.functional.normalize(m.float(), p=2, dim=-1).transpose(-2, -1)
+    #         u, s, v = torch.svd(m)
+    #         det = torch.linalg.det(v @ u.transpose(-2, -1))
+    #         r = torch.matmul(
+    #             torch.cat([v[:, :, :-1], v[:, :, -1:] * det.view(-1, 1, 1)], dim=2),
+    #             u.transpose(-2, -1)
+    #         )
+
+    #     return r
+
     def svd_orthogonalize(self, m):
-        """Convert 9D representation to SO(3) using SVD orthogonalization.
-
-        Args:
-          m: [BATCH, 3, 3] 3x3 matrices.
-
-        Returns:
-          [BATCH, 3, 3] SO(3) rotation matrices.
-        """
         if m.dim() < 3:
-            m = m.reshape((-1, 3, 3))
-        m_transpose = torch.transpose(torch.nn.functional.normalize(m, p=2, dim=-1), dim0=-1, dim1=-2)
-        u, s, v = torch.svd(m_transpose)
-        det = torch.det(torch.matmul(v, u.transpose(-2, -1)))
-        # Check orientation reflection.
-        r = torch.matmul(
-            torch.cat([v[:, :, :-1], v[:, :, -1:] * det.view(-1, 1, 1)], dim=2),
-            u.transpose(-2, -1)
-        )
+            m = m.reshape(-1, 3, 3)
+
+        def det_3x3(mat):
+            return (
+                mat[..., 0, 0] * mat[..., 1, 1] * mat[..., 2, 2]
+                + mat[..., 0, 1] * mat[..., 1, 2] * mat[..., 2, 0]
+                + mat[..., 0, 2] * mat[..., 1, 0] * mat[..., 2, 1]
+                - mat[..., 0, 2] * mat[..., 1, 1] * mat[..., 2, 0]
+                - mat[..., 0, 0] * mat[..., 1, 2] * mat[..., 2, 1]
+                - mat[..., 0, 1] * mat[..., 1, 0] * mat[..., 2, 2]
+            )
+
+        with torch.autocast(device_type=m.device.type, enabled=False):
+            m = m.float()
+            m_transpose = torch.nn.functional.normalize(m, p=2, dim=-1).transpose(-2, -1)
+            u, s, v = torch.svd(m_transpose)
+
+            det = det_3x3(torch.matmul(v, u.transpose(-2, -1)))
+            sign = torch.sign(det)
+            sign = torch.where(sign == 0, torch.ones_like(sign), sign)
+
+            r = torch.matmul(
+                torch.cat([v[:, :, :-1], v[:, :, -1:] * sign.view(-1, 1, 1)], dim=2),
+                u.transpose(-2, -1)
+            )
+
         return r

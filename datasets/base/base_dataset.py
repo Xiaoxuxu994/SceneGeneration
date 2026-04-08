@@ -9,6 +9,7 @@ from omegaconf import OmegaConf
 from .transforms import *
 import pandas as pd
 from .utils import *
+import pickle
 
 class BaseDataset(EasyDataset):
     def __init__(
@@ -20,10 +21,7 @@ class BaseDataset(EasyDataset):
         z_far=0,
         frame_num=2,
         transform=tvf.ToTensor(),
-        cache_file=None,
-        save_cache=False,
         mode='train',
-        cache_name=None,
         max_refetch=3,
         random_sample_thres=0.1,
         shuffle=True,
@@ -47,16 +45,6 @@ class BaseDataset(EasyDataset):
         self.z_far = z_far
 
         self.dataset_label = 'BaseDataset'
-
-        self.save_cache = save_cache
-        self.cache_loaded = False
-        self.cache_name = cache_name
-        if cache_file is not None:
-            print(f'[BaseDataset] Loading cache from {cache_file}..')
-            res = self.load_cache(cache_file)
-            if res:
-                self.cache_loaded = True
-                print(f'[BaseDataset] Cache is loaded.')
 
         self.mode = mode
         self.max_refetch = max_refetch
@@ -274,33 +262,29 @@ class BaseDataset(EasyDataset):
         
         return views
     
-    def load_cache(self, cache_file):
+    def _load_cache(self, cache_file):
         try:
-            data = np.load(cache_file, allow_pickle=True).item()
-            # Step 2: 遍历字典中的每个键值对，并将其赋值为类实例的属性
-            if isinstance(data, dict):
-                for key, value in data.items():
-                    setattr(self, key, value)
-                return True
-            else:
-                print("Error: The npy file does not contain a dictionary.")
+            with open(cache_file, "rb") as f:
+                data = pickle.load(f)
+
+            if not isinstance(data, dict):
+                print("Error: cache file does not contain a dictionary.")
                 return False
+
+            for key, value in data.items():
+                setattr(self, key, value)
+            return True
         except Exception as e:
             print(f"An error occurred while loading the cache: {e}")
             return False
 
-    def _save_cache(self, keys, desc=None):
-        if desc is None:
-            save_path = f'data/dataset_cache/{self.dataset_label}_cache.npy'
-        else:
-            save_path = f'data/dataset_cache/{self.dataset_label}_{desc}_cache.npy'
+    def _save_cache(self, keys, save_path):
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-        save_dict = {}
-        for key in keys:
-            save_dict[key] = getattr(self, key)
-        
-        np.save(save_path, save_dict)
+        save_dict = {key: getattr(self, key) for key in keys}
 
-        print(f'Saved cache to {save_path}.', flush=True)
+        with open(save_path, "wb") as f:
+            pickle.dump(save_dict, f)
+
+        print(f"Saved cache to {save_path}.", flush=True)
 

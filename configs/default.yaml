@@ -2,8 +2,11 @@
 
 defaults:
   - model: pi3.yaml
-  - train: train_pi3_lowres
-  - data: example.yaml
+  # - train: train_pi3_lowres
+  - train: train_pi3_highres
+  # - data: tartanair.yaml
+  # - data: scannet.yaml
+  - data: ase.yaml
   - general: default.yaml
   - extras: default.yaml
   - override hydra/job_logging: custom

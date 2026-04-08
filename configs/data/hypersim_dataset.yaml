@@ -1,0 +1,49 @@
+# @package _global_
+
+train_dataset:
+    length: 10000000         # dummy
+
+    weights: 
+        Hypersim: 1
+
+    Hypersim:
+        _target_: datasets.hypersim_dataset.HypersimDataset
+        data_root: /mnt/nvme3/z00533370/dataset/sample_data/Hypersim
+        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim
+        split_ratio: 0.9
+        max_distance: 8
+        z_far: 256
+        frame_num: 8
+        aug_crop: 16
+        transform:
+            _partial_: true
+            _target_: datasets.base.transforms.JitterJpegLossBlurring
+        aug_focal: 0.9
+        mode: 'train'
+
+train_dataloader:
+    drop_last: True
+    shuffle: True
+
+test_dataset:
+    weights: 
+        Hypersim: 1
+    Hypersim:
+        _target_: datasets.hypersim_dataset.HypersimDataset
+        data_root: /mnt/nvme3/z00533370/dataset/sample_data/Hypersim
+        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim
+        split_ratio: 0.9
+        max_distance: 8
+        z_far: 256
+        frame_num: 8
+        resolution:
+            # - [518, 336]
+            - [512, 336]
+        transform:
+            _partial_: true
+            _target_: datasets.base.transforms.ImgToTensor
+        mode: 'test'
+
+test_dataloader:
+    drop_last: False
+    shuffle: False

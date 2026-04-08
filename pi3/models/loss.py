@@ -29,6 +29,24 @@ def _smooth(err: torch.FloatTensor, beta: float = 0.0) -> torch.FloatTensor:
 def angle_diff_vec3(v1: torch.Tensor, v2: torch.Tensor, eps: float = 1e-12):
     return torch.atan2(torch.cross(v1, v2, dim=-1).norm(dim=-1) + eps, (v1 * v2).sum(dim=-1))
 
+def huber_loss(pred, target, delta=1.0, reduction='mean'):
+    diff = pred - target
+    abs_diff = diff.abs()
+
+    loss = torch.where(
+        abs_diff < delta,
+        0.5 * diff.pow(2),
+        delta * (abs_diff - 0.5 * delta),
+    )
+
+    if reduction == 'mean':
+        return loss.mean()
+    elif reduction == 'sum':
+        return loss.sum()
+    elif reduction == 'none':
+        return loss
+    else:
+        raise ValueError(f"Unsupported reduction: {reduction}")
 # ---------------------------------------------------------------------------
 # PointLoss: Scale-invariant Local Pointmap
 # ---------------------------------------------------------------------------
@@ -230,7 +248,8 @@ class CameraLoss(nn.Module):
         t_gt = gt_rel_all[..., :3, 3][:, mask, ...]
         R_gt = gt_rel_all[..., :3, :3][:, mask, ...]
 
-        trans_loss = F.huber_loss(t_pred, t_gt, reduction='mean', delta=0.1)
+        # trans_loss = F.huber_loss(t_pred, t_gt, reduction='mean', delta=0.1)
+        trans_loss = huber_loss(t_pred, t_gt, reduction='mean', delta=0.1)
         
         rot_loss = self.rot_ang_loss(
             R_pred.reshape(-1, 3, 3), 
@@ -254,10 +273,11 @@ class Pi3Loss(nn.Module):
         self.point_loss = PointLoss(train_conf=train_conf)
         self.camera_loss = CameraLoss()
 
-    def prepare_gt(self, gt):
-        gt_pts = torch.stack([view['pts3d'] for view in gt], dim=1)
-        masks = torch.stack([view['valid_mask'] for view in gt], dim=1)
-        poses = torch.stack([view['camera_pose'] for view in gt], dim=1)
+    def prepare_gt(self, gt, device):
+        gt_pts = torch.stack([view['pts3d'] for view in gt], dim=1).to(device, non_blocking=True)
+        masks = torch.stack([view['valid_mask'] for view in gt], dim=1).to(device, non_blocking=True).bool()
+        poses = torch.stack([view['camera_pose'] for view in gt], dim=1).to(device, non_blocking=True)
+        imgs = torch.stack([view['img'] for view in gt], dim=1).to(device, non_blocking=True)
 
         B, N, H, W, _ = gt_pts.shape
 
@@ -285,7 +305,7 @@ class Pi3Loss(nn.Module):
         dataset_names = gt[0]['dataset']
 
         return dict(
-            imgs = torch.stack([view['img'] for view in gt], dim=1),
+            imgs = imgs,
             global_points=gt_pts,
             local_points=gt_local_pts,
             valid_masks=masks,
@@ -319,7 +339,8 @@ class Pi3Loss(nn.Module):
         return pred
 
     def forward(self, pred, gt_raw):
-        gt = self.prepare_gt(gt_raw)
+        device = pred['local_points'].device
+        gt = self.prepare_gt(gt_raw,device)
         pred = self.normalize_pred(pred, gt)
 
         final_loss = 0.0

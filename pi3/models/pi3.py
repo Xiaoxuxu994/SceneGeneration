@@ -10,7 +10,19 @@ from .layers.block import BlockRope
 from .layers.attention import FlashAttentionRope
 from .layers.transformer_head import TransformerDecoder, LinearPts3d
 from .layers.camera_head import CameraHead
-from .dinov2.hub.backbones import dinov2_vitl14, dinov2_vitl14_reg
+from .dinov2.hub.backbones import (
+    dinov2_vitl14, 
+    dinov2_vitl14_reg, 
+    dinov2_vitb14_reg, 
+    dinov2_vits14_reg,
+    dinov2_vitg14_reg)
+from .dinov3.hub.backbones import (
+    dinov3_vith16plus,
+    dinov3_vitl16,
+    dinov3_vitb16,
+    dinov3_vits16plus,
+    dinov3_vits16,    
+)
 from huggingface_hub import PyTorchModelHubMixin
 
 class Pi3(nn.Module, PyTorchModelHubMixin):
@@ -18,16 +30,36 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             self,
             pos_type='rope100',
             decoder_size='large',
+            model_size='dinov3_huge+_3Bv2',
         ):
         super().__init__()
 
+       # -------------------------------------------
+        #        Resolve Encoder / decoder spec
+        # -------------------------------------------
+        enc_type, encoder_size, model_variant = self._resolve_model_spec(
+            decoder_size=decoder_size,
+            model_size=model_size
+        )
+
+        backbone_cfg = self._build_backbone_cfg()
+
+        if enc_type not in backbone_cfg:
+            raise NotImplementedError(f"Not implemented enc_type: {enc_type}")
+        if encoder_size not in backbone_cfg[enc_type]:
+            raise NotImplementedError(f"Not implemented encoder_size: {enc_type}_{encoder_size}")
+        
+        spec = backbone_cfg[enc_type][encoder_size]
+
         # ----------------------
         #        Encoder
-        # ----------------------
-        self.encoder = dinov2_vitl14_reg(pretrained=False)
-        self.patch_size = 14
-        del self.encoder.mask_token
-
+        # ----------------------       
+        self.encoder = spec['builder'](pretrained=True, model_dir=spec['model_dir'])
+        self.patch_size = getattr(self.encoder,"patch_size",14)
+        if enc_type == 'dinov2' and hasattr(self.encoder,'mask_token'):
+            del self.encoder.mask_token
+        if enc_type == 'dinov3' and hasattr(self.encoder,'mask_token'):
+            del self.encoder.mask_token
         # ----------------------
         #  Positonal Encoding
         # ----------------------
@@ -42,30 +74,50 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             raise NotImplementedError
         
 
+        # -------------------------------------------
+        #        Decoder Spec
+        # -------------------------------------------        
+        if model_variant is not None:
+            if model_variant in spec['variants']:
+                dec_cfg = spec['variants'][model_variant]
+            elif spec['default_decoder'] is not None:
+                dec_cfg = spec['default_decoder']
+            else:
+                raise NotImplementedError(
+                    f"Not implemented model_size: '{enc_type}_{encoder_size}_{model_variant}"
+                )
+        else:
+            if spec['default_decoder'] is None:
+                raise NotImplementedError(
+                    f"Please set model_size explicitly for '{enc_type}_{encoder_size}"
+                )
+            dec_cfg = spec['default_decoder']
+        
+        dec_embed_dim = dec_cfg['dec_embed_dim']
+        dec_num_heads = dec_cfg['dec_num_heads']
+        mlp_ratio =  dec_cfg['mlp_ratio']
+        dec_depth = dec_cfg['dec_depth']     
+        head_depth = dec_cfg['head_depth']   
+
+        # -----------------------------------
+        #        Projec & Norm Layer
+        # -----------------------------------
+        self.enc_embed_dim = self.encoder.blocks[0].attn.qkv.in_features
+        self.dec_embed_dim = dec_embed_dim
+        self.project_e2d =(
+            nn.Linear(self.enc_embed_dim,self.dec_embed_dim,bias=False)
+            if self.enc_embed_dim != self.dec_embed_dim else nn.Identity()
+        )
+        self.project_norm=(
+            nn.LayerNorm(self.dec_embed_dim)
+            if self.enc_embed_dim != self.dec_embed_dim else nn.Identity()
+        )
         # ----------------------
         #        Decoder
         # ----------------------
-        enc_embed_dim = self.encoder.blocks[0].attn.qkv.in_features        # 1024
-        if decoder_size == 'small':
-            dec_embed_dim = 384
-            dec_num_heads = 6
-            mlp_ratio = 4
-            dec_depth = 24
-        elif decoder_size == 'base':
-            dec_embed_dim = 768
-            dec_num_heads = 12
-            mlp_ratio = 4
-            dec_depth = 24
-        elif decoder_size == 'large':
-            dec_embed_dim = 1024
-            dec_num_heads = 16
-            mlp_ratio = 4
-            dec_depth = 36
-        else:
-            raise NotImplementedError
         self.decoder = nn.ModuleList([
             BlockRope(
-                dim=dec_embed_dim,
+                dim=self.dec_embed_dim,
                 num_heads=dec_num_heads,
                 mlp_ratio=mlp_ratio,
                 qkv_bias=True,
@@ -80,7 +132,6 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 attn_class=FlashAttentionRope,
                 rope=self.rope
             ) for _ in range(dec_depth)])
-        self.dec_embed_dim = dec_embed_dim
 
         # ----------------------
         #     Register_token
@@ -100,13 +151,13 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             out_dim=1024,
             rope=self.rope,
         )
-        self.point_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=3)
+        self.point_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=3)
 
         # ----------------------
         #     Conf Decoder
         # ----------------------
         self.conf_decoder = deepcopy(self.point_decoder)
-        self.conf_head = LinearPts3d(patch_size=14, dec_embed_dim=1024, output_dim=1)
+        self.conf_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1)
 
         # ----------------------
         #  Camera Pose Decoder
@@ -128,6 +179,199 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         self.register_buffer("image_mean", image_mean)
         self.register_buffer("image_std", image_std)
 
+    @staticmethod
+    def _resolve_model_spec(decoder_size,model_size):
+        """
+            Re-construct based on zhaobo's script
+            Resolve: enc_type,encoder_size,model_variant
+            
+            Examples:
+                decoder_size='large'->('dinov2','large','0.95B')
+                model_size='dinov3_large_2.81B->('dinov3','large','2.81B')
+        """
+        if model_size is not None:
+            parts = model_size.split('_')
+            if len(parts) != 3:
+                raise ValueError(
+                    f"model_size should look like 'dinov3_large_2.81B', got: {model_size}"
+                )
+            enc_type, encoder_size, model_variant = parts
+            return enc_type, encoder_size, model_variant
+        
+        # backward-compatitble old interface
+        enc_type = 'dinov2'
+        if decoder_size == 'small':
+            return enc_type, 'small', None
+        if decoder_size == 'base':
+            return enc_type, 'base', None
+        if decoder_size == 'large':
+            return enc_type, 'large', '0.95B'
+        else:
+            raise NotImplementedError(f"Note implemented decoder_size: '{decoder_size}'")
+
+    @staticmethod
+    def _build_backbone_cfg():
+        return {
+            'dinov2':{
+                'small':{
+                    'builder': dinov2_vits14_reg,
+                    'model_dir': 'ckpts/dinov2-small',
+                    'default_decoder': dict(
+                        dec_embed_dim=384,
+                        dec_num_heads=6,
+                        mlp_ratio=4,
+                        dec_depth=24,
+                        head_depth=5,
+                    ),
+                    'variants': {}
+                },
+                'base':{
+                    'builder': dinov2_vitb14_reg,
+                    'model_dir': 'ckpts/dinov2-base',
+                    'default_decoder': dict(
+                        dec_embed_dim=768,
+                        dec_num_heads=12,
+                        mlp_ratio=4,
+                        dec_depth=24,
+                        head_depth=5,
+                    ),
+                    'variants': {}
+                },
+                'large':{
+                    'builder': dinov2_vitl14_reg,
+                    'model_dir': 'ckpts/dinov2-large',
+                    'default_decoder': dict(
+                        dec_embed_dim=1024,
+                        dec_num_heads=16,
+                        mlp_ratio=4,
+                        dec_depth=36,
+                        head_depth=5,
+                    ),
+                    'variants':{
+                        '0.95B': dict(
+                            dec_embed_dim=1024,
+                            dec_num_heads=16,
+                            mlp_ratio=4,
+                            dec_depth=36,
+                            head_depth=5,
+                        ),
+                        '1.6B': dict(
+                            dec_embed_dim=1024,
+                            dec_num_heads=16,
+                            mlp_ratio=4,
+                            dec_depth=72,
+                            head_depth=10,
+                        )
+                    }
+                },
+                'giant':{
+                    'builder': dinov2_vitg14_reg,
+                    'model_dir': 'ckpts/dinov2-giant',
+                    'default_decoder': dict(
+                        dec_embed_dim=1536,
+                        dec_num_heads=16,
+                        mlp_ratio=4,
+                        dec_depth=72,
+                        head_depth=10,
+                    ),
+                    'variants':{
+                        '3.57B': dict(
+                            dec_embed_dim=1536,
+                            dec_num_heads=16,
+                            mlp_ratio=4,
+                            dec_depth=72,
+                            head_depth=10,
+                        )
+                    }
+                }
+            },
+
+            'dinov3':{
+                'small':{
+                    'builder': dinov3_vits16,
+                    'model_dir': 'ckpts/dinov3_vits16',
+                    'default_decoder': None,
+                    'variants': {},
+                },
+                'small+':{
+                    'builder': dinov3_vits16plus,
+                    'model_dir': 'ckpts/dinov3_vits16plus',
+                    'default_decoder': None,
+                    'variants':{}
+                },
+                'base':{
+                    'builder': dinov3_vitb16,
+                    'model_dir': 'ckpts/dinov3_vitb16',
+                    'default_decoder': None,
+                    'variants':{}
+                },
+                'large':{
+                    'builder': dinov3_vitl16,
+                    'model_dir': 'ckpts/dinov3_vitl16',
+                    'default_decoder': None,
+                    'variants':{}
+                },
+                'huge+':{
+                    'builder': dinov3_vith16plus,
+                    'model_dir': 'ckpts/dinov3_vith16plus',
+                    'default_decoder': None,
+                    'variants': {
+                        '3Bv2': dict(
+                            dec_embed_dim=2048,
+                            dec_num_heads=32,
+                            mlp_ratio=4,
+                            dec_depth=36,
+                            head_depth=5,
+                        ),
+                        '3B': dict(
+                            dec_embed_dim=1792,
+                            dec_num_heads=28,
+                            mlp_ratio=4,
+                            dec_depth=56,
+                            head_depth=5,
+                        ),
+                        '2.81B': dict(
+                            dec_embed_dim=1280,
+                            dec_num_heads=16,
+                            mlp_ratio=4,
+                            dec_depth=80,
+                            head_depth=10,
+                        ),
+                        '3.2B': dict(
+                            dec_embed_dim=1280,
+                            dec_num_heads=16,
+                            mlp_ratio=4,
+                            dec_depth=100,
+                            head_depth=10,
+                        ),
+                        '4.24B': dict(
+                            dec_embed_dim=2560,
+                            dec_num_heads=16,
+                            mlp_ratio=4,
+                            dec_depth=40,
+                            head_depth=6,
+                        ),
+                        '3.51B': dict(
+                            dec_embed_dim=2048,
+                            dec_num_heads=16,
+                            mlp_ratio=4,
+                            dec_depth=48,
+                            head_depth=6,
+                        ),
+                        '5.17B': dict(
+                            dec_embed_dim=3072,
+                            dec_num_heads=16,
+                            mlp_ratio=4,
+                            dec_depth=36,
+                            head_depth=6,
+                        ),
+                        
+                    }
+                }
+            }
+
+        }
+    
 
     def decode(self, hidden, N, H, W):
         BN, hw, _ = hidden.shape
@@ -172,16 +416,21 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
     
     def forward(self, imgs):
         imgs = (imgs - self.image_mean) / self.image_std
+        enc_dtype = self.encoder.patch_embed.proj.weight.dtype
+        imgs = imgs.to(dtype=enc_dtype)
 
         B, N, _, H, W = imgs.shape
-        patch_h, patch_w = H // 14, W // 14
+        patch_h, patch_w = H // self.patch_size, W // self.patch_size
         
-        # encode by dinov2
+        # encode by dinov
         imgs = imgs.reshape(B*N, _, H, W)
         hidden = self.encoder(imgs, is_training=True)
 
         if isinstance(hidden, dict):
             hidden = hidden["x_norm_patchtokens"]
+
+        hidden = self.project_e2d(hidden)
+        hidden = self.project_norm(hidden)
 
         hidden, pos = self.decode(hidden, N, H, W)
 

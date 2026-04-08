@@ -263,12 +263,12 @@ class SmoothedValue(object):
         """
         if not is_dist_avail_and_initialized():
             return
-        t = torch.tensor([self.count, self.total], dtype=torch.float64, device="cuda")
+        t = torch.tensor([self.count, self.total], dtype=torch.float32, device="npu")
         dist.barrier()
         dist.all_reduce(t)
         t = t.tolist()
         self.count = int(t[0])
-        self.total = t[1]
+        self.total = float(t[1])
 
     @property
     def median(self):
@@ -369,18 +369,34 @@ class MetricLogger(object):
             log_msg.append("max mem: {memory:.0f}")
         log_msg = self.delimiter.join(log_msg)
         MB = 1024.0 * 1024.0
+        try:
+            total = len(iterable)
+            if total <= 0:
+                total = None
+        except Exception:
+            total = None
+
         for obj in iterable:
             data_time.update(time.time() - end)
             yield obj
             iter_time.update(time.time() - end)
-            if i % print_freq == 0 or i == len(iterable) - 1:
-                eta_seconds = iter_time.global_avg * (len(iterable) - i)
-                eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
+
+            # [MOD] 不再直接使用 len(iterable)
+            if i % print_freq == 0 or (total is not None and i == total - 1):
+                # [MOD] total 不可靠时，ETA 显示为 ?
+                if total is not None:
+                    eta_seconds = iter_time.global_avg * max(total - i - 1, 0)
+                    eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
+                    total_display = total
+                else:
+                    eta_string = "?"
+                    total_display = "?"
+
                 if torch.cuda.is_available():
                     self.logger.info(
                         log_msg.format(
                             i,
-                            len(iterable),
+                            total_display,
                             eta=eta_string,
                             meters=str(self),
                             time=str(iter_time),
@@ -392,7 +408,7 @@ class MetricLogger(object):
                     self.logger.info(
                         log_msg.format(
                             i,
-                            len(iterable),
+                            total_display,
                             eta=eta_string,
                             meters=str(self),
                             time=str(iter_time),
@@ -401,11 +417,14 @@ class MetricLogger(object):
                     )
             i += 1
             end = time.time()
+
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+
+        # [MOD] 平均每 iter 时间用真实迭代次数 i，而不是 len(iterable)
         self.logger.info(
             "{} Total time: {} ({:.4f} s / it)".format(
-                header, total_time_str, total_time / len(iterable)
+                header, total_time_str, total_time / i if i > 0 else 0.0
             )
         )
 

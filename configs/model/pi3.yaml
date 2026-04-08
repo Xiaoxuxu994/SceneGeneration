@@ -3,12 +3,13 @@
 model:
     _target_: pi3.models.pi3_training.Pi3
     pos_type: rope100
-    decoder_size: large
-    load_vggt: true
-    freeze_encoder: true
+    decoder_size: small #large
+    model_size: dinov3_huge+_3Bv2 #dinov3_huge+_3.2B,dinov3_huge+_2.81B, dinov3_huge+_3B
+    load_vggt: false #true
+    freeze_encoder: false #true
     use_global_points: false
     train_conf: false
-    num_dec_blk_not_to_checkpoint: 4
+    num_dec_blk_not_to_checkpoint: 0 #16
     ckpt: null # <path-to-your-pretrain-checkpoint>
 
 loss:

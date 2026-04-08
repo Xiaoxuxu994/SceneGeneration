@@ -7,6 +7,7 @@ import traceback
 from accelerate import Accelerator
 import hydra
 import torch
+import torch_npu
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torchvision
@@ -98,8 +99,41 @@ class BaseTrainer:
             self.optimizer = self.build_optimizer(self.cfg.train.optimizer, self.model)
             self.log_info(f"optimizer: {self.optimizer}")
 
-            self.model = self.accelerator.prepare(self.model)
+            # self.model = self.accelerator.prepare(self.model)
             self.accelerator.wait_for_everyone()
+
+        # ### -------------------------------------------------------------------------
+        # name_map = {id(p): n for n, p in self.model.named_parameters()}
+        # for i, group in enumerate(self.optimizer.param_groups):
+        #     counter = {
+        #         "encoder": 0,
+        #         "decoder": 0,
+        #         "point_decoder": 0,
+        #         "camera_decoder": 0,
+        #         "point_head": 0,
+        #         "camera_head": 0,
+        #         "others": 0,
+        #     }
+        #     for p in group["params"]:
+        #         n = name_map.get(id(p), "")
+        #         if n.startswith("encoder."):
+        #             counter["encoder"] += 1
+        #         elif n.startswith("decoder."):
+        #             counter["decoder"] += 1
+        #         elif n.startswith("point_decoder."):
+        #             counter["point_decoder"] += 1
+        #         elif n.startswith("camera_decoder."):
+        #             counter["camera_decoder"] += 1
+        #         elif n.startswith("point_head."):
+        #             counter["point_head"] += 1
+        #         elif n.startswith("camera_head."):
+        #             counter["camera_head"] += 1
+        #         else:
+        #             counter["others"] += 1
+        #     print(f"\n===== group {i} =====")
+        #     print("lr =", group["lr"], "wd =", group["weight_decay"])
+        #     print(counter)
+        # ### -------------------------------------------------------------------------
 
         # Create the LR scheduler
         self.iters_per_epoch = self.cfg.train.iters_per_epoch if self.cfg.train.iters_per_epoch > 0 else len(self.train_loader)
@@ -128,24 +162,51 @@ class BaseTrainer:
 
         # Wrap the model, optmizer, and scheduler with accelerate
         self.log_info("before accelerator.prepare")
+        
+        ## ------------------------------------------------------------------------------------
+        # warp for enable deepspeed zero2
+        (
+            self.model,
+            self.train_loader,
+            self.test_loader,
+            self.optimizer,
+            self.lr_scheduler
+        ) = self.accelerator.prepare(
+            self.model, self.train_loader, self.test_loader, self.optimizer, self.lr_scheduler
+        )
 
+        # prepare 之后重新统计 dataloader 长度，用于日志和后续 resume 计算
+        prepared_iters_per_epoch = (
+            self.cfg.train.iters_per_epoch
+            if self.cfg.train.iters_per_epoch > 0
+            else len(self.train_loader)
+        )
+        prepared_iters_per_test = (
+            self.cfg.test.iters_per_test
+            if self.cfg.test.iters_per_test > 0
+            else len(self.test_loader)
+        )
+
+        # 如果和 prepare 前不一致，给一个提示
+        if prepared_iters_per_epoch != self.iters_per_epoch:
+            self.log_info(
+                f"[Warn] iters_per_epoch changed after accelerator.prepare: "
+                f"{self.iters_per_epoch} -> {prepared_iters_per_epoch}. "
+                f"For DeepSpeed + OneCycleLR, it is recommended to set "
+                f"`cfg.train.iters_per_epoch` explicitly."
+            )
+
+        self.iters_per_epoch = prepared_iters_per_epoch
+        self.iters_per_test = prepared_iters_per_test
+        ## ------------------------------------------------------------------------------------
+
+        # # don't wrap dataloader
         # (
-        #     self.model,
-        #     self.train_loader,
-        #     self.test_loader,
         #     self.optimizer,
         #     self.lr_scheduler,
         # ) = self.accelerator.prepare(
-        #     self.model, self.train_loader, self.test_loader, self.optimizer, self.lr_scheduler
+        #     self.optimizer, self.lr_scheduler
         # )
-
-        # don't wrap dataloader
-        (
-            self.optimizer,
-            self.lr_scheduler,
-        ) = self.accelerator.prepare(
-            self.optimizer, self.lr_scheduler
-        )
 
         if self.accelerator.is_main_process:
             self.accelerator.init_trackers(os.path.basename(self.cfg.log.output_dir))
@@ -207,50 +268,68 @@ class BaseTrainer:
         saved_checkpoints = []  # List to track saved checkpoint paths
 
         for epoch in range(self.first_epoch, self.cfg.train.num_epoch):
-            torch.cuda.reset_peak_memory_stats()
+            # torch.cuda.reset_peak_memory_stats()
+            torch_npu.npu.reset_peak_memory_stats()
 
             self.before_epoch(epoch)
 
             train_stats = self.train_one_epoch(epoch)
+            # train_stats = {}
 
             # Perform validation at the end of each epoch
-            val_stats = self.validate(epoch)
+            if self.accelerator.is_main_process:
+                val_stats = self.validate(epoch)
+            else:
+                val_stats = {}
+            self.accelerator.wait_for_everyone()
 
-            current_val_metric = val_stats.get("loss", float('inf'))  # Replace "val_loss" with your metric key
-            if current_val_metric < best_val_metric:
-                best_val_metric = current_val_metric
-                best_model_path = os.path.join(
-                    self.cfg.log.ckpt_dir,
-                    "best_model",
-                )
+            best_model_path = os.path.join(self.cfg.log.ckpt_dir, "best_model")
+
+            if self.accelerator.is_main_process:
+                current_val_metric = val_stats.get("loss", float('inf'))
+                should_save_best = current_val_metric < best_val_metric
+                if should_save_best:
+                    best_val_metric = current_val_metric
+            else:
+                should_save_best = False
+
+            # 广播保存决策
+            flag = torch.tensor([int(should_save_best)], device=self.accelerator.device)
+            dist.broadcast(flag, src=0)
+            should_save_best = bool(flag.item())
+
+            if should_save_best:
+                self.accelerator.wait_for_everyone()
                 self.accelerator.save_state(best_model_path, safe_serialization=False)
-                self.log_info(f"Saved best model at epoch {epoch} with val_metric: {best_val_metric:.4f}")
+                self.accelerator.wait_for_everyone()
+
+                if self.accelerator.is_main_process:
+                    self.log_info(f"Saved best model at epoch {epoch} with val_metric: {best_val_metric:.4f}")
 
             self.accelerator.wait_for_everyone()
 
-            if (
-                epoch + 1
-            ) % self.cfg.log.ckpt_interval == 0 or epoch + 1 == self.cfg.train.num_epoch:
+            if ((epoch + 1) % self.cfg.log.ckpt_interval == 0) or (epoch + 1 == self.cfg.train.num_epoch):
                 if self.accelerator.sync_gradients:
                     self.global_step = self.iters_per_epoch * (epoch + 1)
                     save_path = os.path.join(
                         self.cfg.log.ckpt_dir,
                         f"checkpoint_{epoch}",
                     )
+
+                    self.accelerator.wait_for_everyone()
                     self.accelerator.save_state(save_path, safe_serialization=False)
-                    self.log_info(
-                        f"Saved state for global step {self.global_step}"
-                    )
+                    self.accelerator.wait_for_everyone()
 
-                    # Manage saved checkpoints
-                    saved_checkpoints.append(save_path)
-                    if self.accelerator.is_main_process and len(saved_checkpoints) > max_checkpoints:
-                        oldest_checkpoint = saved_checkpoints.pop(0)
-                        if os.path.exists(oldest_checkpoint):
-                            shutil.rmtree(oldest_checkpoint)
-                            self.log_info(f"Removed old checkpoint: {oldest_checkpoint}")
+                    if self.accelerator.is_main_process:
+                        self.log_info(f"Saved state for global step {self.global_step}")
 
-                self.accelerator.wait_for_everyone()
+                        saved_checkpoints.append(save_path)
+                        if len(saved_checkpoints) > max_checkpoints:
+                            oldest_checkpoint = saved_checkpoints.pop(0)
+                            if os.path.exists(oldest_checkpoint):
+                                shutil.rmtree(oldest_checkpoint)
+                                self.log_info(f"Removed old checkpoint: {oldest_checkpoint}")
+
 
             log_stats = {
                 **{f"train_{k}": v for k, v in train_stats.items()},
@@ -309,7 +388,7 @@ class BaseTrainer:
         val_loss /= total_samples
 
         # Gather the stats from all processes
-        metric_logger.synchronize_between_processes()
+        # metric_logger.synchronize_between_processes()
         self.log_info(f"Validation results: {metric_logger}")
 
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
@@ -362,7 +441,20 @@ class BaseTrainer:
                     sys.exit(1)
 
                 self.accelerator.backward(loss)
+                # ### debug
+                # model_for_check = self.model.module if hasattr(self.model, "module") else self.model
 
+                # no_grad_names = []
+                # for name, p in model_for_check.named_parameters():
+                #     if p.requires_grad and p.grad is None:
+                #         no_grad_names.append(name)
+
+                # print("\n[NO GRAD PARAMS]")
+                # for n in no_grad_names[:300]:
+                #     print(n)
+                # print("total:", len(no_grad_names))
+                # ### debug
+                
                 for item in batch_output:
                     if 'loss' in item:
                         batch_output[item] = self.accelerator.gather(batch_output[item]).mean().item()
@@ -390,9 +482,13 @@ class BaseTrainer:
 
                     grad_norm = get_gradient_norm(self.model.parameters())
 
-                if self.accelerator.state.deepspeed_plugin is None:
-                    self.optimizer.step()
-                    self.optimizer.zero_grad()
+                # if self.accelerator.state.deepspeed_plugin is None:
+                #     self.optimizer.step()
+                #     self.optimizer.zero_grad()
+                # self.lr_scheduler.step()
+
+                self.optimizer.step()
+                self.optimizer.zero_grad()
                 self.lr_scheduler.step()
 
             if self.accelerator.sync_gradients:
@@ -443,14 +539,34 @@ class BaseTrainer:
         else:
             log_keys = list(output.keys())
 
+        tb_alias_map = {
+            "train_loss": ["loss/total"],
+            "train_local_pts_loss": ["loss/point_local"],
+            "train_trans_loss": ["loss/extr_t"],
+            "train_rot_loss": ["loss/extr_r"],
+            "train_normal_loss": ["loss/normalize"],
+            "val_loss": ["loss_val/total"],
+            "val_local_pts_loss": ["loss_val/point_local"],
+            "val_trans_loss": ["loss_val/extr_t"],
+            "val_rot_loss": ["loss_val/extr_r"],
+            "val_normal_loss": ["loss_val/normalize"],
+        }
+
         log_scaler = {}
         log_img = {}
         for k in log_keys:
             v = output[k]
             if np.isscalar(v):
                 log_scaler[prefix+'/'+k] = v
+                # 额外 alias 名字
+                if k in tb_alias_map:
+                    for alias_k in tb_alias_map[k]:
+                        alias_key = f"{prefix}/{alias_k}" if prefix else alias_k
+                        log_scaler[alias_key] = v
+
                 continue
-            if Image.isImageType(v):
+            
+            if isinstance(v, Image.Image):
                 log_img[prefix+'/'+k] = v
 
         self.accelerator.log(log_scaler, step)
@@ -474,9 +590,12 @@ class BaseTrainer:
         )
 
         # Initialize the Environment variables throught MPI run
+        # import os
+        # print(f"[before init_distributed_mode] WORLD_SIZE={os.environ.get('WORLD_SIZE')}, RANK={os.environ.get('RANK')}, LOCAL_RANK={os.environ.get('LOCAL_RANK')}")
         init_distributed_mode(
             self.cfg.train, init_pytorch_ddp=False
         )  # set `init_pytorch_ddp` to False, since the accelerate will do later
+        # print(f"[after init_distributed_mode] WORLD_SIZE={os.environ.get('WORLD_SIZE')}, RANK={os.environ.get('RANK')}, LOCAL_RANK={os.environ.get('LOCAL_RANK')}")
 
         if self.cfg.log.use_wandb:
             log_with = 'wandb'
@@ -515,11 +634,11 @@ class BaseTrainer:
 
         torch._inductor.config.reorder_for_compute_comm_overlap = True
 
-        dynamo_plugin = TorchDynamoPlugin(
-            backend=dynamo_backend,
-            mode="max-autotune-no-cudagraphs",
-            dynamic=self.cfg.train.get("dynamic_compile", True),
-        )
+        # dynamo_plugin = TorchDynamoPlugin(
+        #     backend=dynamo_backend,
+        #     mode="max-autotune-no-cudagraphs",
+        #     dynamic=self.cfg.train.get("dynamic_compile", True),
+        # )
         
         accelerate_config = dict(
             gradient_accumulation_steps=self.cfg.train.gradient_accumulation_steps,
@@ -530,11 +649,12 @@ class BaseTrainer:
                 non_blocking=True,
                 split_batches=False,
                 dispatch_batches=None,
-                even_batches=True,
+                even_batches=False, #default is True
                 use_seedable_sampler=False,
             ),
             step_scheduler_with_optimizer=False,             # not to step n_gpus times per step.
-            dynamo_plugin=dynamo_plugin,
+            # dynamo_plugin=dynamo_plugin,
+            dynamo_backend=dynamo_backend,
         )
 
         # fsdp
@@ -566,7 +686,26 @@ class BaseTrainer:
         # self.logger.rank_zero_only = False
         self.log_info(accelerator.state)
         # self.logger.rank_zero_only = True
-        
+
+        # ### debug------------------------------------------------
+        # import os
+        # import torch.distributed as dist
+
+        # print(f"WORLD_SIZE env: {os.environ.get('WORLD_SIZE')}")
+        # print(f"RANK env: {os.environ.get('RANK')}")
+        # print(f"LOCAL_RANK env: {os.environ.get('LOCAL_RANK')}")
+        # print(f"accelerator.num_processes: {accelerator.num_processes}")
+        # print(f"accelerator.process_index: {accelerator.process_index}")
+        # print(f"accelerator.local_process_index: {accelerator.local_process_index}")
+
+        # if dist.is_available() and dist.is_initialized():
+        #     print(f"dist world_size: {dist.get_world_size()}")
+        #     print(f"dist rank: {dist.get_rank()}")
+        # else:
+        #     print("torch.distributed not initialized")
+        # ### debug------------------------------------------------
+
+
         if self.cfg.random_seed is not None:
             set_seed(self.cfg.random_seed, device_specific=True)
 

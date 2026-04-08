@@ -28,6 +28,7 @@ def _make_dinov2_model(
     interpolate_offset: float = 0.1,
     pretrained: bool = True,
     weights: Union[Weights, str] = Weights.LVD142M,
+    model_dir=None,
     **kwargs,
 ):
     from ..models import vision_transformer as vits
@@ -55,7 +56,7 @@ def _make_dinov2_model(
     if pretrained:
         model_full_name = _make_dinov2_model_name(arch_name, patch_size, num_register_tokens)
         url = _DINOV2_BASE_URL + f"/{model_base_name}/{model_full_name}_pretrain.pth"
-        state_dict = torch.hub.load_state_dict_from_url(url, map_location="cpu")
+        state_dict = torch.hub.load_state_dict_from_url(url, map_location="cpu", model_dir=model_dir)
         model.load_state_dict(state_dict, strict=True)
 
     return model
@@ -95,7 +96,7 @@ def dinov2_vitg14(*, pretrained: bool = True, weights: Union[Weights, str] = Wei
     )
 
 
-def dinov2_vits14_reg(*, pretrained: bool = True, weights: Union[Weights, str] = Weights.LVD142M, **kwargs):
+def dinov2_vits14_reg(*, pretrained: bool = True, weights: Union[Weights, str] = Weights.LVD142M, model_dir=None, **kwargs):
     """
     DINOv2 ViT-S/14 model with registers (optionally) pretrained on the LVD-142M dataset.
     """
@@ -106,6 +107,7 @@ def dinov2_vits14_reg(*, pretrained: bool = True, weights: Union[Weights, str] =
         num_register_tokens=4,
         interpolate_antialias=True,
         interpolate_offset=0.0,
+        model_dir=model_dir,
         **kwargs,
     )
 
@@ -125,7 +127,7 @@ def dinov2_vitb14_reg(*, pretrained: bool = True, weights: Union[Weights, str] =
     )
 
 
-def dinov2_vitl14_reg(*, pretrained: bool = True, weights: Union[Weights, str] = Weights.LVD142M, **kwargs):
+def dinov2_vitl14_reg(*, pretrained: bool = True, weights: Union[Weights, str] = Weights.LVD142M, model_dir=None, **kwargs):
     """
     DINOv2 ViT-L/14 model with registers (optionally) pretrained on the LVD-142M dataset.
     """
@@ -136,6 +138,7 @@ def dinov2_vitl14_reg(*, pretrained: bool = True, weights: Union[Weights, str] =
         num_register_tokens=4,
         interpolate_antialias=True,
         interpolate_offset=0.0,
+        model_dir=model_dir, 
         **kwargs,
     )
 

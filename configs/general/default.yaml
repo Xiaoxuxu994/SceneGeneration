@@ -1,7 +1,8 @@
 # @package _global_
 
 name: 'template'
-working_dir: ${work_dir}
+# work_dir: /efs-mi-east4-2/z00533370/proj_3dgs/3drecon/
+work_dir: /efs-m3ga/c50041401/exp/pi3sup/
 random_seed: 1111
 
 log:
@@ -24,4 +25,4 @@ hydra:
     # dir: ${work_dir}/outputs/${name}-${now:%Y-%m-%d_%H-%M-%S}
     dir: ${work_dir}/outputs/${name}
 
-work_dir: ${hydra:runtime.cwd}
+# work_dir: ${hydra:runtime.cwd}

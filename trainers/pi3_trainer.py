@@ -50,22 +50,71 @@ class Pi3Trainer(BaseTrainer):
         return super().build_optimizer(cfg_optimizer, model, param_group_fn=param_group_fn)
 
     def before_epoch(self, epoch):
-        if hasattr(self.train_loader, 'dataset') and hasattr(self.train_loader.dataset, 'set_epoch'):
-            self.train_loader.dataset.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
-        if hasattr(self.train_loader, 'sampler') and hasattr(self.train_loader.sampler, 'set_epoch'):
-            self.train_loader.sampler.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
-        if hasattr(self.train_loader, 'batch_sampler') and hasattr(self.train_loader.batch_sampler, 'batch_sampler') and hasattr(self.train_loader.batch_sampler.batch_sampler, 'sampler') and hasattr(self.train_loader.batch_sampler.batch_sampler.sampler, 'set_epoch'):       # handle acclerate warpped dataloader (more gpu)
-            self.train_loader.batch_sampler.batch_sampler.sampler.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
-        if hasattr(self.train_loader, 'batch_sampler') and hasattr(self.train_loader.batch_sampler, 'set_epoch'):       # handle acclerate warpped dataloader (more gpu)
-            self.train_loader.batch_sampler.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
+        # if hasattr(self.train_loader, 'dataset') and hasattr(self.train_loader.dataset, 'set_epoch'):
+        #     self.train_loader.dataset.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
+        # if hasattr(self.train_loader, 'sampler') and hasattr(self.train_loader.sampler, 'set_epoch'):
+        #     self.train_loader.sampler.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
+        # if hasattr(self.train_loader, 'batch_sampler') and hasattr(self.train_loader.batch_sampler, 'batch_sampler') and hasattr(self.train_loader.batch_sampler.batch_sampler, 'sampler') and hasattr(self.train_loader.batch_sampler.batch_sampler.sampler, 'set_epoch'):       # handle acclerate warpped dataloader (more gpu)
+        #     self.train_loader.batch_sampler.batch_sampler.sampler.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
+        # if hasattr(self.train_loader, 'batch_sampler') and hasattr(self.train_loader.batch_sampler, 'set_epoch'):       # handle acclerate warpped dataloader (more gpu)
+        #     self.train_loader.batch_sampler.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
         
 
+        # if hasattr(self.test_loader, 'dataset') and hasattr(self.test_loader.dataset, 'set_epoch'):
+        #     self.test_loader.dataset.set_epoch(0, base_seed=self.cfg.train.base_seed)
+        # if hasattr(self.test_loader, 'batch_sampler') and hasattr(self.test_loader.batch_sampler, 'batch_sampler') and hasattr(self.test_loader.batch_sampler.batch_sampler, 'sampler') and hasattr(self.test_loader.batch_sampler.batch_sampler.sampler, 'set_epoch'):       # handle acclerate warpped dataloader (more gpu)
+        #     self.test_loader.batch_sampler.batch_sampler.sampler.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
+        # if hasattr(self.test_loader, 'batch_sampler') and hasattr(self.train_loader.batch_sampler, 'set_epoch'):       # handle acclerate warpped dataloader (more gpu)
+        #     self.test_loader.batch_sampler.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
+
+        # ---------- train ----------
+        if hasattr(self.train_loader, 'dataset') and hasattr(self.train_loader.dataset, 'set_epoch'):
+            # custom dataset, can pass base_seed
+            try:
+                self.train_loader.dataset.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
+            except TypeError:
+                self.train_loader.dataset.set_epoch(epoch)
+
+        if hasattr(self.train_loader, 'sampler') and hasattr(self.train_loader.sampler, 'set_epoch'):
+            # PyTorch DistributedSampler 只能传 epoch
+            self.train_loader.sampler.set_epoch(epoch)
+
+        # handle accelerate wrapped dataloader
+        if (
+            hasattr(self.train_loader, 'batch_sampler')
+            and hasattr(self.train_loader.batch_sampler, 'batch_sampler')
+            and hasattr(self.train_loader.batch_sampler.batch_sampler, 'sampler')
+            and hasattr(self.train_loader.batch_sampler.batch_sampler.sampler, 'set_epoch')
+        ):
+            self.train_loader.batch_sampler.batch_sampler.sampler.set_epoch(epoch)
+
+        if hasattr(self.train_loader, 'batch_sampler') and hasattr(self.train_loader.batch_sampler, 'set_epoch'):
+            try:
+                self.train_loader.batch_sampler.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
+            except TypeError:
+                self.train_loader.batch_sampler.set_epoch(epoch)
+
+        # ---------- test ----------
         if hasattr(self.test_loader, 'dataset') and hasattr(self.test_loader.dataset, 'set_epoch'):
-            self.test_loader.dataset.set_epoch(0, base_seed=self.cfg.train.base_seed)
-        if hasattr(self.test_loader, 'batch_sampler') and hasattr(self.test_loader.batch_sampler, 'batch_sampler') and hasattr(self.test_loader.batch_sampler.batch_sampler, 'sampler') and hasattr(self.test_loader.batch_sampler.batch_sampler.sampler, 'set_epoch'):       # handle acclerate warpped dataloader (more gpu)
-            self.test_loader.batch_sampler.batch_sampler.sampler.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
-        if hasattr(self.test_loader, 'batch_sampler') and hasattr(self.train_loader.batch_sampler, 'set_epoch'):       # handle acclerate warpped dataloader (more gpu)
-            self.test_loader.batch_sampler.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
+            # 验证集通常固定即可；0
+            try:
+                self.test_loader.dataset.set_epoch(0, base_seed=self.cfg.train.base_seed)
+            except TypeError:
+                self.test_loader.dataset.set_epoch(0)
+
+        if (
+            hasattr(self.test_loader, 'batch_sampler')
+            and hasattr(self.test_loader.batch_sampler, 'batch_sampler')
+            and hasattr(self.test_loader.batch_sampler.batch_sampler, 'sampler')
+            and hasattr(self.test_loader.batch_sampler.batch_sampler.sampler, 'set_epoch')
+        ):
+            self.test_loader.batch_sampler.batch_sampler.sampler.set_epoch(epoch)
+
+        if hasattr(self.test_loader, 'batch_sampler') and hasattr(self.test_loader.batch_sampler, 'set_epoch'):
+            try:
+                self.test_loader.batch_sampler.set_epoch(epoch, base_seed=self.cfg.train.base_seed)
+            except TypeError:
+                self.test_loader.batch_sampler.set_epoch(epoch)
 
         if 'random_reslution' in self.cfg.train and self.cfg.train.random_reslution and self.cfg.train.num_resolution > 0:
             seed = epoch + self.cfg.train.base_seed
