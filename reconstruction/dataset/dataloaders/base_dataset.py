@@ -12,6 +12,7 @@ import dataset.utils.io as io
 import dataset.utils.common as cm
 from dataset.utils.preprocess import preprocess_images_for_encode, crop_images_and_intrs, crop_tracks_and_visibs
 from utils.common import calc_extr_inv, normalize_trans, depth2pointmap, globalpoint2local, trans_geo_to_first_frame_and_norm
+from utils.loss_utils import samp_points_by_pixel
 
 MAX_SAMPLE_RETRY = 10
 VAL_RATIO = 0.02
@@ -59,6 +60,7 @@ class Base_Dataset(Dataset):
         self.crop_lowerbound = crop_lowerbound
         self.crop_upperbound = crop_upperbound
         self.img_max_size = img_max_size
+        self.img_max_sizes = [518, 504, 490, 476, 462, 448, 434, 420]
         self.patch_size = patch_size
     
     def __len__(self):
@@ -109,15 +111,18 @@ class Base_Dataset(Dataset):
         return np.array(view_ids)
     
     def prepare_data_for_dino_encode(self, data):
-        data["input_images"], data["input_intrs"], cbox = preprocess_images_for_encode(
-            data["input_images"], intrs=data["input_intrs"], interp_method="bilinear", max_size=self.img_max_size, patch_size=self.patch_size)
-        data["input_depths"], _, _ = preprocess_images_for_encode(data["input_depths"], cbox=cbox, max_size=self.img_max_size, patch_size=self.patch_size)
+        max_image_size = self.img_max_sizes[np.random.randint(0, 8)]
+        data["input_images"], data["input_intrs"], cbox, scale_factor = preprocess_images_for_encode(
+            data["input_images"], intrs=data["input_intrs"], interp_method="bilinear", max_size=max_image_size, patch_size=self.patch_size)
+        data["input_depths"], _, _, _ = preprocess_images_for_encode(data["input_depths"], cbox=cbox, max_size=max_image_size, patch_size=self.patch_size)
         if data["input_depth_masks"] is not None:
-            data["input_depth_masks"], _, _ = preprocess_images_for_encode(data["input_depth_masks"], cbox=cbox, max_size=self.img_max_size, patch_size=self.patch_size)
+            data["input_depth_masks"], _, _, _ = preprocess_images_for_encode(data["input_depth_masks"], cbox=cbox, max_size=max_image_size, patch_size=self.patch_size)
         if data.get("input_tracks0", None) is not None:
             ## Crop processed tracking information for realistic dataset. 
             ## For synthetic dataset, we resize images first and then calculate matching. 
             out_H, out_W = data["input_images"].shape[-2:]
+            data["input_tracks0"] = data["input_tracks0"] * scale_factor
+            data["input_tracks1"] = data["input_tracks1"] * scale_factor
             offset = torch.tensor([cbox[2], cbox[0]], dtype=data["input_tracks0"].dtype, device=data["input_tracks0"].device)[None, None] # 1 1 2
             data["input_tracks0"] = data["input_tracks0"] - offset
             data["input_tracks1"] = data["input_tracks1"] - offset
@@ -326,7 +331,7 @@ class Synthetic_Dataset(Base_Dataset):
             if crop_ratio is not None:
                 all_data = self.aug_by_crop(all_data, crop_ratio=crop_ratio)
             all_data = self.prepare_data_for_dino_encode(all_data)
-            all_data = self.filter_top_depth(all_data, p=0.04)
+            all_data = self.filter_top_depth(all_data, p=0.004)
             all_images = all_data["input_images"]
             all_depths = all_data["input_depths"]
             all_depth_masks = all_data["input_depth_masks"]
@@ -442,7 +447,7 @@ class Realistic_Dataset(Base_Dataset):
                 if (os.path.exists(os.path.join(sample_folder, "rgb")) and 
                     os.path.exists(os.path.join(sample_folder, "moge_depth")) and 
                     os.path.exists(os.path.join(sample_folder, "moge_depth_mask")) and 
-                    os.path.exists(os.path.join(sample_folder, "cotracker3"))):
+                    os.path.exists(os.path.join(sample_folder, "romav2"))):
                     filtered_sample_list.append(sample_folder)
             np.savez_compressed(sample_list_file, data=filtered_sample_list)
             
@@ -450,6 +455,19 @@ class Realistic_Dataset(Base_Dataset):
         if self.is_train is not None and valid_sample_num > 0:
             filtered_sample_list = filtered_sample_list[:-valid_sample_num] if self.is_train else filtered_sample_list[-valid_sample_num:]
         return filtered_sample_list
+    
+    def update_track_visib_by_depth_mask(self, track: torch.Tensor, visib: torch.Tensor, depth_mask: torch.Tensor):
+        """Filter out illegal tracking points from visib by identifying the illegal values in depth mask.
+
+        Args:
+            track (torch.Tensor): Tensor of shape (k, 2).
+            visib (torch.Tensor): Tensor of shape (k).
+            depth_mask (torch.Tensor): Tensor of shape (1, H, W).
+        """
+        valid_track = samp_points_by_pixel(depth_mask[None], track[None], mode="nearest", padding_mode="zeros")[0, :, 0] # k
+        valid_track = valid_track > 0.5
+        valid_track = valid_track & visib
+        return valid_track
     
     def __len__(self):
         return len(self.sample_list)
@@ -465,7 +483,8 @@ class Realistic_Dataset(Base_Dataset):
             image_list = sorted(glob(os.path.join(sample_folder, "rgb", "*{}".format(self.image_format))))
             depth_list = sorted(glob(os.path.join(sample_folder, "moge_depth", "*.exr")))
             depth_mask_list = sorted(glob(os.path.join(sample_folder, "moge_depth_mask", "*.png")))
-            tracking_file = sorted(glob(os.path.join(sample_folder, "cotracker3", "*.npz")))
+            # tracking_file = sorted(glob(os.path.join(sample_folder, "cotracker3", "*.npz")))
+            tracking_file = sorted(glob(os.path.join(sample_folder, "romav2", "*.npz")))
             if len(tracking_file) == 0:
                 return None
             tracking_file = tracking_file[0]
@@ -565,16 +584,23 @@ class Realistic_Dataset(Base_Dataset):
                 for i in range(len(samp_view_ids)):
                     for j in range(i + 1, len(samp_view_ids)):
                         tracking_info_idx = cm.get_tracking_idx_by_pair(samp_view_ids[i], samp_view_ids[j], total=clip_view_num)
+                        track0 = tracking_info_raw["track0"][tracking_info_idx]
+                        track1 = tracking_info_raw["track1"][tracking_info_idx]
+                        visib0 = tracking_info_raw["visib0"][tracking_info_idx]
+                        visib1 = tracking_info_raw["visib1"][tracking_info_idx]
+                        visib0 = self.update_track_visib_by_depth_mask(track0, visib0, depth_masks[i])
+                        visib1 = self.update_track_visib_by_depth_mask(track1, visib1, depth_masks[j])
+                        visib = visib0 & visib1
                         if samp_view_ids[i] < samp_view_ids[j]:
-                            tracking_info["track0"].append(tracking_info_raw["track0"][tracking_info_idx])
-                            tracking_info["track1"].append(tracking_info_raw["track1"][tracking_info_idx])
-                            tracking_info["visib0"].append(tracking_info_raw["visib0"][tracking_info_idx])
-                            tracking_info["visib1"].append(tracking_info_raw["visib1"][tracking_info_idx])
+                            tracking_info["track0"].append(track0)
+                            tracking_info["track1"].append(track1)
+                            tracking_info["visib0"].append(visib)
+                            tracking_info["visib1"].append(visib)
                         else:
-                            tracking_info["track0"].append(tracking_info_raw["track1"][tracking_info_idx])
-                            tracking_info["track1"].append(tracking_info_raw["track0"][tracking_info_idx])
-                            tracking_info["visib0"].append(tracking_info_raw["visib1"][tracking_info_idx])
-                            tracking_info["visib1"].append(tracking_info_raw["visib0"][tracking_info_idx])
+                            tracking_info["track0"].append(track1)
+                            tracking_info["track1"].append(track0)
+                            tracking_info["visib0"].append(visib)
+                            tracking_info["visib1"].append(visib)
                 for k in tracking_info.keys():
                     tracking_info[k] = torch.stack(tracking_info[k])
                 
@@ -593,7 +619,6 @@ class Realistic_Dataset(Base_Dataset):
                     input_points_local=None, 
                     dataset_name=self.__class__.__name__, 
                 )
-                # data = self.prepare_data_for_dino_encode(data)
                 
                 timer.record_start("3_MatchCalc")
                 matched_pairs = self.is_visib_valid(data["input_visibs0"].sum(dim=-1) / 625, 

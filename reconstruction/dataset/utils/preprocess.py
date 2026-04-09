@@ -474,7 +474,7 @@ def preprocess_images_for_encode(images, intrs=None, cbox=None, out_shape=None, 
     ## Perform resize of the same scale along height and width, and then crop the redundant part. 
     if out_shape[0] == H and out_shape[1] == W:
         ## No need to resize.
-        return images, intrs, (0, H, 0, W)
+        return images, intrs, (0, H, 0, W), 1.0
     if out_shape[0] / H > out_shape[1] / W: # width will be preserved and then cropped.
         scale_factor = out_shape[0] / H
         scale_shape = (out_shape[0], int(W * scale_factor + 1))
@@ -496,11 +496,11 @@ def preprocess_images_for_encode(images, intrs=None, cbox=None, out_shape=None, 
         bottom_right_col = top_left_col + out_shape[1]
         cbox = (top_left_row, bottom_right_row, top_left_col, bottom_right_col)
         out_images = out_images[..., cbox[0]: cbox[1], cbox[2]: cbox[3]]
-        return out_images, out_intrs, cbox
+        return out_images, out_intrs, cbox, scale_factor
     
     ## Intrinsics not give, meaning that other modalities are processed ahead. Crop by the given crop box.
     out_images = out_images[..., cbox[0]: cbox[1], cbox[2]: cbox[3]]
-    return out_images, None, None
+    return out_images, None, None, scale_factor
 
 
 def crop_images_and_intrs(images: torch.Tensor, intrs: torch.Tensor=None, scale: float | tuple[float, float]=None, out_shape=None):
