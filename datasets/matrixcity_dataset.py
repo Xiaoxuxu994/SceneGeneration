@@ -35,6 +35,9 @@ class MatrixCityDataset(BaseDataset):
         use_normal=False,
         **kwargs,
     ):
+        '''
+            https://github.com/city-super/MatrixCity
+        '''
         super().__init__(**kwargs)
         assert data_root is not None
 
@@ -55,7 +58,7 @@ class MatrixCityDataset(BaseDataset):
         root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(
             cache_dir,
-            f"{self.dataset_label}_{root_hash}_normal{int(self.use_normal)}_cache.pkl"
+            f"{self.dataset_label}_{root_hash}_cache.pkl"
         )
 
         if not os.path.exists(cache_path):
@@ -198,19 +201,33 @@ class MatrixCityDataset(BaseDataset):
     # =========================
     # camera helpers
     # =========================
-    def _read_exr(self, path):
-        try:
-            import imageio.v3 as iio
-            arr = iio.imread(path).astype(np.float32)
-        except Exception:
-            import cv2
-            os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
-            arr = cv2.imread(path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
-            if arr is None:
-                raise RuntimeError(f"Failed to read EXR: {path}")
-            arr = arr.astype(np.float32)
-        return arr
+    def _read_exr_depth(self, path):
+        """
+        读取单通道 EXR depth。
+        """
+        depth = cv2.imread(path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+        if depth is None:
+            raise ValueError(f"Failed to read EXR depth: {path}")
 
+        if depth.ndim == 3:
+            # 有些 exr 会读成 HxWx3，这里取第一通道
+            depth = depth[..., 0]
+
+        depth = depth.astype(np.float32)
+        depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+        return depth
+
+    def _read_exr_normal(self, path):
+        """
+        读取3通道 EXR normal。
+        """
+        normal = cv2.imread(path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+        if normal is None:
+            raise ValueError(f"Failed to read EXR depth: {path}")
+
+        normal = normal.astype(np.float32)
+        normal = np.nan_to_num(normal, nan=0.0, posinf=0.0, neginf=0.0)
+        return normal
     # =========================
     # sample
     # =========================
@@ -241,16 +258,16 @@ class MatrixCityDataset(BaseDataset):
 
         rgb_image = Image.open(rec["rgb_path"]).convert("RGB")
 
-        depthmap = self._read_exr(rec["depth_path"])
+        depthmap = self._read_exr_depth(rec["depth_path"])
         if depthmap.ndim == 3:
             depthmap = depthmap[..., 0]
-        depthmap = depthmap #* 0.01  # cm -> m
+        depthmap = depthmap * 0.01  # cm -> m
         depthmap = np.nan_to_num(depthmap, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
         depthmap = threshold_depth_map(depthmap, min_percentile=-1, max_percentile=98)
 
         normal = None
         if self.use_normal:
-            normal = self._read_exr(rec["normal_path"]).astype(np.float32)
+            normal = self._read_exr_normal(rec["normal_path"]).astype(np.float32)
             if normal.ndim == 2:
                 normal = normal[..., None]
             if normal.shape[-1] > 3:

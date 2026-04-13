@@ -51,6 +51,7 @@ from accelerate.utils import (
     set_seed,
 )
 import numpy as np
+from collections import defaultdict
 
 class BaseTrainer:
     def __init__(self, cfg):
@@ -102,39 +103,6 @@ class BaseTrainer:
             # self.model = self.accelerator.prepare(self.model)
             self.accelerator.wait_for_everyone()
 
-        # ### -------------------------------------------------------------------------
-        # name_map = {id(p): n for n, p in self.model.named_parameters()}
-        # for i, group in enumerate(self.optimizer.param_groups):
-        #     counter = {
-        #         "encoder": 0,
-        #         "decoder": 0,
-        #         "point_decoder": 0,
-        #         "camera_decoder": 0,
-        #         "point_head": 0,
-        #         "camera_head": 0,
-        #         "others": 0,
-        #     }
-        #     for p in group["params"]:
-        #         n = name_map.get(id(p), "")
-        #         if n.startswith("encoder."):
-        #             counter["encoder"] += 1
-        #         elif n.startswith("decoder."):
-        #             counter["decoder"] += 1
-        #         elif n.startswith("point_decoder."):
-        #             counter["point_decoder"] += 1
-        #         elif n.startswith("camera_decoder."):
-        #             counter["camera_decoder"] += 1
-        #         elif n.startswith("point_head."):
-        #             counter["point_head"] += 1
-        #         elif n.startswith("camera_head."):
-        #             counter["camera_head"] += 1
-        #         else:
-        #             counter["others"] += 1
-        #     print(f"\n===== group {i} =====")
-        #     print("lr =", group["lr"], "wd =", group["weight_decay"])
-        #     print(counter)
-        # ### -------------------------------------------------------------------------
-
         # Create the LR scheduler
         self.iters_per_epoch = self.cfg.train.iters_per_epoch if self.cfg.train.iters_per_epoch > 0 else len(self.train_loader)
         self.iters_per_test = self.cfg.test.iters_per_test if self.cfg.test.iters_per_test > 0 else len(self.test_loader)
@@ -164,15 +132,23 @@ class BaseTrainer:
         self.log_info("before accelerator.prepare")
         
         ## ------------------------------------------------------------------------------------
-        # warp for enable deepspeed zero2
+        # # warp for enable deepspeed zero2
+        # (
+        #     self.model,
+        #     self.train_loader,
+        #     self.test_loader,
+        #     self.optimizer,
+        #     self.lr_scheduler
+        # ) = self.accelerator.prepare(
+        #     self.model, self.train_loader, self.test_loader, self.optimizer, self.lr_scheduler
+        # )
+
         (
             self.model,
-            self.train_loader,
-            self.test_loader,
             self.optimizer,
             self.lr_scheduler
         ) = self.accelerator.prepare(
-            self.model, self.train_loader, self.test_loader, self.optimizer, self.lr_scheduler
+            self.model, self.optimizer, self.lr_scheduler
         )
 
         # prepare 之后重新统计 dataloader 长度，用于日志和后续 resume 计算
@@ -181,12 +157,12 @@ class BaseTrainer:
             if self.cfg.train.iters_per_epoch > 0
             else len(self.train_loader)
         )
+
         prepared_iters_per_test = (
             self.cfg.test.iters_per_test
             if self.cfg.test.iters_per_test > 0
             else len(self.test_loader)
         )
-
         # 如果和 prepare 前不一致，给一个提示
         if prepared_iters_per_epoch != self.iters_per_epoch:
             self.log_info(
@@ -244,6 +220,7 @@ class BaseTrainer:
         latest_epoch = self.auto_resume()
         self.initial_global_step = self.iters_per_epoch * latest_epoch
         self.first_epoch = latest_epoch
+        self.global_step = self.initial_global_step 
 
         os.makedirs(self.cfg.log.ckpt_dir, exist_ok=True)
 
@@ -277,10 +254,11 @@ class BaseTrainer:
             # train_stats = {}
 
             # Perform validation at the end of each epoch
-            if self.accelerator.is_main_process:
-                val_stats = self.validate(epoch)
-            else:
-                val_stats = {}
+            val_stats = self.validate(epoch)
+            # if self.accelerator.is_main_process:
+            #     val_stats = self.validate(epoch)
+            # else:
+            #     val_stats = {}
             self.accelerator.wait_for_everyone()
 
             best_model_path = os.path.join(self.cfg.log.ckpt_dir, "best_model")
@@ -361,50 +339,151 @@ class BaseTrainer:
         header = f"Validation Epoch: [{epoch}]"
 
         val_loss = 0.0
-        total_samples = 0
+        total_samples = 0.0
+
+        # per-dataset weighted stats
+        per_dataset_sums = defaultdict(lambda: defaultdict(float))
+        per_dataset_counts = defaultdict(float)
 
         self.log_info(f"Start validation for epoch {epoch}")
+
         with torch.no_grad():
-            for batch in metric_logger.log_every(
-                self.test_loader, self.cfg.train.print_freq, header
+            for it, batch in enumerate(
+                metric_logger.log_every(self.test_loader, self.cfg.train.print_freq, header)
             ):
+                if it >= self.iters_per_test:
+                    break
+
+                if batch is None:
+                    continue
+
+                dataset_name = self._get_dataset_name(batch)
+                batch_weight = len(batch)  # keep original semantics
+
                 batch = move_to_device(batch, self.accelerator.device)
 
                 # Forward pass
                 outputs = self.forward_batch(batch, mode='test')
-                outputs = self.calculate_loss(outputs, batch, mode='train')
+                outputs = self.calculate_loss(outputs, batch, mode='test') 
                 loss = outputs.loss
 
-                # Gather statistics
                 loss_value = loss.item()
-                val_loss += loss_value * len(batch)
-                total_samples += len(batch)
+                val_loss += loss_value * batch_weight
+                total_samples += batch_weight
 
-                # self.log_all(outputs, self.global_step, prefix='val')
+                # only keep scalar items for metric logger
+                scalar_outputs = {}
+                for item in outputs:
+                    v = outputs[item]
 
-                metric_logger.update(**outputs)
+                    if torch.is_tensor(v):
+                        if v.ndim == 0:
+                            v = v.item()
+                        else:
+                            continue
+                    elif np.isscalar(v):
+                        v = float(v)
+                    else:
+                        continue
 
-        # Average the validation loss
-        val_loss /= total_samples
+                    scalar_outputs[item] = v
 
-        # Gather the stats from all processes
-        # metric_logger.synchronize_between_processes()
-        self.log_info(f"Validation results: {metric_logger}")
+                    if dataset_name is not None and 'loss' in item:
+                        per_dataset_sums[dataset_name][item] += v * batch_weight
 
-        return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+                if dataset_name is not None:
+                    per_dataset_counts[dataset_name] += batch_weight
+
+                metric_logger.update(**scalar_outputs)
+
+        # ---------------------------
+        # synchronize metric_logger meters across all processes
+        # ---------------------------
+        metric_logger.synchronize_between_processes()
+
+        # ---------------------------
+        # globally reduce total val loss / total samples
+        # ---------------------------
+        loss_cnt = torch.tensor(
+            [val_loss, total_samples],
+            device=self.accelerator.device,
+            dtype=torch.float32,
+        )
+        dist.all_reduce(loss_cnt, op=dist.ReduceOp.SUM)
+
+        global_val_loss = loss_cnt[0].item()
+        global_total_samples = loss_cnt[1].item()
+
+        if global_total_samples > 0:
+            global_val_loss /= global_total_samples
+
+        if self.accelerator.is_main_process:
+            self.log_info(f"Validation results: {metric_logger}")
+
+        # ---------------------------
+        # reduce per-dataset stats across all processes
+        # ---------------------------
+        ds_log = {}
+
+        # gather all dataset names from every rank
+        local_dataset_names = list(per_dataset_counts.keys())
+        gathered_dataset_names = [None for _ in range(self.accelerator.num_processes)]
+        dist.all_gather_object(gathered_dataset_names, local_dataset_names)
+
+        all_dataset_names = sorted(
+            set(name for names in gathered_dataset_names for name in (names or []))
+        )
+
+        for ds_name in all_dataset_names:
+            # reduce count
+            cnt_local = per_dataset_counts.get(ds_name, 0.0)
+            cnt_tensor = torch.tensor(
+                [cnt_local], device=self.accelerator.device, dtype=torch.float32
+            )
+            dist.all_reduce(cnt_tensor, op=dist.ReduceOp.SUM)
+            cnt_global = cnt_tensor.item()
+
+            if cnt_global <= 0:
+                continue
+
+            # gather all metric keys for this dataset
+            local_metric_keys = list(per_dataset_sums.get(ds_name, {}).keys())
+            gathered_metric_keys = [None for _ in range(self.accelerator.num_processes)]
+            dist.all_gather_object(gathered_metric_keys, local_metric_keys)
+
+            all_metric_keys = sorted(
+                set(k for keys in gathered_metric_keys for k in (keys or []))
+            )
+
+            for k in all_metric_keys:
+                s_local = per_dataset_sums.get(ds_name, {}).get(k, 0.0)
+                s_tensor = torch.tensor(
+                    [s_local], device=self.accelerator.device, dtype=torch.float32
+                )
+                dist.all_reduce(s_tensor, op=dist.ReduceOp.SUM)
+                s_global = s_tensor.item()
+
+                ds_log[f"val_dataset/{ds_name}/{k}"] = s_global / cnt_global
+
+        if self.accelerator.is_main_process and len(ds_log) > 0:
+            self.accelerator.log(ds_log, step=self.global_step)
+
+        stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+        stats["loss"] = global_val_loss   # use exact globally reduced validation loss
+        return stats
 
     def train_one_epoch(self, epoch):
         self.model.train()
         metric_logger = MetricLogger(delimiter="  ")
         metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
-        metric_logger.add_meter(
-            "min_lr", SmoothedValue(window_size=1, fmt="{value:.6f}")
-        )
-        # metric_logger.add_meter(
-        #     "dataloader", SmoothedValue(window_size=1, fmt="{value:.6f}")
-        # )
+        metric_logger.add_meter("min_lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
+
         header = "Epoch: [{}]".format(epoch)
         loss_details_dict = {}
+
+        per_dataset_sums = defaultdict(lambda: defaultdict(float))
+        per_dataset_counts = defaultdict(int)
+
         start_steps = epoch * self.iters_per_epoch
         self.global_step = start_steps
 
@@ -420,118 +499,122 @@ class BaseTrainer:
             if it >= self.iters_per_epoch:
                 break
 
+            dataset_name = self._get_dataset_name(batch)
+
             with self.accelerator.accumulate(self.model):
-                # Perform the forward using the accerlate
+                # move to device
                 batch = move_to_device(batch, device=self.accelerator.device)
+
+                # forward
                 with self.accelerator.autocast():
                     forward_output = self.forward_batch(batch, mode='train')
+
+                # loss
                 batch_output = self.calculate_loss(forward_output, batch, mode='train')
                 loss = batch_output.loss
                 if loss > self.cfg.train.clip_loss:
                     loss = loss * 0.0
 
-                # Check if the loss is nan
                 loss_value = loss.item()
+
                 if not math.isfinite(loss_value):
-                    rank = get_rank()
-                    print(
-                        f"Rank {rank}: Loss is {loss_value}, stopping training at iter {it} (epoch {epoch}, global step {self.global_step}).",
-                        force=True,
+                    self.log_info(
+                        f"NaN/Inf loss at epoch={epoch}, iter={it}, global_step={self.global_step}, "
+                        f"dataset={dataset_name}, loss={loss_value}"
                     )
                     sys.exit(1)
 
+                # backward
                 self.accelerator.backward(loss)
-                # ### debug
-                # model_for_check = self.model.module if hasattr(self.model, "module") else self.model
 
-                # no_grad_names = []
-                # for name, p in model_for_check.named_parameters():
-                #     if p.requires_grad and p.grad is None:
-                #         no_grad_names.append(name)
-
-                # print("\n[NO GRAD PARAMS]")
-                # for n in no_grad_names[:300]:
-                #     print(n)
-                # print("total:", len(no_grad_names))
-                # ### debug
-                
+                scalar_loss_items = {}
                 for item in batch_output:
                     if 'loss' in item:
                         batch_output[item] = self.accelerator.gather(batch_output[item]).mean().item()
-                        if item in loss_details_dict:
-                            loss_details_dict[item] += batch_output[item] / self.cfg.train.gradient_accumulation_steps if loss_value != 0 else 0.0
-                        else:
-                            loss_details_dict[item] = batch_output[item] / self.cfg.train.gradient_accumulation_steps if loss_value != 0 else 0.0
+                        scalar_loss_items[item] = batch_output[item]
 
-                # clip the gradient
+                        if item in loss_details_dict:
+                            loss_details_dict[item] += (
+                                batch_output[item] / self.cfg.train.gradient_accumulation_steps
+                                if loss_value != 0 else 0.0
+                            )
+                        else:
+                            loss_details_dict[item] = (
+                                batch_output[item] / self.cfg.train.gradient_accumulation_steps
+                                if loss_value != 0 else 0.0
+                            )
+
+                if dataset_name is not None and loss_value != 0:
+                    per_dataset_counts[dataset_name] += 1
+                    for k, v in scalar_loss_items.items():
+                        per_dataset_sums[dataset_name][k] += v
+
+                # grad clip
                 if self.accelerator.sync_gradients:
                     params_to_clip = self.model.parameters()
-                    self.accelerator.clip_grad_norm_(
-                        params_to_clip, self.cfg.train.clip_grad
-                    )
+                    self.accelerator.clip_grad_norm_(params_to_clip, self.cfg.train.clip_grad)
 
                     def get_gradient_norm(parameters):
-                        norm = 0
+                        norm = 0.0
                         for param in parameters:
                             if param.grad is None:
                                 continue
                             local_norm = param.grad.detach().data.norm(2)
                             norm += local_norm.item() ** 2
-                        norm = norm**0.5
-                        return norm
+                        return norm ** 0.5
 
                     grad_norm = get_gradient_norm(self.model.parameters())
+                else:
+                    grad_norm = 0.0
 
-                # if self.accelerator.state.deepspeed_plugin is None:
-                #     self.optimizer.step()
-                #     self.optimizer.zero_grad()
-                # self.lr_scheduler.step()
-
+                # optimizer
                 self.optimizer.step()
                 self.optimizer.zero_grad()
                 self.lr_scheduler.step()
 
             if self.accelerator.sync_gradients:
-                    start_steps += 1
+                start_steps += 1
 
-                    # Report to tensorboard
-                    batch_output.update(loss_details_dict)
-                    loss_details_dict = {}
+                batch_output.update(loss_details_dict)
+                loss_details_dict = {}
 
-                    if start_steps % 10 == 0 :
-                        self.log_all(batch_output, start_steps, prefix='train')
-                    metric_logger.update(**batch_output)
+                if start_steps % 10 == 0:
+                    self.log_all(batch_output, start_steps, prefix='train')
+                metric_logger.update(**batch_output)
 
-                    min_lr = 10.0
-                    max_lr = 0.0
-                    for group in self.optimizer.param_groups:
-                        min_lr = min(min_lr, group["lr"])
-                        max_lr = max(max_lr, group["lr"])
+                min_lr = 10.0
+                max_lr = 0.0
+                for group in self.optimizer.param_groups:
+                    min_lr = min(min_lr, group["lr"])
+                    max_lr = max(max_lr, group["lr"])
 
-                    metric_logger.update(lr=max_lr)
-                    metric_logger.update(min_lr=min_lr)
-                    self.accelerator.log({"lr": max_lr}, step=start_steps)
-                    self.accelerator.log({"min_lr": min_lr}, step=start_steps)
+                metric_logger.update(lr=max_lr)
+                metric_logger.update(min_lr=min_lr)
+                self.accelerator.log({"lr": max_lr}, step=start_steps)
+                self.accelerator.log({"min_lr": min_lr}, step=start_steps)
 
-                    weight_decay_value = None
-                    for group in self.optimizer.param_groups:
-                        if group["weight_decay"] > 0:
-                            weight_decay_value = group["weight_decay"]
-                    metric_logger.update(weight_decay=weight_decay_value)
-                    metric_logger.update(grad_norm=grad_norm)
-                    self.accelerator.log(
-                        {"weight_decay": weight_decay_value}, step=start_steps
-                    )
-                    self.accelerator.log({"grad_norm": grad_norm}, step=start_steps)
+                weight_decay_value = None
+                for group in self.optimizer.param_groups:
+                    if group["weight_decay"] > 0:
+                        weight_decay_value = group["weight_decay"]
+                metric_logger.update(weight_decay=weight_decay_value)
+                metric_logger.update(grad_norm=grad_norm)
+                self.accelerator.log({"weight_decay": weight_decay_value}, step=start_steps)
+                self.accelerator.log({"grad_norm": grad_norm}, step=start_steps)
 
-                    self.global_step = start_steps
+                if self.accelerator.is_main_process:
+                    ds_log = {}
+                    for ds_name, cnt in per_dataset_counts.items():
+                        if cnt <= 0:
+                            continue
+                        for k, s in per_dataset_sums[ds_name].items():
+                            ds_log[f"train_dataset/{ds_name}/{k}"] = s / cnt
+                    if len(ds_log) > 0:
+                        self.accelerator.log(ds_log, step=start_steps)
 
-        # # gather the stats from all processes
-        # metric_logger.synchronize_between_processes()
-        # print("Averaged stats:", metric_logger)
+                self.global_step = start_steps
 
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-
 
     def log_all(self, output, step, prefix=""):        
         if 'log_keys' in output:
@@ -573,6 +656,55 @@ class BaseTrainer:
         for tracker in self.accelerator.trackers:
             tracker.log_images(log_img, step)
 
+    def _get_dataset_name(self, batch):
+        """
+        batch is expected to be a list of dicts.
+        Each sample dict contains a 'dataset' field.
+        """
+        if not isinstance(batch, (list, tuple)) or len(batch) == 0:
+            return None
+
+        names = []
+        for sample in batch:
+            if not isinstance(sample, dict):
+                continue
+            if "dataset" not in sample:
+                continue
+
+            v = sample["dataset"]
+            if isinstance(v, str):
+                names.append(v)
+            elif isinstance(v, (list, tuple)) and len(v) > 0:
+                names.extend([str(x) for x in v])
+            else:
+                names.append(str(v))
+
+        if len(names) == 0:
+            return None
+
+        uniq = sorted(set(names))
+        if len(uniq) == 1:
+            return uniq[0]
+        return "MIXED_" + "_".join(uniq)
+
+    def _normalize_dataset_name(self, v):
+        """
+        Normalize dataset name into a plain string.
+        """
+        if v is None:
+            return None
+
+        if isinstance(v, str):
+            return v
+
+        if isinstance(v, (list, tuple)) and len(v) > 0:
+            uniq = sorted(set(str(x) for x in v))
+            if len(uniq) == 1:
+                return uniq[0]
+            return "MIXED_" + "_".join(uniq)
+
+        return str(v)
+    
     def forward_batch(self, batch, mode='train'):
         output = self.model(batch)
         assert isinstance(output, EasyDict)
@@ -589,13 +721,9 @@ class BaseTrainer:
             # automatic_checkpoint_naming=True,
         )
 
-        # Initialize the Environment variables throught MPI run
-        # import os
-        # print(f"[before init_distributed_mode] WORLD_SIZE={os.environ.get('WORLD_SIZE')}, RANK={os.environ.get('RANK')}, LOCAL_RANK={os.environ.get('LOCAL_RANK')}")
         init_distributed_mode(
             self.cfg.train, init_pytorch_ddp=False
         )  # set `init_pytorch_ddp` to False, since the accelerate will do later
-        # print(f"[after init_distributed_mode] WORLD_SIZE={os.environ.get('WORLD_SIZE')}, RANK={os.environ.get('RANK')}, LOCAL_RANK={os.environ.get('LOCAL_RANK')}")
 
         if self.cfg.log.use_wandb:
             log_with = 'wandb'
@@ -649,7 +777,7 @@ class BaseTrainer:
                 non_blocking=True,
                 split_batches=False,
                 dispatch_batches=None,
-                even_batches=False, #default is True
+                even_batches=True, # default is true
                 use_seedable_sampler=False,
             ),
             step_scheduler_with_optimizer=False,             # not to step n_gpus times per step.
@@ -683,28 +811,7 @@ class BaseTrainer:
         # To block the print on non main process
         setup_for_distributed(accelerator.is_main_process)
 
-        # self.logger.rank_zero_only = False
         self.log_info(accelerator.state)
-        # self.logger.rank_zero_only = True
-
-        # ### debug------------------------------------------------
-        # import os
-        # import torch.distributed as dist
-
-        # print(f"WORLD_SIZE env: {os.environ.get('WORLD_SIZE')}")
-        # print(f"RANK env: {os.environ.get('RANK')}")
-        # print(f"LOCAL_RANK env: {os.environ.get('LOCAL_RANK')}")
-        # print(f"accelerator.num_processes: {accelerator.num_processes}")
-        # print(f"accelerator.process_index: {accelerator.process_index}")
-        # print(f"accelerator.local_process_index: {accelerator.local_process_index}")
-
-        # if dist.is_available() and dist.is_initialized():
-        #     print(f"dist world_size: {dist.get_world_size()}")
-        #     print(f"dist rank: {dist.get_rank()}")
-        # else:
-        #     print("torch.distributed not initialized")
-        # ### debug------------------------------------------------
-
 
         if self.cfg.random_seed is not None:
             set_seed(self.cfg.random_seed, device_specific=True)
@@ -734,7 +841,6 @@ class BaseTrainer:
         else:
             self.log_info(f"Resuming from checkpoint {path}")
             self.accelerator.load_state(
-                # os.path.join(self.cfg.log.ckpt_dir, path)
                 path
             )
             # Extract epoch number from checkpoint path

@@ -21,6 +21,9 @@ ckpts
 /configs/data/full.yaml
 *_check/
 /utils/utils_ceph.py
+/kernel_meta
+
 
 resize_demo_imgs.py
 img_dir_to_video.py
+fusion_result.json

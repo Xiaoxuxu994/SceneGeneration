@@ -4,7 +4,7 @@ model:
     _target_: pi3.models.pi3_training.Pi3
     pos_type: rope100
     decoder_size: small #large
-    model_size: dinov3_huge+_3Bv2 #dinov3_huge+_3.2B,dinov3_huge+_2.81B, dinov3_huge+_3B
+    model_size: dinov3_small+_debug #dinov3_huge+_3Bv2 #dinov3_huge+_3.2B,dinov3_huge+_2.81B, dinov3_huge+_3B
     load_vggt: false #true
     freeze_encoder: false #true
     use_global_points: false

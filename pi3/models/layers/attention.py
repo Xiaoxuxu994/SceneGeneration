@@ -355,7 +355,7 @@ class MemEffAttentionRope(AttentionRope):
 
     
 class FlashAttentionRope(AttentionRope):
-    def forward(self, x: Tensor, attn_bias=None, xpos=None) -> Tensor:
+    def forward(self, x: Tensor, attn_bias=None, xpos=None, xpos_max=None) -> Tensor:
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).transpose(1, 3)
 
@@ -364,8 +364,8 @@ class FlashAttentionRope(AttentionRope):
         q, k = self.q_norm(q).to(v.dtype), self.k_norm(k).to(v.dtype)
 
         if self.rope is not None:
-            q = self.rope(q, xpos)
-            k = self.rope(k, xpos)
+            q = self.rope(q, xpos, xpos_max=xpos_max)
+            k = self.rope(k, xpos, xpos_max=xpos_max)
 
         if q.dtype == torch.bfloat16:
             with nn.attention.sdpa_kernel(SDPBackend.FLASH_ATTENTION):

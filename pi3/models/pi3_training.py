@@ -376,7 +376,15 @@ class Pi3(nn.Module):
                     'builder': dinov3_vits16plus,
                     'model_dir': 'ckpts/dinov3_vits16plus',
                     'default_decoder': None,
-                    'variants':{}
+                    'variants': {
+                        'debug': dict(
+                            dec_embed_dim=512,
+                            dec_num_heads=8,
+                            mlp_ratio=4,
+                            dec_depth=2,
+                            head_depth=5,
+                        ),
+                    }
                 },
                 'base':{
                     'builder': dinov3_vitb16,
@@ -450,7 +458,7 @@ class Pi3(nn.Module):
             }
 
         }
-    def decode(self, hidden, N, H, W):
+    def decode(self, hidden, N, H, W, xpos_max=None):
         BN, hw, _ = hidden.shape
         B = BN // N
 
@@ -485,9 +493,9 @@ class Pi3(nn.Module):
                 hidden = hidden.reshape(B, N*hw, -1)
 
             if i >= self.num_dec_blk_not_to_checkpoint and self.training:
-                hidden = checkpoint(blk, hidden, xpos=pos, use_reentrant=False)
+                hidden = checkpoint(blk, hidden, pos, xpos_max, use_reentrant=True)
             else:
-                hidden = blk(hidden, xpos=pos)
+                hidden = blk(hidden, xpos=pos, xpos_max=xpos_max)
 
             if i+1 in [len(self.decoder)-1, len(self.decoder)]:
                 final_output.append(hidden.reshape(B*N, hw, -1))
@@ -512,15 +520,16 @@ class Pi3(nn.Module):
         hidden = self.project_e2d(hidden)
         hidden = self.project_norm(hidden)
 
-        hidden, pos = self.decode(hidden, N, H, W)
-
-        point_hidden = self.point_decoder(hidden, xpos=pos)
+        xpos_max = max(H//self.patch_size, W//self.patch_size)
+        hidden, pos = self.decode(hidden, N, H, W, xpos_max=xpos_max)
+        
+        point_hidden = self.point_decoder(hidden, xpos=pos,xpos_max=xpos_max)
         if self.train_conf:
-            conf_hidden = self.conf_decoder(hidden, xpos=pos)
-        camera_hidden = self.camera_decoder(hidden, xpos=pos)
+            conf_hidden = self.conf_decoder(hidden, xpos=pos,xpos_max=xpos_max)
+        camera_hidden = self.camera_decoder(hidden, xpos=pos,xpos_max=xpos_max)
         if self.use_global_points:
             context = hidden.reshape(B, N, patch_h*patch_w+self.patch_start_idx, -1)[:, 0:1].repeat(1, N, 1, 1).reshape(B*N, patch_h*patch_w+self.patch_start_idx, -1)
-            global_point_hidden = self.global_points_decoder(hidden, context, xpos=pos, ypos=pos)
+            global_point_hidden = self.global_points_decoder(hidden, context, xpos=pos, ypos=pos) ## no xpos_max
 
         with torch.amp.autocast(device_type='cuda', enabled=False):
             # local points

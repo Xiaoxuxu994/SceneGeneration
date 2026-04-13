@@ -330,7 +330,7 @@ if __name__ == "__main__":
     dataset = VKittiDataset(
         data_root=data_root,
         mode="train",
-        resolution=[[224, 224]],
+        resolution=[[512, 336]],
         frame_num=8,
         min_num_images=24,
         split_ratio=0.9,

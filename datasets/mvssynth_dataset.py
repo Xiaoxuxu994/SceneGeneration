@@ -163,7 +163,7 @@ class MVSSynthDataset(BaseDataset):
         depth = depth.astype(np.float32)
         depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
         return depth
-
+    
     def _w2c_to_c2w(self, extrinsic_w2c):
         c2w = np.eye(4, dtype=np.float32)
         w2c = np.eye(4, dtype=np.float32)

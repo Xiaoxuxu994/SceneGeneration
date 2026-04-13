@@ -237,7 +237,7 @@ class DinoVisionTransformer(nn.Module):
             else:
                 rope_sincos = [None for r in rope]
             if self.training and USE_CHECKPOINT == 'True':
-                x = checkpoint(blk, x, rope_sincos, use_reentrant=False)
+                x = checkpoint(blk, x, rope_sincos, use_reentrant=True)
             else:
                 x = blk(x, rope_sincos)  
         all_x = x

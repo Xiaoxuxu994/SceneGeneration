@@ -157,7 +157,7 @@ def visualize_gt(views, out_dir, prefix="sample"):
         vis_list = [img_t, depth_t, mask_t]
 
         # 如果有 normal，就一起可视化
-        if "normal" in view:
+        if view['normal'] is not None:
             normal = np.asarray(view["normal"], dtype=np.float32)  # H,W,3 or 3,H,W
 
             if normal.ndim == 3 and normal.shape[0] == 3 and normal.shape[-1] != 3:

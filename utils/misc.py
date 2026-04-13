@@ -179,14 +179,14 @@ def is_seq_of(seq, expected_type, seq_type=None):
     return True
 
 def move_to_device(batch, device):
-    """ set parameter to gpu or cpu """
-    if torch.cuda.is_available():
-        if torch.is_tensor(batch):
-            return batch.to(device)
-        elif isinstance(batch, list):
-            return [move_to_device(item, device) for item in batch]
-        elif isinstance(batch, dict):
-            return {key: move_to_device(value, device) for key, value in batch.items()}
-        else:
-            return batch
-    return batch
+    """Move nested tensors in batch to target device."""
+    if torch.is_tensor(batch):
+        return batch.to(device, non_blocking=True)
+    elif isinstance(batch, list):
+        return [move_to_device(item, device) for item in batch]
+    elif isinstance(batch, tuple):
+        return tuple(move_to_device(item, device) for item in batch)
+    elif isinstance(batch, dict):
+        return {key: move_to_device(value, device) for key, value in batch.items()}
+    else:
+        return batch
