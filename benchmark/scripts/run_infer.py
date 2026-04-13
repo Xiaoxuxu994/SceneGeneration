@@ -21,7 +21,9 @@ from vggt.utils.pose_enc import pose_encoding_to_extri_intri
 # -----------------------------------------------
 # Pi3 imports 
 # -----------------------------------------------
-from models.pi3_official.pi3.models.pi3 import Pi3
+# from models.pi3_official.pi3.models.pi3 import Pi3 ## official
+from models.pi3.models.pi3 import Pi3 ## ours
+from transformers.modeling_utils import load_sharded_checkpoint
 
 # -----------------------------------------------
 # Reliev3R imports 
@@ -140,13 +142,51 @@ def run_vggt_infer(model, images_cpu, device: torch.device, autocast_dtype: torc
     return pred_w2c, pred_K, pred_depth, pred_point, pred_unproj
 
 # ---------------------- running p3 infer ------------------------------------------------
-def load_model_pi3(ckpt):
-    model = Pi3.from_pretrained(ckpt)
+# def load_model_pi3(ckpt):
+#     model = Pi3.from_pretrained(ckpt)
+#     model.eval()
+#     return model
+
+def load_model_pi3(
+    ckpt,
+    decoder_size='large',
+    model_size='dinov3_huge+_3Bv2',
+):
+    # ckpt_p = Path(ckpt)
+    # weight_path = ckpt_p / "pytorch_model.bin" if ckpt_p.is_dir() else ckpt_p
+
+    model = Pi3(
+        decoder_size=decoder_size,
+        model_size=model_size
+    )
+    print('================ Pi3 Model ================================')
+    print(model)
+    load_result = load_sharded_checkpoint(model, ckpt, strict=False)
+    print(load_result)
+    print('===========================================================')
+
+    # state_dict = torch.load(str(weight_path), map_location="cpu")
+    # if isinstance(state_dict, dict) and "state_dict" in state_dict:
+    #     state_dict = state_dict["state_dict"]
+
+    # fixed = {}
+    # for k, v in state_dict.items():
+    #     if k.startswith("module."):
+    #         k = k[len("module."):]
+    #     if k.startswith("model."):
+    #         k = k[len("model."):]
+    #     fixed[k] = v
+
+    # msg = model.load_state_dict(fixed, strict=False)
+    # print("[Pi3] load_state_dict:", msg)
+
     model.eval()
     return model
 
+
 def run_pi3_infer(model, images_cpu, depth_masks, device: torch.device, autocast_dtype: torch.dtype):
-    images = images_cpu.unsqueeze(0).to(device)  # (B=1,...)
+    images = images_cpu.to(device).unsqueeze(0).to(device)  # (B=1,...)
+    depth_masks = torch.from_numpy(depth_masks).to(device=device, dtype=torch.float32)
 
     with torch.autocast(device_type=device.type, dtype=autocast_dtype):        
         results = model(images)
@@ -160,7 +200,7 @@ def run_pi3_infer(model, images_cpu, depth_masks, device: torch.device, autocast
             extrinsics=pred_w2c[:,:,:3],
             world_points=pred_points,
             scale_by_points=False,
-            # point_masks=torch.from_numpy(depth_masks).unsqueeze(0)
+            point_masks=depth_masks.unsqueeze(0)
         )
         
     return pred_w2c_aligned.squeeze(0).numpy(), pred_depth, pred_points_aligned.squeeze(0).numpy()
