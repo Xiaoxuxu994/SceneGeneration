@@ -201,7 +201,7 @@ for DATASET in "${DATASETS[@]}"; do
       SEQ_LEN=10       # use N frames in sequence
       MAX_SEQ_LEN=-1  # default max seq len, default -1 to use all
       SEED=42             # used when MODE=random
-      NUM_SEQ=1
+      NUM_SEQ=10
       ;;
     nrgbd)
       SPLIT="test"
