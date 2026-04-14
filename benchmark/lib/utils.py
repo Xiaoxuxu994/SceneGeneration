@@ -90,14 +90,15 @@ def build_gt_geometry_data(
             extrinsic = raw_w2c[i, :3].numpy()   # (3,4)
             intrinsic = raw_K[i].numpy()       # (3,3)
 
-            img_rs, depth_map, intrinsic = resize_image_depth_and_intrinsic(
-                image=image_pils[i],
-                depth_map=depth_map,
-                intrinsic=intrinsic,
-                output_width=output_width
-            )
+            # img_rs, depth_map, intrinsic = resize_image_depth_and_intrinsic(
+            #     image=image_pils[i],
+            #     depth_map=depth_map,
+            #     intrinsic=intrinsic,
+            #     output_width=output_width
+            # )
 
             # save resized rgb (same H,W as depth_map)
+            img_rs = image_pils[i]
             if img_rs.mode != "RGB":
                 img_rs = img_rs.convert("RGB")
             new_images.append(np.asarray(img_rs, dtype=np.uint8))  # (H,W,3)

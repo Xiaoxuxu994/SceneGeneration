@@ -17,19 +17,19 @@ VIS_SCRIPT="scripts/run_vis.py"
 # CONFIG="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2/config.json"
 # PREFIX="Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2_ckpt40k"
 
-# MODEL="pi3" # ['vggt','pi3','reliev3r']
+MODEL="pi3" # ['vggt','pi3','reliev3r']
 
-# MODEL_SIZE="dinov3_huge+_3Bv2"
-# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4/ckpts/model_ckpt19"
-# PREFIX="exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4_ckpt19"
-# CONFIG=""
-# source ./scripts/config/ase/512x336.sh
-
-MODEL_SIZE="dinov2_large_0.95B"
-CKPT="./ckpts/Pi3/model.safetensors"
-PREFIX="pi3_official"
+MODEL_SIZE="dinov3_huge+_3Bv2"
+CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4/ckpts/model_ckpt19"
+PREFIX="exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4_ckpt19"
 CONFIG=""
-source ./scripts/config/ase/518x336.sh
+source ./scripts/config/ase/512x336.sh
+
+# MODEL_SIZE="dinov2_large_0.95B"
+# CKPT="./ckpts/Pi3/model.safetensors"
+# PREFIX="pi3_official"
+# CONFIG=""
+# source ./scripts/config/ase/518x336.sh
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 
@@ -201,7 +201,7 @@ for DATASET in "${DATASETS[@]}"; do
       SEQ_LEN=10       # use N frames in sequence
       MAX_SEQ_LEN=-1  # default max seq len, default -1 to use all
       SEED=42             # used when MODE=random
-      NUM_SEQ=10
+      NUM_SEQ=1
       ;;
     nrgbd)
       SPLIT="test"
@@ -381,21 +381,21 @@ for DATASET in "${DATASETS[@]}"; do
   t1=$(date +%s)
   echo "[TIME] EVAL seconds=$((t1-t0))"
 
-  # # -------------------------
-  # # 2) VIS
-  # # -------------------------
-  # banner_stage "VIS"
-  # t0=$(date +%s)
+  # -------------------------
+  # 2) VIS
+  # -------------------------
+  banner_stage "VIS"
+  t0=$(date +%s)
 
-  # echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
-  # echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
+  echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
+  echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
 
-  # # requirement: if gt has no gt_vis -> run; if exists -> skip
-  # run_vis_if_needed "${GT_DIR}"
-  # run_vis_if_needed "${PRED_DIR}"
+  # requirement: if gt has no gt_vis -> run; if exists -> skip
+  run_vis_if_needed "${GT_DIR}"
+  run_vis_if_needed "${PRED_DIR}"
 
-  # t1=$(date +%s)
-  # echo "[TIME] VIS seconds=$((t1-t0))"
+  t1=$(date +%s)
+  echo "[TIME] VIS seconds=$((t1-t0))"
 
   banner_done "${IDX}" "${TOTAL}" "${DATASET}"
 done
