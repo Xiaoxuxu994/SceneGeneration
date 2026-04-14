@@ -12,9 +12,13 @@ MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # CONFIG="experiments/Reliev3R_bs2v8_260302_ase10p_fullSup/config.json"
 # PREFIX="Reliev3R_bs2v8_260302_ase10p_fullSup_ckpt70k"
 
-CKPT="experiments/Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1Flow5-Pi3/ckpt/35000.ckpt"
-CONFIG="experiments/Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1Flow5-Pi3/config.json"
-PREFIX="Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1Flow5-Pi3_ckpt35k"
+# CKPT="experiments/Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT/ckpt/130000.ckpt"
+# CONFIG="experiments/Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT/config.json"
+# PREFIX="Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT_ckpt130k"
+
+CKPT="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2/ckpt/40000.ckpt"
+CONFIG="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2/config.json"
+PREFIX="Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2_ckpt40k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # CKPT="./ckpt/Pi3/"

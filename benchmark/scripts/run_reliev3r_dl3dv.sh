@@ -7,29 +7,37 @@ EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
-MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-# CKPT="experiments/Reliev3R_bs2v8_260302_ase10p_fullSup/ckpt/70000.ckpt"
-# CONFIG="experiments/Reliev3R_bs2v8_260302_ase10p_fullSup/config.json"
-# PREFIX="Reliev3R_bs2v8_260302_ase10p_fullSup_ckpt70k"
+# MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 
-CKPT="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_distL1_sigT_cotracker/ckpt/45000.ckpt"
-CONFIG="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_distL1_sigT_cotracker/config.json"
-PREFIX="Reliev3R_bs2v8_260402_dl3dv_ss_distL1_sigT_cotracker_ckpt45k"
+# CKPT="experiments/Reliev3R_bs2v8_260211_ase/ckpt/130000.ckpt"
+# CONFIG="experiments/Reliev3R_bs2v8_260211_ase/config.json"
+# PREFIX="Reliev3R_bs2v8_260211_ase_ckpt130k"
 
-# CKPT="./ckpt/Pi3/model.safetensors"
-# CONFIG="experiments/Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1-Pi3/config.json"
-# PREFIX="Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1-Pi3_ckptpi3"
+# CKPT="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2/ckpt/40000.ckpt"
+# CONFIG="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2/config.json"
+# PREFIX="Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2_ckpt40k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
-# CKPT="./ckpt/Pi3/"
+
+# MODEL_SIZE="dinov3_huge+_3Bv2"
+# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4/ckpts/model_ckpt19"
+# PREFIX="exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4_ckpt19"
+# CONFIG=""
+# source ./scripts/config/ase_512x336.sh
+
+# MODEL_SIZE="dinov2_large_0.95B"
+# CKPT="./ckpts/Pi3/model.safetensors"
 # PREFIX="pi3_official"
 # CONFIG=""
+# source ./scripts/config/ase_518x336.sh
 
-# MODEL="vggt" # ['vggt','pi3','reliev3r']
+MODEL="vggt" # ['vggt','pi3','reliev3r']
 
-# CONFIG="./ckpt/VGGT-1B/config.json"
-# CKPT="./ckpt/VGGT-1B/model.pt"
-# PREFIX="vggt_official"
+MODEL_SIZE=""
+CONFIG="./ckpts/VGGT-1B/config.json"
+CKPT="./ckpts/VGGT-1B/model.pt"
+PREFIX="vggt_official"
+source ./scripts/config/dl3dv/518x294.sh
 
 # CONFIG=""
 
@@ -69,16 +77,6 @@ DATASETS=(
   dl3dv
   # ase
 )
-
-# SPLIT="test"
-# SEQ=""   # e.g. chess/seq-01 ; empty means all
-
-# MODE="random"       # stride | random
-# STRIDE=5            # default stride
-# SEQ_LEN=8           # use N frames in sequence
-# MAX_SEQ_LEN=32      # default max seq len, default -1 to use all
-# SEED=42             # used when MODE=random
-# NUM_SEQ=10
 
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
@@ -177,36 +175,6 @@ for DATASET in "${DATASETS[@]}"; do
   IDX=$((IDX+1))
   banner_dataset "${IDX}" "${TOTAL}" "${DATASET}"
 
-  # # -------------------------
-  # # per-dataset override (STRIDE / MAX_SEQ_LEN / optional MODE)
-  # # edit these to your desired values
-  # # -------------------------
-  # MODE_CUR="${MODE}"
-  # STRIDE_CUR="${STRIDE}"
-  # SEQ_LEN_CUR="${SEQ_LEN}"
-  # MAX_SEQ_LEN_CUR="${MAX_SEQ_LEN}"
-
-  # case "${DATASET}" in
-  #   7scenes)
-  #     STRIDE_CUR=40
-  #     MAX_SEQ_LEN_CUR=8
-  #     ;;
-  #   nrgbd)
-  #     STRIDE_CUR=100
-  #     MAX_SEQ_LEN_CUR=8
-  #     ;;
-  #   dtu)
-  #     STRIDE_CUR=1
-  #     MAX_SEQ_LEN_CUR=8
-  #     ;;
-  #   scannet)
-  #     STRIDE_CUR=25
-  #     MAX_SEQ_LEN_CUR=8
-  #     ;;
-  #   *)
-  #     ;;
-  # esac
-
   # -------------------------
   # per-dataset override (STRIDE / MAX_SEQ_LEN / optional MODE)
   # edit these to your desired values
@@ -230,8 +198,8 @@ for DATASET in "${DATASETS[@]}"; do
 
       MODE_CUR="random"   # stride | random
       STRIDE_CUR=5        # default stride
-      SEQ_LEN_CUR=8       # use N frames in sequence
-      MAX_SEQ_LEN_CUR=32  # default max seq len, default -1 to use all
+      SEQ_LEN_CUR=10       # use N frames in sequence
+      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
       SEED=42             # used when MODE=random
       NUM_SEQ=10
       ;;
@@ -305,9 +273,9 @@ for DATASET in "${DATASETS[@]}"; do
   fi
 
   if [ "${MODE_CUR}" = "stride" ]; then
-    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_stride${STRIDE_CUR}_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}"
+    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_stride${STRIDE_CUR}_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}_${RGB_RESIZE_W}x${RGB_RESIZE_H}"
   else
-    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_rand_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}"
+    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_rand_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}_${RGB_RESIZE_W}x${RGB_RESIZE_H}"
   fi
 
   GT_DIR="${ROOT_DIR}/gt"
@@ -341,11 +309,27 @@ for DATASET in "${DATASETS[@]}"; do
       --max_seq_len "${MAX_SEQ_LEN_CUR}" \
       --num_seq "${NUM_SEQ}" \
       --model "${MODEL}" \
+      --model_size "${MODEL_SIZE}" \
       --device "${DEVICE}" \
       --dtype "${DTYPE}" \
       --out_root "${OUT_ROOT}" \
       --use_gt_pose "${USE_GT_POSE}" \
       --use_gt_k "${USE_GT_K}" \
+      --rgb_origin_W "${RGB_ORIGIN_W}" \
+      --rgb_origin_H "${RGB_ORIGIN_H}" \
+      --crop_left "${CROP_LEFT}" \
+      --crop_right "${CROP_RIGHT}" \
+      --crop_top "${CROP_TOP}" \
+      --crop_bottom "${CROP_BOTTOM}" \
+      --rgb_resize_W "${RGB_RESIZE_W}" \
+      --rgb_resize_H "${RGB_RESIZE_H}" \
+      --depth_scale "${DEPTH_SCALE}" \
+      --depth_min "${DEPTH_MIN}" \
+      --depth_max "${DEPTH_MAX}" \
+      --fx "${FX}" \
+      --fy "${FY}" \
+      --cx "${CX}" \
+      --cy "${CY}" \
       "${EXTRA_ARGS[@]}"
   fi
   t1=$(date +%s)
@@ -368,7 +352,7 @@ for DATASET in "${DATASETS[@]}"; do
 
   # per-model PREDICTED_POINTMAP
   case "${MODEL}" in
-    vggt)     PREDICTED_POINTMAP=1 ;;
+    vggt)     PREDICTED_POINTMAP=0 ;;
     pi3)      PREDICTED_POINTMAP=1 ;;
     reliev3r) PREDICTED_POINTMAP=0 ;;
     *)        PREDICTED_POINTMAP=0 ;;

@@ -12,13 +12,13 @@ MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # CONFIG="experiments/Reliev3R_bs2v8_260302_ase10p_fullSup/config.json"
 # PREFIX="Reliev3R_bs2v8_260302_ase10p_fullSup_ckpt70k"
 
-CKPT="./ckpt/Pi3/model.safetensors"
-CONFIG="experiments/Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1-Pi3/config.json"
-PREFIX="Reliev3R-260327-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1-Pi3_ckptpi3"
+# CKPT="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2/ckpt/40000.ckpt"
+# CONFIG="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2/config.json"
+# PREFIX="Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2_ckpt40k"
 
-# CKPT="experiments/Reliev3R-260324-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1/ckpt/40000.ckpt"
-# CONFIG="experiments/Reliev3R-260324-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1/config.json"
-# PREFIX="Reliev3R-260324-mixSupervise-lr1e-5-All-mixaseBmvsHsimMvssyn-dl3dvRe10k-addTrans0p5Dist0p1_ckpt40k"
+CKPT="experiments/Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT/ckpt/130000.ckpt"
+CONFIG="experiments/Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT/config.json"
+PREFIX="Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT_ckpt130k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # CKPT="./ckpt/Pi3/"
@@ -409,21 +409,21 @@ for DATASET in "${DATASETS[@]}"; do
   t1=$(date +%s)
   echo "[TIME] EVAL seconds=$((t1-t0))"
 
-  # # -------------------------
-  # # 2) VIS
-  # # -------------------------
-  # banner_stage "VIS"
-  # t0=$(date +%s)
+  # -------------------------
+  # 2) VIS
+  # -------------------------
+  banner_stage "VIS"
+  t0=$(date +%s)
 
-  # echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
-  # echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
+  echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
+  echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
 
-  # # requirement: if gt has no gt_vis -> run; if exists -> skip
-  # run_vis_if_needed "${GT_DIR}"
-  # run_vis_if_needed "${PRED_DIR}"
+  # requirement: if gt has no gt_vis -> run; if exists -> skip
+  run_vis_if_needed "${GT_DIR}"
+  run_vis_if_needed "${PRED_DIR}"
 
-  # t1=$(date +%s)
-  # echo "[TIME] VIS seconds=$((t1-t0))"
+  t1=$(date +%s)
+  echo "[TIME] VIS seconds=$((t1-t0))"
 
-  # banner_done "${IDX}" "${TOTAL}" "${DATASET}"
+  banner_done "${IDX}" "${TOTAL}" "${DATASET}"
 done

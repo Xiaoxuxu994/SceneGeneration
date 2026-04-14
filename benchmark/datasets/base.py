@@ -27,13 +27,47 @@ class SequenceBatch:
 
     raw_w2c: torch.Tensor                 # (V,4,4) or (V,3,4) 统一为 w2c
     raw_K: torch.Tensor                   # (V,3,3) 每帧内参
+    norm_K: torch.Tensor                   # (V,3,3) 每帧内参
 
     meta: dict                            # 数据集特定字段（可选）
 
+@dataclass
+class DatasetConfig:
+    # basic path settings
+    data_root: str
+    num_seq: int
+    
+    # image settings
+    rgb_origin_W: int
+    rgb_origin_H: int
+    
+    # crop setting
+    crop_left: int          # if cropping, otherwise set to 0 by default
+    crop_right: int         # if cropping, otherwise set to 0 by default
+    crop_top: int           # if cropping, otherwise set to 0 by default
+    crop_bottom: int        # if cropping, otherwise set to 0 by default
+    
+    rgb_resize_W: int       # if cropping, otherwise set to 0 by default
+    rgb_resize_H: int       # if cropping, otherwise set to 0 by default
+    
+    # depth settings
+    depth_scale: float      # mm -> m, depths are divided by 1000.0 by default
+    depth_min: float        # 0.1
+    depth_max: float        # 10.0
+    
+    # intrinsic settings
+    fx: float               # 1.0 by default
+    fy: float               # 1.0 by default
+    cx: float               # 1.0 by default
+    cy: float               # 1.0 by default
+
 class BaseDataset(ABC):
-    def __init__(self, root: str | Path, num_seq: int):
-        self.root = Path(root)
-        self.num_seq = num_seq
+    # def __init__(self, root: str | Path, num_seq: int):
+    #     self.root = Path(root)
+    #     self.num_seq = num_seq
+    
+    def __init__(self, config: DatasetConfig):
+        self.config = config
 
     @abstractmethod
     def list_sequences(self, split: str) -> List[str]:
@@ -155,12 +189,7 @@ class BaseDataset(ABC):
                         
                 depths          = batch.depths           # V,H,W
                 w2c             = batch.raw_w2c.float()  # V,4,4
-                raw_K           = batch.raw_K            # V,3,3
-                
-                # if the intrinsics is not normalized
-                if raw_K[0, 0, 0] - 0.5 > 0.05 or raw_K[0, 1, 1] - 0.5 > 0.05:
-                    V,H,W = depths.shape
-                    norm_K = self._normalize_K(raw_K, H, W)
+                norm_K          = batch.norm_K            # V,3,3
                 
                 ## Dataset extrinsics are defined as world-to-camera. Transform to camera-to-world when passed.
                 _, _, visibs = exhaustive_geo2match(
@@ -171,8 +200,8 @@ class BaseDataset(ABC):
                     ids = self.view_sampler_iterative(visibs, max_seq_len, seq_len, min_thres)
                     
                     if ids is None:
-                        ids = np.zeros_like(ids)
                         print(f"[INFO] not a valid sequence - starting sampling trial {try_id+1}")
+                        ids = np.zeros(seq_len)
                     else:
                         break
                             

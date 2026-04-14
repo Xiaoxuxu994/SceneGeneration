@@ -7,24 +7,37 @@ EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
-# MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+MODEL_SIZE=""
+source ./scripts/config/ase/462x462.sh
 
-# CKPT="experiments/Reliev3R_bs2v8_260211_ase/ckpt/130000.ckpt"
-# CONFIG="experiments/Reliev3R_bs2v8_260211_ase/config.json"
-# PREFIX="Reliev3R_bs2v8_260211_ase_ckpt130k"
+CKPT="experiments/Reliev3R_bs2v8_260409_ase_ss_distL1_SigT_rAug/ckpt/90000.ckpt"
+CONFIG="experiments/Reliev3R_bs2v8_260409_ase_ss_distL1_SigT_rAug/config.json"
+PREFIX="Reliev3R_bs2v8_260409_ase_ss_distL1_SigT_rAug_ckpt90k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
-# CKPT="./ckpt/Pi3/"
+
+# MODEL_SIZE="dinov3_huge+_3Bv2"
+# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4/ckpts/model_ckpt19"
+# PREFIX="exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4_ckpt19"
+# CONFIG=""
+# source ./scripts/config/ase_512x336.sh
+
+# MODEL_SIZE="dinov2_large_0.95B"
+# CKPT="./ckpts/Pi3/model.safetensors"
 # PREFIX="pi3_official"
 # CONFIG=""
+# source ./scripts/config/ase_518x336.sh
 
-MODEL="vggt" # ['vggt','pi3','reliev3r']
+# MODEL="vggt" # ['vggt','pi3','reliev3r']
 
-# CONFIG="./ckpt/VGGT-1B/config.json"
-# CKPT="./ckpt/VGGT-1B/model.pt"
+# MODEL_SIZE=""
+# CONFIG="./ckpts/VGGT-1B/config.json"
+# CKPT="./ckpts/VGGT-1B/model.pt"
 # PREFIX="vggt_official"
+# source ./scripts/config/ase/518x336.sh
 
-CONFIG=""
+# CONFIG=""
 
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch023-loss_valid0.2258-metric_valid0.1446.ckpt/pytorch_model.bin"
 # PREFIX="vggt_sz_ep23"
@@ -41,8 +54,8 @@ CONFIG=""
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch009-loss_valid0.2741-metric_valid0.2231.ckpt/pytorch_model.bin"
 # PREFIX="vggt_sz_ep9"
 
-CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch007-loss_valid0.3137-metric_valid0.2497.ckpt/pytorch_model.bin"
-PREFIX="vggt_sz_ep7"
+# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch007-loss_valid0.3137-metric_valid0.2497.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_ep7"
 
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch005-loss_valid0.3839-metric_valid0.2823.ckpt/pytorch_model.bin"
 # PREFIX="vggt_sz_ep5"
@@ -62,16 +75,6 @@ DATASETS=(
   # dl3dv
   ase
 )
-
-# SPLIT="test"
-# SEQ=""   # e.g. chess/seq-01 ; empty means all
-
-# MODE="random"       # stride | random
-# STRIDE=5            # default stride
-# SEQ_LEN=8           # use N frames in sequence
-# MAX_SEQ_LEN=32      # default max seq len, default -1 to use all
-# SEED=42             # used when MODE=random
-# NUM_SEQ=10
 
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
@@ -169,36 +172,6 @@ IDX=0
 for DATASET in "${DATASETS[@]}"; do
   IDX=$((IDX+1))
   banner_dataset "${IDX}" "${TOTAL}" "${DATASET}"
-
-  # # -------------------------
-  # # per-dataset override (STRIDE / MAX_SEQ_LEN / optional MODE)
-  # # edit these to your desired values
-  # # -------------------------
-  # MODE_CUR="${MODE}"
-  # STRIDE_CUR="${STRIDE}"
-  # SEQ_LEN_CUR="${SEQ_LEN}"
-  # MAX_SEQ_LEN_CUR="${MAX_SEQ_LEN}"
-
-  # case "${DATASET}" in
-  #   7scenes)
-  #     STRIDE_CUR=40
-  #     MAX_SEQ_LEN_CUR=8
-  #     ;;
-  #   nrgbd)
-  #     STRIDE_CUR=100
-  #     MAX_SEQ_LEN_CUR=8
-  #     ;;
-  #   dtu)
-  #     STRIDE_CUR=1
-  #     MAX_SEQ_LEN_CUR=8
-  #     ;;
-  #   scannet)
-  #     STRIDE_CUR=25
-  #     MAX_SEQ_LEN_CUR=8
-  #     ;;
-  #   *)
-  #     ;;
-  # esac
 
   # -------------------------
   # per-dataset override (STRIDE / MAX_SEQ_LEN / optional MODE)
@@ -298,9 +271,9 @@ for DATASET in "${DATASETS[@]}"; do
   fi
 
   if [ "${MODE_CUR}" = "stride" ]; then
-    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_stride${STRIDE_CUR}_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}"
+    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_stride${STRIDE_CUR}_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}_${RGB_RESIZE_W}x${RGB_RESIZE_H}"
   else
-    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_rand_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}"
+    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_rand_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}_${RGB_RESIZE_W}x${RGB_RESIZE_H}"
   fi
 
   GT_DIR="${ROOT_DIR}/gt"
@@ -334,11 +307,27 @@ for DATASET in "${DATASETS[@]}"; do
       --max_seq_len "${MAX_SEQ_LEN_CUR}" \
       --num_seq "${NUM_SEQ}" \
       --model "${MODEL}" \
+      --model_size "${MODEL_SIZE}" \
       --device "${DEVICE}" \
       --dtype "${DTYPE}" \
       --out_root "${OUT_ROOT}" \
       --use_gt_pose "${USE_GT_POSE}" \
       --use_gt_k "${USE_GT_K}" \
+      --rgb_origin_W "${RGB_ORIGIN_W}" \
+      --rgb_origin_H "${RGB_ORIGIN_H}" \
+      --crop_left "${CROP_LEFT}" \
+      --crop_right "${CROP_RIGHT}" \
+      --crop_top "${CROP_TOP}" \
+      --crop_bottom "${CROP_BOTTOM}" \
+      --rgb_resize_W "${RGB_RESIZE_W}" \
+      --rgb_resize_H "${RGB_RESIZE_H}" \
+      --depth_scale "${DEPTH_SCALE}" \
+      --depth_min "${DEPTH_MIN}" \
+      --depth_max "${DEPTH_MAX}" \
+      --fx "${FX}" \
+      --fy "${FY}" \
+      --cx "${CX}" \
+      --cy "${CY}" \
       "${EXTRA_ARGS[@]}"
   fi
   t1=$(date +%s)
@@ -406,5 +395,5 @@ for DATASET in "${DATASETS[@]}"; do
   # t1=$(date +%s)
   # echo "[TIME] VIS seconds=$((t1-t0))"
 
-  # banner_done "${IDX}" "${TOTAL}" "${DATASET}"
+  banner_done "${IDX}" "${TOTAL}" "${DATASET}"
 done

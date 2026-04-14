@@ -34,7 +34,7 @@ from models.reliev3r.model.reliev3r import Reliev3R
 # -----------------------------------------------
 # dataset related
 # -----------------------------------------------
-from datasets import get_dataset
+from datasets import get_dataset, get_dataset_config
 
 # -----------------------------------------------
 # utils
@@ -60,11 +60,11 @@ DATA_ROOT_DEFAULTS = {
 }
 MODEL_DEFAULTS = {
     "vggt": {
-        "ckpt": BENCH_ROOT / "checkpoints" / "VGGT-1B",
+        "ckpt": BENCH_ROOT / "ckpts" / "VGGT-1B",
         "config": None,
     },
     "pi3": {
-        "ckpt": BENCH_ROOT / "checkpoints" / "Pi3",
+        "ckpt": BENCH_ROOT / "ckpts" / "Pi3",
         "config": None,
     },
     "reliev3r": {
@@ -150,20 +150,28 @@ def run_vggt_infer(model, images_cpu, device: torch.device, autocast_dtype: torc
 def load_model_pi3(
     ckpt,
     decoder_size='large',
-    model_size='dinov3_huge+_3Bv2',
+    model_size='dinov3_huge+_3Bv2'
 ):
     # ckpt_p = Path(ckpt)
     # weight_path = ckpt_p / "pytorch_model.bin" if ckpt_p.is_dir() else ckpt_p
-
+    
     model = Pi3(
         decoder_size=decoder_size,
         model_size=model_size
     )
-    print('================ Pi3 Model ================================')
-    print(model)
-    load_result = load_sharded_checkpoint(model, ckpt, strict=False)
-    print(load_result)
-    print('===========================================================')
+    
+    if ckpt.is_dir():
+        print('================ Pi3 Model ================================')
+        print(model)
+        load_result = load_sharded_checkpoint(model, ckpt, strict=False)
+        print(load_result)
+        print('===========================================================')
+    else:
+        if "safetensors" in str(ckpt):
+            state_dict = load_file(ckpt)
+            model.load_state_dict(state_dict, strict=False)
+        else:
+            raise ValueError("checkpoint is not supported.")
 
     # state_dict = torch.load(str(weight_path), map_location="cpu")
     # if isinstance(state_dict, dict) and "state_dict" in state_dict:
@@ -186,7 +194,7 @@ def load_model_pi3(
 
 def run_pi3_infer(model, images_cpu, depth_masks, device: torch.device, autocast_dtype: torch.dtype):
     images = images_cpu.to(device).unsqueeze(0).to(device)  # (B=1,...)
-    depth_masks = torch.from_numpy(depth_masks).to(device=device, dtype=torch.float32)
+    # depth_masks = torch.from_numpy(depth_masks).to(device=device, dtype=torch.float32)
 
     with torch.autocast(device_type=device.type, dtype=autocast_dtype):        
         results = model(images)
@@ -200,7 +208,7 @@ def run_pi3_infer(model, images_cpu, depth_masks, device: torch.device, autocast
             extrinsics=pred_w2c[:,:,:3],
             world_points=pred_points,
             scale_by_points=False,
-            point_masks=depth_masks.unsqueeze(0)
+            # point_masks=depth_masks.unsqueeze(0)
         )
         
     return pred_w2c_aligned.squeeze(0).numpy(), pred_depth, pred_points_aligned.squeeze(0).numpy()
@@ -272,47 +280,6 @@ def run_reliev3r_infer(
 
     with torch.autocast(device_type=device.type, dtype=autocast_dtype):
         pred = model.forward(data)
-
-
-    # if "local_points" in pred:
-    #     pred_local_points = pred["local_points"].permute(0, 1, 3, 4, 2) # B,V,H,W,3
-    #     pred_w2c = pred["camera_extrs"] # B,V,4,4
-    #     # pred_depth = pred["depths"].permute(0, 1, 3, 4, 2) # B,V,H,W,1
-    #     pred_depth = pred_local_points[..., -1:] # B,V,H,W,1
-        
-    #     pred_unproj = unproject_local_point_map_to_world_point_map(
-    #         pred_local_points.squeeze(0),
-    #         pred_w2c.squeeze(0)
-    #     )
-        
-    # else:
-    #     ray_depth = pred["scaled_depths"].permute(0, 1, 3, 4, 2).contiguous()
-    #     # depth_np = pred_depth.squeeze(0).squeeze(-1).detach().cpu().numpy()  # (V,H,W) np
-    #     # depth_np, _ = filter_depth(depth_np, far=DEPTH_FAR, near=DEPTH_NEAR)  #
-    #     # pred_depth = torch.from_numpy(depth_np).to(device=device, dtype=torch.float32)[None, ..., None]
-
-    #     pred_depth_conf = pred["depths_conf"].permute(0, 1, 3, 4, 2) # B,V,H,W,1
-
-    #     ## predict intrinsic (1,8,2)
-    #     fovs_pred = pred["camera_fovs"]      # (B,V,2)
-    #     K_norm = fovs_to_K_norm(fovs_pred).squeeze(0)          # (B,V,3,3)
-    #     pred_K  = K_denormalize(K_norm, W=W, H=H)
-
-    #     ## raydepth to zdepth
-    #     ray_depth = ray_depth.squeeze(0).permute(0,3,1,2)
-    #     pred_depth = rdepth_to_zdepth(ray_depth,K_norm)
-    #     pred_depth = pred_depth.unsqueeze(0).permute(0,1,3,4,2)
-        
-    #     pred_w2c = pred["camera_extrs"]
-        
-    #     # GT intrinsics (V,3,3)
-    #     gt_K = torch.from_numpy(gt_intrinsics_rs.astype(np.float32)).to(device=device, dtype=torch.float32)  # (V,3,3)
-                    
-    #     pred_unproj = unproject_depth_map_to_point_map(
-    #         pred_depth.squeeze(0),
-    #         gt_extrinsics if unproj_with_gt_extrinsics else pred_w2c.squeeze(0),
-    #         gt_K if unproj_with_gt_intrinsics else pred_K,
-    #     )
     
     pred_local_points = pred["local_points"].permute(0, 1, 3, 4, 2) # B,V,H,W,3
     pred_w2c = pred["camera_extrs"] # B,V,4,4
@@ -360,7 +327,7 @@ def dump_one_seq(model,
         # --- build GT (resized + normalized) ---
         assert batch.images_cpu.shape[-1] == batch.depths.shape[-1] \
             and batch.images_cpu.shape[-2] == batch.depths.shape[-2], \
-                "input shape mismatch, got images of {}x{} image and {}x{} depth".format(
+                "input shape mismatch, got {}x{} image and {}x{} depth".format(
                     batch.images_cpu.shape[-2], batch.images_cpu.shape[-1],
                     batch.depths.shape[-2], batch.depths.shape[-1]
                 )
@@ -457,6 +424,23 @@ def main():
     p.add_argument("--seq", type=str, default="")      # chess/seq-01
     p.add_argument("--num_seq", type=int, default=0)   # 0 -> use all squences
 
+    # dataset configs
+    p.add_argument("--rgb_origin_W", type=int, default=518)   # 0 -> use all squences
+    p.add_argument("--rgb_origin_H", type=int, default=518)   # 0 -> use all squences
+    p.add_argument("--crop_left", type=int, default=0)   # 0 -> use all squences
+    p.add_argument("--crop_right", type=int, default=0)   # 0 -> use all squences
+    p.add_argument("--crop_top", type=int, default=0)   # 0 -> use all squences
+    p.add_argument("--crop_bottom", type=int, default=0)   # 0 -> use all squences
+    p.add_argument("--rgb_resize_W", type=int, default=0)   # 0 -> use all squences
+    p.add_argument("--rgb_resize_H", type=int, default=0)   # 0 -> use all squences
+    p.add_argument("--depth_scale", type=float, default=1000.0)   # 0 -> use all squences
+    p.add_argument("--depth_min", type=float, default=0.1)   # 0 -> use all squences
+    p.add_argument("--depth_max", type=float, default=10.0)   # 0 -> use all squences
+    p.add_argument("--fx", type=float, default=1.0)   # 0 -> use all squences
+    p.add_argument("--fy", type=float, default=1.0)   # 0 -> use all squences
+    p.add_argument("--cx", type=float, default=1.0)   # 0 -> use all squences
+    p.add_argument("--cy", type=float, default=1.0)   # 0 -> use all squences
+
     # view sample
     p.add_argument("--mode", type=str, default="stride", choices=["stride", "random"])
     p.add_argument("--stride", type=int, default=40)
@@ -479,6 +463,7 @@ def main():
 
     # # model debug
     p.add_argument("--model", type=str, default="reliev3r", choices=list(MODEL_DEFAULTS.keys()))
+    p.add_argument("--model_size", type=str, default="dinov2_large")
     p.add_argument("--ckpt", type=str, default='/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260108/exp/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/ckpt/20000.ckpt', help="(vggt/pi3/reliev3r) checkpoint path/dir. If not set, inferred from --model.")
     p.add_argument("--config", type=str, default='/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260108/exp/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/config.json', help="(reliev3r) config.json. If not set, inferred from --model.")
 
@@ -523,7 +508,8 @@ def main():
     unproj_with_gt_intrinsics = True if args.use_gt_k != 0 else False
 
     # dataset
-    ds = get_dataset(args.dataset, args.data_root, args.num_seq)
+    ds_config = get_dataset_config(vars(args))
+    ds = get_dataset(args.dataset, ds_config)
     stride = args.stride # args.stride or ds.default_stride(args.view)
     sequences = [args.seq] if args.seq else ds.list_sequences(args.split)
     if args.num_seq > 0: sequences = sequences[:args.num_seq]
@@ -531,9 +517,9 @@ def main():
     # outdir
     setting_dir = Path(args.out_root) / args.dataset / (
         f"{args.split}_" +
-        (f"stride{stride}_max{args.max_seq_len if args.max_seq_len>0 else 'all'}_len{args.seq_len}_numseq{args.num_seq}"
+        (f"stride{stride}_max{args.max_seq_len if args.max_seq_len>0 else 'all'}_len{args.seq_len}_numseq{args.num_seq}_{args.rgb_resize_W}x{args.rgb_resize_H}"
         if args.mode == "stride"
-        else f"rand_max{args.max_seq_len if args.max_seq_len>0 else 'all'}_len{args.seq_len}_numseq{args.num_seq}")
+        else f"rand_max{args.max_seq_len if args.max_seq_len>0 else 'all'}_len{args.seq_len}_numseq{args.num_seq}_{args.rgb_resize_W}x{args.rgb_resize_H}")
     )
     setting_dir.mkdir(parents=True, exist_ok=True)
 
@@ -553,7 +539,7 @@ def main():
     if args.model == "vggt":
         model = load_model_vggt(args.ckpt).to(device)
     elif args.model == "pi3":
-        model = load_model_pi3(args.ckpt).to(device)
+        model = load_model_pi3(Path(args.ckpt), model_size=args.model_size).to(device)
     elif args.model == 'reliev3r':
         if not args.ckpt:
             raise ValueError("--reliev3r_ckpt is required when --model reliev3r")
