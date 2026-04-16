@@ -8,28 +8,38 @@ VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
 MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-# CKPT="experiments/Reliev3R_bs2v8_260302_ase10p_fullSup/ckpt/70000.ckpt"
-# CONFIG="experiments/Reliev3R_bs2v8_260302_ase10p_fullSup/config.json"
-# PREFIX="Reliev3R_bs2v8_260302_ase10p_fullSup_ckpt70k"
+MODEL_SIZE=""
+source ./scripts/config/nrgbd/518x392.sh
 
-CKPT="experiments/Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT/ckpt/130000.ckpt"
-CONFIG="experiments/Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT/config.json"
-PREFIX="Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT_ckpt130k"
+CKPT="./ckpts/Pi3/model.safetensors"
+CONFIG=""
+PREFIX="Reliev3R-260410-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newModel-DepthScalerFalse_ckptpi3"
 
-# CKPT="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2/ckpt/40000.ckpt"
-# CONFIG="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2/config.json"
-# PREFIX="Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2_ckpt40k"
+# CKPT="experiments/Reliev3R-260410-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newModel-DepthScalerFalse/ckpt/20000.ckpt"
+# CONFIG="experiments/Reliev3R-260410-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newModel-DepthScalerFalse/config.json"
+# PREFIX="Reliev3R-260410-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newModel-DepthScalerFalse_ckpt20k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
-# CKPT="./ckpt/Pi3/"
+
+# MODEL_SIZE="dinov3_huge+_3Bv2"
+# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4/ckpts/model_ckpt19"
+# PREFIX="exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4_ckpt19"
+# CONFIG=""
+# source ./scripts/config/ase_512x336.sh
+
+# MODEL_SIZE="dinov2_large_0.95B"
+# CKPT="./ckpts/Pi3/model.safetensors"
 # PREFIX="pi3_official"
 # CONFIG=""
+# source ./scripts/config/ase_518x336.sh
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 
-# CONFIG="./ckpt/VGGT-1B/config.json"
-# CKPT="./ckpt/VGGT-1B/model.pt"
+# MODEL_SIZE=""
+# CONFIG="./ckpts/VGGT-1B/config.json"
+# CKPT="./ckpts/VGGT-1B/model.pt"
 # PREFIX="vggt_official"
+# source ./scripts/config/ase/518x336.sh
 
 # CONFIG=""
 
@@ -60,25 +70,6 @@ PREFIX="Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT_ckpt130k"
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch001-loss_valid0.5604-metric_valid0.4377.ckpt/pytorch_model.bin"
 # PREFIX="vggt_sz_ep1"
 
-# ---- params ------
-DATASETS=(
-  # 7scenes
-  nrgbd
-  # dtu
-  # scannet
-  # dl3dv
-  # ase
-)
-
-# SPLIT="test"
-# SEQ=""   # e.g. chess/seq-01 ; empty means all
-
-# MODE="random"       # stride | random
-# STRIDE=5            # default stride
-# SEQ_LEN=8           # use N frames in sequence
-# MAX_SEQ_LEN=32      # default max seq len, default -1 to use all
-# SEED=42             # used when MODE=random
-# NUM_SEQ=10
 
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
@@ -86,7 +77,7 @@ USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 SKIP_POINTMAP=0 # 1 if skip pointmap evaluation
 SKIP_NORMAL=1 # 1 if skip point normal evaluation
 
-NPU_ID="4"
+NPU_ID="0"
 DEVICE="npu:0"
 DTYPE="fp32"
 
@@ -177,114 +168,19 @@ for DATASET in "${DATASETS[@]}"; do
   IDX=$((IDX+1))
   banner_dataset "${IDX}" "${TOTAL}" "${DATASET}"
 
-  # # -------------------------
-  # # per-dataset override (STRIDE / MAX_SEQ_LEN / optional MODE)
-  # # edit these to your desired values
-  # # -------------------------
-  # MODE_CUR="${MODE}"
-  # STRIDE_CUR="${STRIDE}"
-  # SEQ_LEN_CUR="${SEQ_LEN}"
-  # MAX_SEQ_LEN_CUR="${MAX_SEQ_LEN}"
-
-  # case "${DATASET}" in
-  #   7scenes)
-  #     STRIDE_CUR=40
-  #     MAX_SEQ_LEN_CUR=8
-  #     ;;
-  #   nrgbd)
-  #     STRIDE_CUR=100
-  #     MAX_SEQ_LEN_CUR=8
-  #     ;;
-  #   dtu)
-  #     STRIDE_CUR=1
-  #     MAX_SEQ_LEN_CUR=8
-  #     ;;
-  #   scannet)
-  #     STRIDE_CUR=25
-  #     MAX_SEQ_LEN_CUR=8
-  #     ;;
-  #   *)
-  #     ;;
-  # esac
-
-  # -------------------------
-  # per-dataset override (STRIDE / MAX_SEQ_LEN / optional MODE)
-  # edit these to your desired values
-  # -------------------------
-
-  case "${DATASET}" in
-    7scenes)
-      SPLIT="test"
-      SEQ=""   # e.g. chess/seq-01 ; empty means all
-
-      MODE_CUR="stride"   # stride | random
-      STRIDE_CUR=40       # default stride
-      SEQ_LEN_CUR=8       # use N frames in sequence
-      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
-      SEED=42             # used when MODE=random
-      NUM_SEQ=10
-      ;;
-    ase)
-      SPLIT="test"
-      SEQ=""   # e.g. chess/seq-01 ; empty means all
-
-      MODE_CUR="random"   # stride | random
-      STRIDE_CUR=5        # default stride
-      SEQ_LEN_CUR=8       # use N frames in sequence
-      MAX_SEQ_LEN_CUR=32  # default max seq len, default -1 to use all
-      SEED=42             # used when MODE=random
-      NUM_SEQ=10
-      ;;
-    nrgbd)
-      SPLIT="test"
-      SEQ=""   # e.g. chess/seq-01 ; empty means all
-
-      MODE_CUR="stride"   # stride | random
-      STRIDE_CUR=100      # default stride
-      SEQ_LEN_CUR=8       # use N frames in sequence
-      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
-      SEED=42             # used when MODE=random
-      NUM_SEQ=10
-      ;;
-    dl3dv)
-      SPLIT="test"
-      SEQ=""   # e.g. chess/seq-01 ; empty means all
-
-      MODE_CUR="stride"   # stride | random
-      STRIDE_CUR=5        # default stride
-      SEQ_LEN_CUR=8       # use N frames in sequence
-      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
-      SEED=42             # used when MODE=random
-      NUM_SEQ=100
-      ;;
-    scannet)
-      SPLIT="test"
-      SEQ=""   # e.g. chess/seq-01 ; empty means all
-
-      MODE_CUR="stride"   # stride | random
-      STRIDE_CUR=25       # default stride
-      SEQ_LEN_CUR=8       # use N frames in sequence
-      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
-      SEED=42             # used when MODE=random
-      NUM_SEQ=10
-      ;;
-    *)
-      ;;
-  esac
-
   echo "[RUNTIME] device=${DEVICE} dtype=${DTYPE} eval_device=${EVAL_DEVICE}"
   echo "[CONFIG ] model=${MODEL} prefix=${PREFIX}"
   echo "[CONFIG ] ckpt=${CKPT}"
   echo "[CONFIG ] config=${CONFIG}"
   echo "[CONFIG ] OUT_ROOT=${OUT_ROOT}"
-  echo "[CONFIG ] split=${SPLIT} mode=${MODE_CUR} stride=${STRIDE_CUR} seq_len=${SEQ_LEN_CUR} max_seq_len=${MAX_SEQ_LEN_CUR} num_seq=${NUM_SEQ} seed=${SEED}"
+  echo "[CONFIG ] split=${SPLIT} mode=${MODE} stride=${STRIDE} seq_len=${SEQ_LEN} max_seq_len=${MAX_SEQ_LEN} num_seq=${NUM_SEQ} seed=${SEED}"
   [[ -n "${SEQ}" ]] && echo "[CONFIG ] seq=${SEQ}"
 
   # -------------------------
   # compute ROOT_DIR / PRED_DIR early (for reuse pred)
   # -------------------------
-  if [ "${MAX_SEQ_LEN_CUR}" -gt 0 ] 2>/dev/null; then
-    MSL="${MAX_SEQ_LEN_CUR}"
+  if [ "${MAX_SEQ_LEN}" -gt 0 ] 2>/dev/null; then
+    MSL="${MAX_SEQ_LEN}"
   else
     MSL="all"
   fi
@@ -304,10 +200,10 @@ for DATASET in "${DATASETS[@]}"; do
     PRED_SUBDIR="${PRED_SUBDIR}_gt_K"
   fi
 
-  if [ "${MODE_CUR}" = "stride" ]; then
-    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_stride${STRIDE_CUR}_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}"
+  if [ "${MODE}" = "stride" ]; then
+    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_stride${STRIDE}_max${MSL}_len${SEQ_LEN}_numseq${NUM_SEQ}_${RGB_RESIZE_W}x${RGB_RESIZE_H}"
   else
-    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_rand_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}"
+    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_rand_max${MSL}_len${SEQ_LEN}_numseq${NUM_SEQ}_${RGB_RESIZE_W}x${RGB_RESIZE_H}"
   fi
 
   GT_DIR="${ROOT_DIR}/gt"
@@ -329,89 +225,105 @@ for DATASET in "${DATASETS[@]}"; do
     [[ -n "${CONFIG}" ]] && EXTRA_ARGS+=(--config "${CONFIG}")
     [[ -n "${PREFIX}" ]] && EXTRA_ARGS+=(--prefix "${PREFIX}")
 
-    echo "[INFER] dataset=${DATASET} split=${SPLIT} mode=${MODE_CUR}"
-    echo "[INFER] stride=${STRIDE_CUR} max_seq_len=${MSL} seq_len=${SEQ_LEN_CUR} num_seq=${NUM_SEQ}"
+    echo "[INFER] dataset=${DATASET} split=${SPLIT} mode=${MODE}"
+    echo "[INFER] stride=${STRIDE} max_seq_len=${MSL} seq_len=${SEQ_LEN} num_seq=${NUM_SEQ}"
     echo "[INFER] use_gt_pose=${USE_GT_POSE} use_gt_k=${USE_GT_K}"
     ASCEND_RT_VISIBLE_DEVICES=${NPU_ID} ${PYTHON} ${SCRIPT} \
       --dataset "${DATASET}" \
       --split "${SPLIT}" \
-      --mode "${MODE_CUR}" \
-      --stride "${STRIDE_CUR}" \
-      --seq_len "${SEQ_LEN_CUR}" \
-      --max_seq_len "${MAX_SEQ_LEN_CUR}" \
+      --mode "${MODE}" \
+      --stride "${STRIDE}" \
+      --seq_len "${SEQ_LEN}" \
+      --max_seq_len "${MAX_SEQ_LEN}" \
       --num_seq "${NUM_SEQ}" \
       --model "${MODEL}" \
+      --model_size "${MODEL_SIZE}" \
       --device "${DEVICE}" \
       --dtype "${DTYPE}" \
       --out_root "${OUT_ROOT}" \
       --use_gt_pose "${USE_GT_POSE}" \
       --use_gt_k "${USE_GT_K}" \
+      --rgb_origin_W "${RGB_ORIGIN_W}" \
+      --rgb_origin_H "${RGB_ORIGIN_H}" \
+      --crop_left "${CROP_LEFT}" \
+      --crop_right "${CROP_RIGHT}" \
+      --crop_top "${CROP_TOP}" \
+      --crop_bottom "${CROP_BOTTOM}" \
+      --rgb_resize_W "${RGB_RESIZE_W}" \
+      --rgb_resize_H "${RGB_RESIZE_H}" \
+      --depth_scale "${DEPTH_SCALE}" \
+      --depth_min "${DEPTH_MIN}" \
+      --depth_max "${DEPTH_MAX}" \
+      --fx "${FX}" \
+      --fy "${FY}" \
+      --cx "${CX}" \
+      --cy "${CY}" \
       "${EXTRA_ARGS[@]}"
   fi
   t1=$(date +%s)
   echo "[TIME] INFER seconds=$((t1-t0))"
 
-  # -------------------------
-  # 1) EVAL
-  # -------------------------
-  banner_stage "EVAL"
-  t0=$(date +%s)
-
-  # per-dataset POINTMAP_THRESHOLD
-  case "${DATASET}" in
-    7scenes) POINTMAP_THRESHOLD=0.1 ;;
-    nrgbd)   POINTMAP_THRESHOLD=0.1 ;;
-    dtu)     POINTMAP_THRESHOLD=0.1 ;;
-    scannet) POINTMAP_THRESHOLD=0.1 ;;
-    *)       POINTMAP_THRESHOLD=0.1 ;;
-  esac
-
-  # per-model PREDICTED_POINTMAP
-  case "${MODEL}" in
-    vggt)     PREDICTED_POINTMAP=1 ;;
-    pi3)      PREDICTED_POINTMAP=1 ;;
-    reliev3r) PREDICTED_POINTMAP=0 ;;
-    *)        PREDICTED_POINTMAP=0 ;;
-  esac
-
-  echo "[EVAL] root=${ROOT_DIR}"
-  echo "[EVAL] gt_subdir=gt  pred_subdir=${PRED_SUBDIR}"
-  echo "[EVAL] pointmap_threshold=${POINTMAP_THRESHOLD}  predicted_pointmap=${PREDICTED_POINTMAP}"
-  echo "[EVAL] skip_pointmap=${SKIP_POINTMAP}  skip_normal=${SKIP_NORMAL}"
-  echo "[PATH] GT_DIR=${GT_DIR}"
-  echo "[PATH] PRED_DIR=${PRED_DIR}"
-
-  ASCEND_RT_VISIBLE_DEVICES=${NPU_ID} ${PYTHON} ${EVAL_SCRIPT} \
-    --root "${ROOT_DIR}" \
-    --dataset_name "${DATASET}" \
-    --gt_subdir "gt" \
-    --pred_subdir "${PRED_SUBDIR}" \
-    --pose_threshold "${POSE_THRESHOLD}" \
-    --pointmap_threshold "${POINTMAP_THRESHOLD}" \
-    --predicted_pointmap "${PREDICTED_POINTMAP}" \
-    --skip_pointmap "${SKIP_POINTMAP}" \
-    --skip_normal "${SKIP_NORMAL}" \
-    --depth_align "${DEPTH_ALIGN}" \
-    --device "${EVAL_DEVICE}"
-
-  t1=$(date +%s)
-  echo "[TIME] EVAL seconds=$((t1-t0))"
-
   # # -------------------------
-  # # 2) VIS
+  # # 1) EVAL
   # # -------------------------
-  # banner_stage "VIS"
+  # banner_stage "EVAL"
   # t0=$(date +%s)
 
-  # echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
-  # echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
+  # # per-dataset POINTMAP_THRESHOLD
+  # case "${DATASET}" in
+  #   7scenes) POINTMAP_THRESHOLD=0.1 ;;
+  #   nrgbd)   POINTMAP_THRESHOLD=0.1 ;;
+  #   dtu)     POINTMAP_THRESHOLD=0.1 ;;
+  #   scannet) POINTMAP_THRESHOLD=0.1 ;;
+  #   *)       POINTMAP_THRESHOLD=0.1 ;;
+  # esac
 
-  # # requirement: if gt has no gt_vis -> run; if exists -> skip
-  # run_vis_if_needed "${GT_DIR}"
-  # run_vis_if_needed "${PRED_DIR}"
+  # # per-model PREDICTED_POINTMAP
+  # case "${MODEL}" in
+  #   vggt)     PREDICTED_POINTMAP=0 ;;
+  #   pi3)      PREDICTED_POINTMAP=1 ;;
+  #   reliev3r) PREDICTED_POINTMAP=0 ;;
+  #   *)        PREDICTED_POINTMAP=0 ;;
+  # esac
+
+  # echo "[EVAL] root=${ROOT_DIR}"
+  # echo "[EVAL] gt_subdir=gt  pred_subdir=${PRED_SUBDIR}"
+  # echo "[EVAL] pointmap_threshold=${POINTMAP_THRESHOLD}  predicted_pointmap=${PREDICTED_POINTMAP}"
+  # echo "[EVAL] skip_pointmap=${SKIP_POINTMAP}  skip_normal=${SKIP_NORMAL}"
+  # echo "[PATH] GT_DIR=${GT_DIR}"
+  # echo "[PATH] PRED_DIR=${PRED_DIR}"
+
+  # ASCEND_RT_VISIBLE_DEVICES=${NPU_ID} ${PYTHON} ${EVAL_SCRIPT} \
+  #   --root "${ROOT_DIR}" \
+  #   --dataset_name "${DATASET}" \
+  #   --gt_subdir "gt" \
+  #   --pred_subdir "${PRED_SUBDIR}" \
+  #   --pose_threshold "${POSE_THRESHOLD}" \
+  #   --pointmap_threshold "${POINTMAP_THRESHOLD}" \
+  #   --predicted_pointmap "${PREDICTED_POINTMAP}" \
+  #   --skip_pointmap "${SKIP_POINTMAP}" \
+  #   --skip_normal "${SKIP_NORMAL}" \
+  #   --depth_align "${DEPTH_ALIGN}" \
+  #   --device "${EVAL_DEVICE}"
 
   # t1=$(date +%s)
-  # echo "[TIME] VIS seconds=$((t1-t0))"
+  # echo "[TIME] EVAL seconds=$((t1-t0))"
+
+  # -------------------------
+  # 2) VIS
+  # -------------------------
+  banner_stage "VIS"
+  t0=$(date +%s)
+
+  echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
+  echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
+
+  # requirement: if gt has no gt_vis -> run; if exists -> skip
+  run_vis_if_needed "${GT_DIR}"
+  run_vis_if_needed "${PRED_DIR}"
+
+  t1=$(date +%s)
+  echo "[TIME] VIS seconds=$((t1-t0))"
 
   banner_done "${IDX}" "${TOTAL}" "${DATASET}"
 done

@@ -310,7 +310,7 @@ class NRGBDDataset(BaseDataset):
             norm_K=norm_K,
             meta={
                 "dataset": "nrgbd",
-                "FXFY_CXCY": (self.config.FX, self.config.FY, self.config.CX, self.config.CY),
+                "FXFY_CXCY": (self.config.fx, self.config.fy, self.config.cx, self.config.cy),
                 "DEPTH_SCALE": self.config.depth_scale,
             },
         )

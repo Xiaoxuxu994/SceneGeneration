@@ -7,15 +7,17 @@ EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
-# MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+MODEL_SIZE=""
+source ./scripts/config/dl3dv/518x294.sh
 
-# CKPT="experiments/Reliev3R_bs2v8_260211_ase/ckpt/130000.ckpt"
-# CONFIG="experiments/Reliev3R_bs2v8_260211_ase/config.json"
-# PREFIX="Reliev3R_bs2v8_260211_ase_ckpt130k"
+# CKPT="./ckpts/Pi3/model.safetensors"
+# CONFIG=""
+# PREFIX="Reliev3R-260410-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newModel-DepthScalerFalse_ckptpi3"
 
-# CKPT="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2/ckpt/40000.ckpt"
-# CONFIG="experiments/Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2/config.json"
-# PREFIX="Reliev3R_bs2v8_260402_dl3dv_ss_lr3e-5_distL1_sigT_romav2_ckpt40k"
+CKPT="experiments/Reliev3R_bs2v8_260409_dl3dv_supCam/ckpt/60000.ckpt"
+CONFIG="experiments/Reliev3R_bs2v8_260409_dl3dv_supCam/config.json"
+PREFIX="Reliev3R_bs2v8_260409_dl3dv_supCam_ckpt60k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 
@@ -31,13 +33,13 @@ VIS_SCRIPT="scripts/run_vis.py"
 # CONFIG=""
 # source ./scripts/config/ase_518x336.sh
 
-MODEL="vggt" # ['vggt','pi3','reliev3r']
+# MODEL="vggt" # ['vggt','pi3','reliev3r']
 
-MODEL_SIZE=""
-CONFIG="./ckpts/VGGT-1B/config.json"
-CKPT="./ckpts/VGGT-1B/model.pt"
-PREFIX="vggt_official"
-source ./scripts/config/dl3dv/518x294.sh
+# MODEL_SIZE=""
+# CONFIG="./ckpts/VGGT-1B/config.json"
+# CKPT="./ckpts/VGGT-1B/model.pt"
+# PREFIX="vggt_official"
+# source ./scripts/config/ase/518x336.sh
 
 # CONFIG=""
 
@@ -68,15 +70,6 @@ source ./scripts/config/dl3dv/518x294.sh
 # CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch001-loss_valid0.5604-metric_valid0.4377.ckpt/pytorch_model.bin"
 # PREFIX="vggt_sz_ep1"
 
-# ---- params ------
-DATASETS=(
-  # 7scenes
-  # nrgbd
-  # dtu
-  # scannet
-  dl3dv
-  # ase
-)
 
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
@@ -84,7 +77,7 @@ USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 SKIP_POINTMAP=0 # 1 if skip pointmap evaluation
 SKIP_NORMAL=1 # 1 if skip point normal evaluation
 
-NPU_ID="4"
+NPU_ID="0"
 DEVICE="npu:0"
 DTYPE="fp32"
 
@@ -175,84 +168,19 @@ for DATASET in "${DATASETS[@]}"; do
   IDX=$((IDX+1))
   banner_dataset "${IDX}" "${TOTAL}" "${DATASET}"
 
-  # -------------------------
-  # per-dataset override (STRIDE / MAX_SEQ_LEN / optional MODE)
-  # edit these to your desired values
-  # -------------------------
-
-  case "${DATASET}" in
-    7scenes)
-      SPLIT="test"
-      SEQ=""   # e.g. chess/seq-01 ; empty means all
-
-      MODE_CUR="stride"   # stride | random
-      STRIDE_CUR=40       # default stride
-      SEQ_LEN_CUR=8       # use N frames in sequence
-      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
-      SEED=42             # used when MODE=random
-      NUM_SEQ=10
-      ;;
-    ase)
-      SPLIT="test"
-      SEQ=""   # e.g. chess/seq-01 ; empty means all
-
-      MODE_CUR="random"   # stride | random
-      STRIDE_CUR=5        # default stride
-      SEQ_LEN_CUR=10       # use N frames in sequence
-      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
-      SEED=42             # used when MODE=random
-      NUM_SEQ=10
-      ;;
-    nrgbd)
-      SPLIT="test"
-      SEQ=""   # e.g. chess/seq-01 ; empty means all
-
-      MODE_CUR="stride"   # stride | random
-      STRIDE_CUR=100      # default stride
-      SEQ_LEN_CUR=8       # use N frames in sequence
-      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
-      SEED=42             # used when MODE=random
-      NUM_SEQ=10
-      ;;
-    dl3dv)
-      SPLIT="test"
-      SEQ=""   # e.g. chess/seq-01 ; empty means all
-
-      MODE_CUR="stride"   # stride | random
-      STRIDE_CUR=5        # default stride
-      SEQ_LEN_CUR=8       # use N frames in sequence
-      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
-      SEED=42             # used when MODE=random
-      NUM_SEQ=100
-      ;;
-    scannet)
-      SPLIT="test"
-      SEQ=""   # e.g. chess/seq-01 ; empty means all
-
-      MODE_CUR="stride"   # stride | random
-      STRIDE_CUR=25       # default stride
-      SEQ_LEN_CUR=8       # use N frames in sequence
-      MAX_SEQ_LEN_CUR=-1  # default max seq len, default -1 to use all
-      SEED=42             # used when MODE=random
-      NUM_SEQ=10
-      ;;
-    *)
-      ;;
-  esac
-
   echo "[RUNTIME] device=${DEVICE} dtype=${DTYPE} eval_device=${EVAL_DEVICE}"
   echo "[CONFIG ] model=${MODEL} prefix=${PREFIX}"
   echo "[CONFIG ] ckpt=${CKPT}"
   echo "[CONFIG ] config=${CONFIG}"
   echo "[CONFIG ] OUT_ROOT=${OUT_ROOT}"
-  echo "[CONFIG ] split=${SPLIT} mode=${MODE_CUR} stride=${STRIDE_CUR} seq_len=${SEQ_LEN_CUR} max_seq_len=${MAX_SEQ_LEN_CUR} num_seq=${NUM_SEQ} seed=${SEED}"
+  echo "[CONFIG ] split=${SPLIT} mode=${MODE} stride=${STRIDE} seq_len=${SEQ_LEN} max_seq_len=${MAX_SEQ_LEN} num_seq=${NUM_SEQ} seed=${SEED}"
   [[ -n "${SEQ}" ]] && echo "[CONFIG ] seq=${SEQ}"
 
   # -------------------------
   # compute ROOT_DIR / PRED_DIR early (for reuse pred)
   # -------------------------
-  if [ "${MAX_SEQ_LEN_CUR}" -gt 0 ] 2>/dev/null; then
-    MSL="${MAX_SEQ_LEN_CUR}"
+  if [ "${MAX_SEQ_LEN}" -gt 0 ] 2>/dev/null; then
+    MSL="${MAX_SEQ_LEN}"
   else
     MSL="all"
   fi
@@ -272,10 +200,10 @@ for DATASET in "${DATASETS[@]}"; do
     PRED_SUBDIR="${PRED_SUBDIR}_gt_K"
   fi
 
-  if [ "${MODE_CUR}" = "stride" ]; then
-    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_stride${STRIDE_CUR}_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}_${RGB_RESIZE_W}x${RGB_RESIZE_H}"
+  if [ "${MODE}" = "stride" ]; then
+    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_stride${STRIDE}_max${MSL}_len${SEQ_LEN}_numseq${NUM_SEQ}_${RGB_RESIZE_W}x${RGB_RESIZE_H}"
   else
-    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_rand_max${MSL}_len${SEQ_LEN_CUR}_numseq${NUM_SEQ}_${RGB_RESIZE_W}x${RGB_RESIZE_H}"
+    ROOT_DIR="${OUT_ROOT}/${DATASET}/${SPLIT}_rand_max${MSL}_len${SEQ_LEN}_numseq${NUM_SEQ}_${RGB_RESIZE_W}x${RGB_RESIZE_H}"
   fi
 
   GT_DIR="${ROOT_DIR}/gt"
@@ -297,16 +225,16 @@ for DATASET in "${DATASETS[@]}"; do
     [[ -n "${CONFIG}" ]] && EXTRA_ARGS+=(--config "${CONFIG}")
     [[ -n "${PREFIX}" ]] && EXTRA_ARGS+=(--prefix "${PREFIX}")
 
-    echo "[INFER] dataset=${DATASET} split=${SPLIT} mode=${MODE_CUR}"
-    echo "[INFER] stride=${STRIDE_CUR} max_seq_len=${MSL} seq_len=${SEQ_LEN_CUR} num_seq=${NUM_SEQ}"
+    echo "[INFER] dataset=${DATASET} split=${SPLIT} mode=${MODE}"
+    echo "[INFER] stride=${STRIDE} max_seq_len=${MSL} seq_len=${SEQ_LEN} num_seq=${NUM_SEQ}"
     echo "[INFER] use_gt_pose=${USE_GT_POSE} use_gt_k=${USE_GT_K}"
     ASCEND_RT_VISIBLE_DEVICES=${NPU_ID} ${PYTHON} ${SCRIPT} \
       --dataset "${DATASET}" \
       --split "${SPLIT}" \
-      --mode "${MODE_CUR}" \
-      --stride "${STRIDE_CUR}" \
-      --seq_len "${SEQ_LEN_CUR}" \
-      --max_seq_len "${MAX_SEQ_LEN_CUR}" \
+      --mode "${MODE}" \
+      --stride "${STRIDE}" \
+      --seq_len "${SEQ_LEN}" \
+      --max_seq_len "${MAX_SEQ_LEN}" \
       --num_seq "${NUM_SEQ}" \
       --model "${MODEL}" \
       --model_size "${MODEL_SIZE}" \

@@ -42,7 +42,7 @@ class ScanNetDataset(BaseDataset):
     # def __init__(self, root: str | Path, num_seq: int = NUM_TEST,
     #              depth_scale: float = DEPTH_SCALE):
     #     super().__init__(root, num_seq)
-    #     self.depth_scale = depth_scale
+    #     self.config.depth_scale = depth_scale
 
     def __init__(self, config: DatasetConfig):
         super().__init__(config)
@@ -154,7 +154,7 @@ class ScanNetDataset(BaseDataset):
     #         depths.append(depth)
             
     #     depths = np.stack(depths)
-    #     depths = depths / self.depth_scale  # mm -> m
+    #     depths = depths / self.config.depth_scale  # mm -> m
     #     depths = torch.from_numpy(depths)
         
     #     return depths
@@ -170,7 +170,7 @@ class ScanNetDataset(BaseDataset):
             depths.append(depth)
             
         depths = np.stack(depths)
-        depths = depths / self.depth_scale  # mm -> m
+        depths = depths / self.config.depth_scale  # mm -> m
         depths = torch.from_numpy(depths)
         
         # resize to match rgb

@@ -1,3 +1,17 @@
+DATASETS=(
+  ase
+)
+
+SPLIT="test"
+SEQ=""   # e.g. chess/seq-01 ; empty means all
+
+MODE="random"   # stride | random
+STRIDE=5        # default stride
+SEQ_LEN=8       # use N frames in sequence
+MAX_SEQ_LEN=-1  # default max seq len, default -1 to use all
+SEED=42             # used when MODE=random
+NUM_SEQ=10
+
 # DINOv2
 RGB_ORIGIN_W=518
 RGB_ORIGIN_H=518

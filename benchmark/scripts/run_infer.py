@@ -219,7 +219,7 @@ def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, 
     cfg.eval = True
     model = Reliev3R(cfg.model).to(device).eval()
 
-    if "Pi3" in ckpt_path:
+    if "safetensors" in str(ckpt_path):
         state = load_file(ckpt_path)
         model.load_state_dict(state, strict=strict)
     else:

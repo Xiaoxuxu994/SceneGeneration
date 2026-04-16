@@ -184,8 +184,8 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         self.register_token = nn.Parameter(torch.randn(1, 1, num_register_tokens, self.dec_embed_dim))
         nn.init.normal_(self.register_token, std=1e-6)
 
-        assert not (cfg.point_head.enabled and cfg.depth_head.enabled), "Only one of point head and depth head can be enabled, not both."
-        assert cfg.point_head.enabled or cfg.depth_head.enabled, "Must enabled one of point head and depth head."
+        # assert not (cfg.point_head.enabled and cfg.depth_head.enabled), "Only one of point head and depth head can be enabled, not both."
+        # assert cfg.point_head.enabled or cfg.depth_head.enabled, "Must enabled one of point head and depth head."
 
         # ----------------------
         #  Local Points Decoder
