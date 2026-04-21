@@ -25,12 +25,13 @@ from utils.optim_utils import create_optimizer, create_lr_scheduler
 from utils.log_utils import export_pcds_and_cam_as_ply
 from utils import make_loss_func
 from utils.common import normalize_trans, calc_extr_inv, localpoint2global
+from utils.loss_utils import compute_render_metrics
 from dataset.dataloaders import create_mixed_dataloader, load_data_to_device
 
-from model import Reliev3R
+from model.reliev3r import Reliev3R
 
 
-ENABLE_TIME_PROFILING = True
+ENABLE_TIME_PROFILING = False
 
 def clean_up():
     dist.destroy_process_group()
@@ -75,6 +76,18 @@ def export_image_samples(cfg, step, subfolder, data, pred, loss_dict):
     verbose_image = visualize_prediction(pred, data, loss_dict["matching_info"][-1])
     torchvision.utils.save_image(verbose_image, os.path.join(cfg.output_dir, subfolder, "iter_{:06d}.png").format(step))
     print("[ INFO ] Images saved successfully.")
+
+
+def export_render_images(cfg, step, subfolder, data, pred):
+    """Save rendered images side-by-side with GT. """
+    if pred.get("render") is None:
+        return
+    os.makedirs(os.path.join(cfg.output_dir, subfolder), exist_ok=True)
+    render_rgb = pred["render"][:, :, :3].detach().clamp(0, 1)  # B V 3 H W
+    gt_rgb = data["input_images"]                                # B V 3 H W
+    # Concatenate GT and render vertically per view, then all views horizontally
+    paired = rearrange(torch.cat([gt_rgb, render_rgb], dim=-2), "b v c h w -> b c (v h) w")
+    torchvision.utils.save_image(paired, os.path.join(cfg.output_dir, subfolder, "render_{:06d}.png").format(step))
 
 
 def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
@@ -155,7 +168,7 @@ def run(rank, cfg):
     if cfg.get("ckpt_path") is not None:
         print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
         ckpt_info = torch.load(cfg.ckpt_path, map_location="cpu", weights_only=False)
-        model.load_state_dict(ckpt_info["model"])
+        model.load_state_dict(ckpt_info["model"], False)
         model = model.to(device=DEVICE_NAME)    
         del ckpt_info
         
@@ -303,10 +316,15 @@ def run(rank, cfg):
                         continue
                     tb_writer.add_scalar("loss/{}".format(loss_name), loss_value.item(), step)
                 compute_camera_metrics_and_log(pred, data, step, tb_writer, eval_angle, eval_trajectory, "metric_train")
-            
+                if pred.get("render") is not None:
+                    render_metrics = compute_render_metrics(pred["render"], data["input_images"])
+                    for k, v in render_metrics.items():
+                        tb_writer.add_scalar("render/{}".format(k), v.item(), step)
+
                 if step % cfg.training.verbose_interval == 0:
                     """Visualize image, tracking, depth maps and confidence maps"""
                     export_image_samples(cfg, step, "vis_img_train", data, pred, loss_dict)
+                    export_render_images(cfg, step, "vis_img_train", data, pred)
                     """Visualize point cloud"""
                     export_point_cloud(cfg, step, "vis_pcd_train", data, pred, thre=TRAIN_PCD_VISUALIZE_THRE)
                 
@@ -329,6 +347,11 @@ def run(rank, cfg):
                         """Report camera metrics of a single sample."""
                         compute_camera_metrics_and_log(pred, data, step, tb_writer, eval_angle, eval_trajectory, "metric_val")
                         compute_depth_metrics_and_log(pred, data, step, tb_writer, eval_depth_map, "metric_val")
+                        if pred.get("render") is not None:
+                            render_metrics = compute_render_metrics(pred["render"], data["input_images"])
+                            for k, v in render_metrics.items():
+                                tb_writer.add_scalar("render_val/{}".format(k), v.item(), step)
+                            export_render_images(cfg, step, "vis_img_val", data, pred)
                 
                 """Save model checkpoint. """
                 if (step % cfg.training.ckpt_interval == 0 or step == cfg.training.iterations) and global_rank == 0:
@@ -366,6 +389,7 @@ def run(rank, cfg):
                 loss_dict = loss_func(pred, data)
             """Visualize depth maps. """
             export_image_samples(cfg, step, "vis_img_eval", data, pred, loss_dict)
+            export_render_images(cfg, step, "vis_img_eval", data, pred)
             """Export point cloud. """
             export_point_cloud(cfg, step, "vis_pcd_eval", data, pred, thre=EVAL_PCD_VISUALIZE_THRE)
             print("[ INFO ] Eval step {} done.".format(step - step_begins))
@@ -412,5 +436,5 @@ if __name__ == '__main__':
         cfg.ckpt_path = args.ckpt_path
     cfg.eval = args.eval
     cfg.no_load_optim = args.no_load_optim
-    
+    # torch.autograd.set_detect_anomaly(True)
     main(cfg)

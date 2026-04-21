@@ -1,0 +1,159 @@
+{
+	"output_dir": "/efs-mi-east4-3/c50041401/exp/ssff3d/Reliev3R_bs2v8_260330_ase_ss_lr3e-5_distl1_sigT",
+	"model": {
+		"depth_model": {
+			"name": "DepthPro",
+			"ckpt_path": {
+				"DepthAnythingV2": "./ckpt/depth-anything-v2/depth_anything_v2_vitb.pth",
+				"UniDepth": "./ckpt/unidepth-v2-vitb14",
+				"DepthPro": "./ckpt/depth-pro/depth_pro.pt"
+			}
+		},
+		"matching_model": {
+			"name": "CoTracker",
+			"ckpt_path": {
+				"lightglue": {
+					"lightglue": "./ckpt/lightglue/superpoint_lightglue_v0-1_arxiv.pth",
+					"superpoint": "./ckpt/lightglue/superpoint_v1.pth"
+				},
+				"cotracker": "./ckpt/co-tracker/scaled_offline.pth"
+			}
+		},
+		"depth_aligner": {
+			"type": "pi3",
+			"ours": {
+				"tokenizer": {
+					"integrate_tokenizer": {
+						"enabled": false,
+						"type": "linear",
+						"d_in": 10,
+						"d_token": 512,
+						"patch_size": 14
+					},
+					"image_tokenizer": {
+						"enabled": true,
+						"type": "dinov2_small",
+						"d_in": 3,
+						"d_token": 384,
+						"ckpt_path": "./ckpt/dinov2-small"
+					},
+					"depth_tokenizer": {
+						"enabled": false,
+						"type": "linear",
+						"d_in": 1,
+						"d_token": 96,
+						"patch_size": 14
+					},
+					"camera_tokenizer": {
+						"enabled": false,
+						"type": "linear",
+						"d_in": 6,
+						"d_token": 512,
+						"patch_size": 14
+					}
+				},
+				"de_tokenizer": {
+					"type": "dpt"
+				},
+				"depth_scaler": {
+					"enabled": false
+				},
+				"d_model": 512,
+				"transformer_layer_count": 12,
+				"n_heads": 16,
+				"patch_size": 14
+			},
+			"pi3": {
+				"pos_type": "rope100",
+				"decoder_size": "large",
+				"depth_scaler": {
+					"enabled": false
+				},
+				"point_head": {
+					"enabled": false
+				},
+				"depth_head": {
+					"enabled": true
+				},
+				"pred_z_depth": false
+			},
+			"depth_scaler": {
+				"enabled": false
+			}
+		},
+		"decoder": {
+			"camera_decoder": {
+				"enabled": true,
+				"normalize_trans": false,
+				"sigmoid_trans": true
+			}
+		}
+	},
+	"training": {
+		"iterations": 130000,
+		"batch_size": 2,
+		"ckpt_interval": 5000,
+		"verbose_interval": 1000,
+		"warm_up_iterations": 2000,
+		"eval_interval": 50,
+		"learning_rate": 3e-05,
+		"lr_scheduler": "cosine",
+		"optimizer": {
+			"type": "AdamW"
+		}
+	},
+	"datasets": {
+		"ase": {
+			"data_root": "/efs-mi-east4-3/c50041401/datasets/reliev3r_synth_data/ASE",
+			"depth_scale": 0.001,
+			"depth_is_z": false,
+			"match_eps": 0.001,
+			"crop_lowerbound": 0.11,
+			"image_format": ".jpg",
+			"depth_lowerbound": 0.001,
+			"depth_upperbound": 65535.0,
+			"clip_length": 32,
+			"samp_interval": 1,
+			"sample_min": 8,
+			"sample_max": 8,
+			"pred_z_depth": false,
+			"overlap_thre_synth": 0.08,
+			"overlap_thre_real": 0.2,
+			"crop_upperbound": 0.15
+		}
+	},
+	"loss": {
+		"name": "ours",
+		"depth_shape": {
+			"w": 1.0,
+			"norm_depth": true
+		},
+		"geometric": {
+			"w": 0.5
+		},
+		"normal": {
+			"w": 0.0
+		},
+		"dist": {
+			"w": 0.1
+		},
+		"camera_extr": {
+			"w": 0.0
+		},
+		"camera_intr": {
+			"w": 1.0
+		},
+		"point": {
+			"w": 0.0
+		},
+		"normalize": {
+			"w": 0.0
+		},
+		"enable_conf": true,
+		"conf_alpha": 1.0,
+		"enable_alternate_geometric_opt": false,
+		"enable_slide": true
+	},
+	"eval": false,
+	"no_load_optim": false
+}

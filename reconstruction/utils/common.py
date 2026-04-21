@@ -171,7 +171,9 @@ def mat_mul_vec_by_conv(vec: torch.Tensor, mat: torch.Tensor):
         shuffle = True
         vec = rearrange(vec, "b h w c -> b c h w")
     b, d, h, w = vec.shape
-    ret = torch.nn.functional.conv2d(vec.reshape(1, b * d, h, w), mat.reshape(b * d, d, 1, 1), groups=b)
+    # avoid error on a5
+    # ret = torch.nn.functional.conv2d(vec.reshape(1, b * d, h, w), mat.reshape(b * d, d, 1, 1), groups=b)
+    ret = torch.einsum('bcd,bdhw->bchw', mat, vec)
     ret = ret.reshape(b, d, h, w)
     if shuffle:
         ret = rearrange(ret, "b c h w -> b h w c")

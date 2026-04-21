@@ -30,6 +30,11 @@ class Reliev3R(nn.Module):
             self.pred_z_depth = cfg.depth_aligner.pi3.get("pred_z_depth", True)
         else:
             raise NotImplementedError("Not implemented depth aligner type: {}".format(cfg.depth_aligner.type))
+        self.pred_gs = 'anchorsplat' in cfg
+        if self.pred_gs:
+            from submodules.AnchorSplat import AnchorSplatNet
+            self.anchorsplat = AnchorSplatNet(**cfg.anchorsplat)
+            if cfg.get('freeze_depth', False): self.depth_aligner = self.depth_aligner.eval().requires_grad_(False)
     
     def _forward(self, data):
         img = data["input_images"]
@@ -57,6 +62,11 @@ class Reliev3R(nn.Module):
                 "depths_conf":            aligned_depth_dict["confs"],      # Predicted depth confidence, b v 1 h w
                 "camera_extrs":           cameras,                          # Predicted camera poses, b v 4 4.
             }
+            if self.pred_gs:
+                intrinsics = aligned_depth_dict["camera_intrs"]
+                feature = aligned_depth_dict["enc_feat"]
+                gs, render = self.anchorsplat.forward(pred_depths[:, :, 0], feature, intrinsics, cameras, img.shape[-2:])
+                output_dict.update(gs=gs, render=render)
         else:
             raise NotImplementedError("Not implemented depth aligner type: {}".format(self.cfg.depth_aligner.type))
         
@@ -80,7 +90,9 @@ class Reliev3R(nn.Module):
                 "aligner_output": rearrange(depth_aligner_outputs["local_points"], "b v h w c -> b v c h w"), # b v 3 h w
                 "confs":          rearrange(depth_aligner_outputs["conf"], "b v h w c -> b v c h w"), # b v 1 h w
                 "camera_poses":   depth_aligner_outputs["camera_poses"], # b v 4 4
+                "camera_intrs":   depth_aligner_outputs["camera_intrs"], # b n 3 3
             })
+            if self.pred_gs: output_dict.update(enc_feat=depth_aligner_outputs["enc_feat"])
         else:
             raise NotImplementedError("Not implemented depth aligner type: {}".format(self.cfg.depth_aligner.type))
         return output_dict

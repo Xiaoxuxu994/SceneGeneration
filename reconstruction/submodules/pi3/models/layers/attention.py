@@ -321,6 +321,9 @@ class MemEffAttentionRope(AttentionRope):
 
     
 class FlashAttentionRope(AttentionRope):
+    sparsity = 0
+    num_views = 12
+    num_registers = 5
     def forward(self, x: Tensor, attn_bias=None, xpos=None, xpos_max=None) -> Tensor:
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).transpose(1, 3)
@@ -331,7 +334,20 @@ class FlashAttentionRope(AttentionRope):
 
         if self.rope is not None:
             q = self.rope(q, xpos, xpos_max=xpos_max)
-            k = self.rope(k, xpos, xpos_max=xpos_max)
+            k: Tensor = self.rope(k, xpos, xpos_max=xpos_max)
+
+        if self.sparsity:  # keep register kv and sample patch kv
+            k_reg, k_patch = k.unflatten(2, (self.num_views, -1)).tensor_split((self.num_registers,), 3)
+            k_reg, k_patch = k_reg.flatten(2, 3), k_patch.flatten(2, 3)
+            v_reg, v_patch = v.unflatten(2, (self.num_views, -1)).tensor_split((self.num_registers,), 3)
+            v_reg, v_patch = v_reg.flatten(2, 3), v_patch.flatten(2, 3)
+            hw = k_patch.shape[2]
+            indices = torch.randperm(hw, device=x.device)[:hw // self.sparsity]
+            k = torch.cat((k_reg, k_patch[:, :, indices]), 2)
+            v = torch.cat((v_reg, v_patch[:, :, indices]), 2)
+        # if self.sparsity:  # sample all kv
+        #     indices = torch.randperm(N, device=x.device)[:N // self.sparsity]
+        #     k, v = k[:, :, indices], v[:, :, indices]
 
         if q.dtype == torch.bfloat16:
             with nn.attention.sdpa_kernel(SDPBackend.FLASH_ATTENTION):
@@ -345,6 +361,7 @@ class FlashAttentionRope(AttentionRope):
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
+
 
 def get_attn_score(blk_class, x, frame_num, token_length, xpos=None):
     x = blk_class.norm1(x)

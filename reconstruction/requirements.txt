@@ -1,5 +1,4 @@
 pyyaml
-wandb
 dotted_dict
 transformers
 tensorboard
@@ -9,8 +8,11 @@ h5py
 pandas
 justpfm
 evo
-numpy==1.26.4
-torch==2.6.0
-torch_npu==2.6.0
-torchvision==0.21.0
-deepspeed==0.17.6
+numpy
+torch
+torch_npu
+torchvision
+deepspeed
+torchmetrics
+opencv-python
+addict

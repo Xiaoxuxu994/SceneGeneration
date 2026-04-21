@@ -1,0 +1,27 @@
+docker run -it --user root --name cann850-py311-pt290-3dgs --privileged \
+    --ipc=host --net=host --pid=host \
+    --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
+    --entrypoint /bin/bash \
+    --device=/dev/davinci0 --device=/dev/davinci1 \
+    --device=/dev/davinci2 --device=/dev/davinci3 \
+    --device=/dev/davinci4 --device=/dev/davinci5 \
+    --device=/dev/davinci6 --device=/dev/davinci7 \
+    --device=/dev/davinci_manager \
+    --device=/dev/devmm_svm \
+    --device=/dev/hisi_hdc \
+    -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
+    -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+    -v /usr/local/dcmi:/usr/local/dcmi \
+    -v /mnt/nvme1/:/mnt/nvme1/ \
+    -v /mnt/nvme2/:/mnt/nvme2/ \
+    -v /mnt/nvme3/:/mnt/nvme3/ \
+    -v /mnt/nvme4/:/mnt/nvme4/ \
+    -v /etc/ascend_install.info:/etc/ascend_install.info \
+    -v /root/.cache:/root/.cache \
+    -v /efs-mi-east4-1:/efs-mi-east4-1 \
+    -v /efs-mi-east4-2:/efs-mi-east4-2 \
+    -v /efs-m3ga:/efs-mi-east4-3 \
+    -v /efs-mi-east4-4:/efs-mi-east4-4 \
+    -v /efs-mi-pay-gy1:/efs-mi-pay-gy1 \
+    -v /home/yyx:/home/yyx \
+    euleros_pytorch-2.9.0_cann8.5_triton3.2.0:v1

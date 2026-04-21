@@ -1,0 +1,164 @@
+datasets:
+  ase:
+    clip_length: 32
+    crop_lowerbound: 0.11
+    crop_upperbound: 0.15
+    data_root: /efs-mi-east4-3/c50041401/datasets/reliev3r_synth_data/ASE
+    depth_is_z: false
+    depth_lowerbound: 0.001
+    depth_scale: 0.001
+    depth_upperbound: 65535.0
+    image_format: .jpg
+    match_eps: 0.001
+    overlap_thre_real: 0.2
+    overlap_thre_synth: 0.08
+    pred_z_depth: false
+    samp_interval: 1
+    sample_max: 8
+    sample_min: 8
+eval: false
+loss:
+  camera_extr:
+    w: 0.0
+  camera_intr:
+    w: 1.0
+  conf_alpha: 1.0
+  depth_shape:
+    norm_depth: true
+    w: 1.0
+  dist:
+    w: 0.1
+  enable_alternate_geometric_opt: false
+  enable_conf: true
+  enable_slide: true
+  geometric:
+    w: 0.5
+  name: ours
+  normal:
+    w: 0.0
+  normalize:
+    w: 0.0
+  point:
+    w: 0.0
+  render:
+    w_l1: 1.
+    w_mse: 0.
+    w_ssim: .1
+    w_lpips: .1
+    w_depth: .01
+model:
+  decoder:
+    camera_decoder:
+      enabled: true
+      normalize_trans: false
+      sigmoid_trans: true
+  depth_aligner:
+    depth_scaler:
+      enabled: false
+    ours:
+      d_model: 512
+      de_tokenizer:
+        type: dpt
+      depth_scaler:
+        enabled: false
+      n_heads: 16
+      patch_size: 14
+      tokenizer:
+        camera_tokenizer:
+          d_in: 6
+          d_token: 512
+          enabled: false
+          patch_size: 14
+          type: linear
+        depth_tokenizer:
+          d_in: 1
+          d_token: 96
+          enabled: false
+          patch_size: 14
+          type: linear
+        image_tokenizer:
+          ckpt_path: ./ckpt/dinov2-small
+          d_in: 3
+          d_token: 384
+          enabled: true
+          type: dinov2_small
+        integrate_tokenizer:
+          d_in: 10
+          d_token: 512
+          enabled: false
+          patch_size: 14
+          type: linear
+      transformer_layer_count: 12
+    pi3:
+      decoder_size: large
+      depth_head:
+        enabled: true
+      depth_scaler:
+        enabled: false
+      point_head:
+        enabled: false
+      pos_type: rope100
+      pred_z_depth: false
+    type: pi3
+  freeze_depth: true
+  anchorsplat:
+    anchor_sampler:
+      num_points: [&num_kv 10000, 100000]  # kv size, anchor size
+      init_voxel_size: .02
+      scale_factor: 1.02
+      max_ratio: 1.05
+      max_iters: 10
+      depth_tol: .05
+      contract_scene: &contract true
+    point_net:
+      dim_in: 1024
+      dim: &point_net_dim 512
+      num_heads: 8
+      depth: 16
+      num_kv: *num_kv
+      num_pe_freqs: 12
+      pe_contract: *contract
+      checkpoint: true
+    gs_head:
+      num_gs: 4
+      sh_degree: 0
+      mlp_args:
+        dim_in: *point_net_dim
+        dim: 128
+        depth: 2
+        input_norm: true
+        activation: ReLU
+        zero_init: false
+      gs_args:
+        offset_max: 10  # number of voxels
+        opacity_bias: .1
+        scale_act: sigmoid  # softplus / sigmoid
+        scale_bias: .25  # number of voxels
+        scale_max: 2  # number of voxels
+        rotation_bias: [1., 0., 0., 0.]
+  depth_model:
+    ckpt_path:
+      DepthAnythingV2: ./ckpt/depth-anything-v2/depth_anything_v2_vitb.pth
+      DepthPro: ./ckpt/depth-pro/depth_pro.pt
+      UniDepth: ./ckpt/unidepth-v2-vitb14
+    name: DepthPro
+  matching_model:
+    ckpt_path:
+      cotracker: ./ckpt/co-tracker/scaled_offline.pth
+      lightglue:
+        lightglue: ./ckpt/lightglue/superpoint_lightglue_v0-1_arxiv.pth
+        superpoint: ./ckpt/lightglue/superpoint_v1.pth
+    name: CoTracker
+no_load_optim: true
+output_dir: /efs-mi-east4-3/c50041401/exp/ssff3d/Reliev3R_AnchorSplat_bs2v8_260409_ase_ss_lr3e-5_distl1_sigT
+training:
+  batch_size: 2
+  ckpt_interval: 5000
+  eval_interval: 50
+  iterations: 200000
+  learning_rate: 3.0e-05
+  lr_scheduler: cosine
+  optimizer:
+    type: AdamW
+  verbose_interval: 1000
+  warm_up_iterations: 2000

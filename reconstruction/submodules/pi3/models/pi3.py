@@ -319,6 +319,9 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         if isinstance(hidden, dict):
             hidden = hidden["x_norm_patchtokens"]
 
+        # return dino feature
+        enc_feat = hidden.reshape(B, N, patch_h, patch_w, -1)
+
         # project encoder dim to docoder dim
         hidden = self.project_e2d(hidden)
         hidden = self.project_norm(hidden)
@@ -367,6 +370,8 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             local_points=local_points,
             conf=conf,
             camera_poses=camera_poses,
+            camera_intrs=camera_intrs,
+            enc_feat=enc_feat
         )
     
     def forward(self, imgs):

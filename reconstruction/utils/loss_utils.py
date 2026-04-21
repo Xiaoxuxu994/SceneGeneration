@@ -3,7 +3,7 @@ import torch
 from einops import rearrange
 
 from .platform import DEVICE_NAME
-from utils.common import WeightedMAD, calc_extr_inv, intr2ray, localpoint2global, mat_mul_vec_by_conv, pad_one, normalize_trans, get_norm_map
+from utils.common import WeightedMAD, calc_extr_inv, intr2ray, localpoint2global, mat_mul_vec_by_conv, pad_one, normalize_trans  #, get_norm_map
 from submodules.pi3.utils.alignment import align_points_scale
 
 
@@ -235,16 +235,17 @@ def matching_error_3D_normal(points: torch.Tensor,
         depth_is_z (bool): If the depth maps are z-depths. False if they are ray-depths. 
         enable_depth_weight (bool): If weight the matching error by pixel depth.
     """
-    points = points.permute(0, 3, 1, 2) # b 3 h w
-    norms = get_norm_map(points) # b 3 h w    
+    # points = points.permute(0, 3, 1, 2) # b 3 h w
+    # norms = get_norm_map(points) # b 3 h w    
     
-    assert len(points) % view_per_batch == 0
-    tracks = matching_info["matches"] # b*v 2 k 2
-    norms = samp_points_by_pixel(norms, tracks.reshape(-1, *tracks.shape[-2:]), mode="nearest") # bv k c
-    norms = norms.reshape(-1, view_per_batch, *norms.shape[-2:]) # b v k c
-    norm_loss = (1 - (norms[..., 0, :, :] * norms[..., 1, :, :]).sum(dim=-1).mean()) / 2
+    # assert len(points) % view_per_batch == 0
+    # tracks = matching_info["matches"] # b*v 2 k 2
+    # norms = samp_points_by_pixel(norms, tracks.reshape(-1, *tracks.shape[-2:]), mode="nearest") # bv k c
+    # norms = norms.reshape(-1, view_per_batch, *norms.shape[-2:]) # b v k c
+    # norm_loss = (1 - (norms[..., 0, :, :] * norms[..., 1, :, :]).sum(dim=-1).mean()) / 2
     
-    return norm_loss
+    # return norm_loss
+    return points.new_zeros(())
 
 
 def matching_error_3D_dist(points: torch.Tensor, 
@@ -271,6 +272,39 @@ def matching_error_3D_dist(points: torch.Tensor,
     dist_loss = ((dist_loss * mask).sum(dim=-1) / (mask.sum(dim=-1) + 1e-8)).mean()
     
     return dist_loss.mean()
+
+
+# image metrics, use reduce=True for training loss, and reduce=False for per-image eval logging
+from torch.nn import functional as F
+from torchmetrics.functional.image import structural_similarity_index_measure
+from torchmetrics.functional.image.lpips import _NoTrainLpips
+
+LPIPS_NET = _NoTrainLpips()
+
+def psnr(x: torch.Tensor, y: torch.Tensor, reduce: bool = True) -> torch.Tensor:
+    val = F.mse_loss(x, y, reduction='none').mean((-3, -2, -1)).log10_().mul_(-10)
+    return val.mean() if reduce else val
+
+def ssim(x: torch.Tensor, y: torch.Tensor, reduce: bool = True) -> torch.Tensor:
+    val = structural_similarity_index_measure(
+        x.flatten(0, 1), y.flatten(0, 1), data_range=1, reduction='none')
+    return val.mean() if reduce else val.view(x.shape[:2])
+
+@torch.autocast(torch.accelerator.current_accelerator().type, enabled=False)
+def lpips(x: torch.Tensor, y: torch.Tensor, reduce: bool = True) -> torch.Tensor:
+    if next(LPIPS_NET.parameters()).device != x.device: LPIPS_NET.to(x.device)
+    val = LPIPS_NET.forward(x.flatten(0, 1).float(), y.flatten(0, 1).float(), normalize=True)
+    return val.mean() if reduce else val.view(x.shape[:2])
+
+
+@torch.autocast(torch.accelerator.current_accelerator().type, enabled=False)
+def compute_render_metrics(render: torch.Tensor, images_gt: torch.Tensor) -> dict[str, torch.Tensor]:
+    render_rgb = render[:, :, :3].detach().clamp(0, 1)
+    return {
+        'psnr': psnr(render_rgb, images_gt),
+        'ssim': ssim(render_rgb, images_gt),
+        'lpips': lpips(render_rgb, images_gt),
+    }
 
 
 class LossFunction(torch.nn.Module):
@@ -474,6 +508,22 @@ class LossFunction(torch.nn.Module):
         point_scale = pr_global_points.norm(dim=-1).reshape(B, -1).mean(dim=-1) # B
         return (point_scale - 1).abs().mean()
     
+
+    def render_loss(self, render: torch.Tensor, images_gt: torch.Tensor, depth_gt: torch.Tensor, w_render: dict) -> torch.Tensor:
+        loss = render.new_zeros(())
+        images, depth = render[:, :, :3], render[:, :, 3]
+        HW = render.shape[-2:]
+        if images_gt.shape[-2:] != HW:
+            images_gt = F.interpolate(images_gt.flatten(0, 1), HW, mode='bilinear').unflatten(0, images_gt.shape[:2])
+        if depth_gt.shape[-2:] != HW:
+            depth_gt = F.interpolate(depth_gt, HW)
+        if w_render.get(k := 'w_l1'): loss = loss + w_render[k] * F.l1_loss(images, images_gt)
+        if w_render.get(k := 'w_mse'): loss = loss + w_render[k] * F.mse_loss(images, images_gt)
+        if w_render.get(k := 'w_ssim'): loss = loss + w_render[k] * (1 - ssim(images, images_gt))
+        if w_render.get(k := 'w_lpips'): loss = loss + w_render[k] * lpips(images, images_gt)
+        if w_render.get(k := 'w_depth'): loss = loss + w_render[k] * F.l1_loss(depth, depth_gt)
+        return loss
+
     
     def forward(self, output_dict, data):
         ### Compute loss weight
@@ -485,6 +535,7 @@ class LossFunction(torch.nn.Module):
         w_extr      = self.cfg.camera_extr.w if self.cfg.get("camera_extr", None) is not None else 0.0
         w_point     = self.cfg.point.w if self.cfg.get("point", None) is not None else 0.0
         w_normalize = self.cfg.normalize.w if self.cfg.get("normalize", None) is not None else 0.0
+        w_render    = self.cfg.get("render", None)
         
         ### Compute loss value
         ## Depth shape loss
@@ -516,6 +567,14 @@ class LossFunction(torch.nn.Module):
                       w_intr * intr_loss_value + 
                       w_extr * extr_loss_value + 
                       w_normalize * normalize_loss_value)
+
+        if w_render is not None:
+            images_gt = data["input_images"]
+            depth_gt = (data["input_depths"] if data["input_depths"] is not None \
+                else output_dict["depths"])[:, :, 0]
+            render = output_dict["render"]
+            render_loss_value = self.render_loss(render, images_gt, depth_gt, w_render)
+            total_loss += render_loss_value
         
         ### Return loss information
         loss_dict = {
@@ -536,4 +595,6 @@ class LossFunction(torch.nn.Module):
                 "point_local":  point_loss_details["local_pts_loss"], 
                 "point_global": point_loss_details["global_pts_loss"], 
             })
+        if w_render is not None:
+            loss_dict.update(render_loss=render_loss_value)
         return loss_dict
