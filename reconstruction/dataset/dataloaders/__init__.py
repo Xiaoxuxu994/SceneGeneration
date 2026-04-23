@@ -33,6 +33,7 @@ from .scannet_dataset import ScanNet_Dataset
 from .scannetv2_dataset import ScanNetv2_Dataset
 from .scannetpp_dataset import ScanNetpp_Dataset
 from .wildrgbd_dataset import WildRGBD_Dataset
+from .spatialvid import SpatialVID_Dataset
 
 from ..utils.common import customized_collate_fn_placeholder
 
@@ -52,6 +53,7 @@ DATASET_DICT = {
     "scannetv2":  ScanNetv2_Dataset, 
     "scannetpp":  ScanNetpp_Dataset,  # outdoor
     "wildrgbd":   WildRGBD_Dataset, 
+    "spatialvid": SpatialVID_Dataset, 
 }
 
 EPOCH_SCALE = 10000
@@ -67,10 +69,11 @@ DATASET_SAMPLES_PER_EPOCH_TRAIN = {
     "dl3dv":      25  * EPOCH_SCALE, 
     "mapillary":  1   * EPOCH_SCALE, 
     "re10k":      25  * EPOCH_SCALE, 
-    "scannet":    10  * EPOCH_SCALE, 
-    "scannetv2":  2   * EPOCH_SCALE, 
-    "scannetpp":  2   * EPOCH_SCALE, 
+    "scannet":    20  * EPOCH_SCALE, 
+    "scannetv2":  20  * EPOCH_SCALE, 
+    "scannetpp":  20  * EPOCH_SCALE, 
     "wildrgbd":   25  * EPOCH_SCALE, 
+    "spatialvid": 100 * EPOCH_SCALE, 
 }
 DATASET_SAMPLES_PER_EPOCH_EVAL = {
     "ase":        1 * EPOCH_SCALE, 
@@ -88,6 +91,7 @@ DATASET_SAMPLES_PER_EPOCH_EVAL = {
     "scannetv2":  1 * EPOCH_SCALE, 
     "scannetpp":  1 * EPOCH_SCALE, 
     "wildrgbd":   1 * EPOCH_SCALE, 
+    "spatialvid": 1 * EPOCH_SCALE, 
 }
 
 
@@ -139,6 +143,9 @@ class CustomizedConcatDataset(ConcatDataset):
         assert len(datasets) == len(samples_per_dataset)
         self.samples_per_dataset = torch.tensor(samples_per_dataset)
         self.cumulative_sizes = torch.cumsum(self.samples_per_dataset, dim=0).numpy()
+
+    def __len__(self):
+        return self.cumulative_sizes[-1]
 
     def __getitem__(self, idx):
         if idx < 0:

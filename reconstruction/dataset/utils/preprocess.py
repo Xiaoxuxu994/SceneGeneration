@@ -464,10 +464,12 @@ def preprocess_images_for_encode(images, intrs=None, cbox=None, out_shape=None, 
         ## Otherwise, adjust shape of image-like maps by max_size and patch_size.
         ## Downsample image-like maps first to fit to max_size.
         if H > W:
-            out_H = min(max_size, H) // patch_size * patch_size
+            # out_H = min(max_size, H) // patch_size * patch_size
+            out_H = max_size // patch_size * patch_size
             out_W = W * out_H // H // patch_size * patch_size
         else:
-            out_W = min(max_size, W) // patch_size * patch_size
+            # out_W = min(max_size, W) // patch_size * patch_size
+            out_W = max_size // patch_size * patch_size
             out_H = H * out_W // W // patch_size * patch_size
         out_shape = (out_H, out_W)
     

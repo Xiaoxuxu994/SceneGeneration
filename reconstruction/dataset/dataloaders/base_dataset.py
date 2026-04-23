@@ -11,13 +11,12 @@ from torch.utils.data import Dataset
 import dataset.utils.io as io
 import dataset.utils.common as cm
 from dataset.utils.preprocess import preprocess_images_for_encode, crop_images_and_intrs, crop_tracks_and_visibs
-from utils.common import calc_extr_inv, normalize_trans, depth2pointmap, globalpoint2local, trans_geo_to_first_frame_and_norm
+from utils.common import calc_extr_inv, calc_intr_inv, normalize_trans, depth2pointmap, globalpoint2local, trans_geo_to_first_frame_and_norm
 from utils.loss_utils import samp_points_by_pixel
 
-MAX_SAMPLE_RETRY = 10
 VAL_RATIO = 0.02
-VIEW_OVERLAP_THRE_REALISTIC_DATA = 0.30
-VIEW_OVERLAP_THRE_SYNTHETIC_DATA = 0.20
+MAX_IMAGE_SIZES = [518, 504, 490, 476, 462, 448, 434, 420]
+# MAX_IMAGE_SIZES = [252, 238, 224, 210, 196]
 
 
 class Base_Dataset(Dataset):
@@ -34,9 +33,7 @@ class Base_Dataset(Dataset):
                  depth_is_z=True, 
                  pred_z_depth=True, 
                  crop_lowerbound=0.0, 
-                 crop_upperbound=0.2,
-                 img_max_size=518,
-                 patch_size=14,
+                 crop_upperbound=0.2, 
                  **kwargs, 
                  ):
         """_summary_
@@ -59,9 +56,6 @@ class Base_Dataset(Dataset):
         self.batch_size = batch_size # Ensure each batch is sampled from the same dataset to keep image shape consistency.
         self.crop_lowerbound = crop_lowerbound
         self.crop_upperbound = crop_upperbound
-        self.img_max_size = img_max_size
-        self.img_max_sizes = [518, 504, 490, 476, 462, 448, 434, 420]
-        self.patch_size = patch_size
     
     def __len__(self):
         raise NotImplementedError()
@@ -75,7 +69,7 @@ class Base_Dataset(Dataset):
         view_ids = np.random.choice(np.arange(0, clip_view_num), sample_num, replace=False)
         return view_ids
     
-    def view_sampler_iterative(self, visibs: torch.Tensor, clip_view_num: int, thre: float):
+    def view_sampler_iterative(self, visibs: torch.Tensor, clip_view_num: int, thre: float, bidirect=False):
         """
         Sample views of a sample from a clip in an iterative approach.
         Given a sampled view set S from a clip C, each time add a view x in C-S, which has a minimal maximum covisibility with views in S that \
@@ -85,38 +79,41 @@ class Base_Dataset(Dataset):
             visibs (torch.Tensor): Covisibility of pair-wise tracking pixels. Tensor of shape (V(V-1)/2, gs*gs)
             clip_viwe_num (int): Number of views in the clip.
         """
-        visib_mat = cm.deflat_visibility_mat(visibs, clip_view_num) # v v, upper-triangle matrix.
-        visib_mat[visib_mat < thre] = 0
-        
-        view_ids = []
-        sampled_mask = torch.zeros(clip_view_num, dtype=torch.bool)
-        # first_view_id = legal_roots[np.random.randint(low=0, high=len(legal_roots))]
-        first_view_id = np.random.randint(low=0, high=clip_view_num)
-        view_ids.append(first_view_id)
-        sampled_mask[first_view_id] = True
-        sampled_view_cnt = 1
-        while sampled_view_cnt < self.sample_num:
-            _visib_mat = visib_mat.clone()
-            _visib_mat[sampled_mask] = 0
-            _visib_mat[:, ~sampled_mask] = 0
-            _visib_vec = _visib_mat.max(dim=-1).values # v
-            _visib_vec[_visib_vec == 0] = 2
-            new_view_id = _visib_vec.min(dim=0).indices
-            if _visib_vec[new_view_id] == 2:
-                return None
-            else:
-                view_ids.append(new_view_id.item())
-                sampled_mask[new_view_id] = True
-                sampled_view_cnt += 1
-        return np.array(view_ids)
+        visib_mat = cm.deflat_visibility_mat(visibs, clip_view_num, bidirect=bidirect) # v v, symmetric matrix.
+        # visib_mat[visib_mat < thre] = 0
+        first_view_id_seq = np.random.permutation(clip_view_num)
+        for first_view_id in first_view_id_seq:
+            view_ids = []
+            sampled_mask = torch.zeros(clip_view_num, dtype=torch.bool)
+            # first_view_id = np.random.randint(low=0, high=clip_view_num)
+            view_ids.append(first_view_id)
+            sampled_mask[first_view_id] = True
+            sampled_view_cnt = 1
+            success = True
+            while sampled_view_cnt < self.sample_num:
+                _visib_mat = visib_mat.clone()
+                _visib_mat[sampled_mask] = 0
+                _visib_mat[:, ~sampled_mask] = 0
+                _visib_vec = _visib_mat.max(dim=-1).values # v
+                _visib_vec[_visib_vec < thre] = 2
+                new_view_id = _visib_vec.min(dim=0).indices
+                if _visib_vec[new_view_id] == 2:
+                    success = False
+                    break
+                else:
+                    view_ids.append(new_view_id.item())
+                    sampled_mask[new_view_id] = True
+                    sampled_view_cnt += 1
+            if success:
+                return np.array(view_ids)
+        return None
     
-    def prepare_data_for_dino_encode(self, data):
-        max_image_size = self.img_max_sizes[np.random.randint(0, 8)]
+    def prepare_data_for_dino_encode(self, data, max_size=518):
         data["input_images"], data["input_intrs"], cbox, scale_factor = preprocess_images_for_encode(
-            data["input_images"], intrs=data["input_intrs"], interp_method="bilinear", max_size=max_image_size, patch_size=self.patch_size)
-        data["input_depths"], _, _, _ = preprocess_images_for_encode(data["input_depths"], cbox=cbox, max_size=max_image_size, patch_size=self.patch_size)
+            data["input_images"], intrs=data["input_intrs"], interp_method="bilinear", max_size=max_size)
+        data["input_depths"], _, _, _ = preprocess_images_for_encode(data["input_depths"], cbox=cbox, max_size=max_size)
         if data["input_depth_masks"] is not None:
-            data["input_depth_masks"], _, _, _ = preprocess_images_for_encode(data["input_depth_masks"], cbox=cbox, max_size=max_image_size, patch_size=self.patch_size)
+            data["input_depth_masks"], _, _, _ = preprocess_images_for_encode(data["input_depth_masks"], cbox=cbox, max_size=max_size)
         if data.get("input_tracks0", None) is not None:
             ## Crop processed tracking information for realistic dataset. 
             ## For synthetic dataset, we resize images first and then calculate matching. 
@@ -182,36 +179,28 @@ class Base_Dataset(Dataset):
         except:
             return None
         
-    def is_visib_valid(self, visib: torch.Tensor, view_num: int, min_thres=6.25e-3):
+    def is_visib_valid(self, visib: torch.Tensor, view_num: int, min_thres=6.25e-3, bidirect=False):
         """Validate visiblity of a data as if it composes a minimal_spanning_tree with its maximum covisibility above min_thres.
         Args:
             visib (torch.Tensor): Tensor of shape (view_num(view_num-1)/2, ), with each element denoting the ratio of matched pixels over overall resolution on the view.
             view_num (int): Number of views corresponds to visib. 
             min_thres (float): The minimal covisibility allowed in the spanning tree. 
         """
-        g_mat = np.zeros((view_num, view_num), dtype=np.float32)
-        for i in range(view_num):
-            for j in range(i + 1, view_num):
-                pair_idx = cm.get_tracking_idx_by_pair(i, j, total=view_num)
-                if visib[pair_idx] > min_thres:
-                    g_mat[i, j] = -visib[pair_idx]
-        g_mat = csr_array(g_mat)
-        mst = minimum_spanning_tree(g_mat)
-        mst_g_mat = mst.toarray()
-        nonzero_count = len(mst_g_mat.flatten().nonzero()[0])
-        if nonzero_count == view_num - 1:
-            match_view_i, match_view_j = [], []
-            # for nonzero_idx in mst_g_mat.flatten().nonzero()[0]:
-            #     match_view_i.append(nonzero_idx // view_num)
-            #     match_view_j.append(nonzero_idx % view_num)
+        match_view_i, match_view_j = [], []
+        if bidirect:
+            for i in range(view_num):
+                for j in range(view_num):
+                    if i != j:
+                        match_view_i.append(i)
+                        match_view_j.append(j)
+        else:
             for i in range(view_num):
                 for j in range(i + 1, view_num):
                     match_view_i.append(i)
                     match_view_j.append(j)
-            match_view_i = np.array(match_view_i)
-            match_view_j = np.array(match_view_j)
-            return match_view_i, match_view_j
-        return None
+        match_view_i = np.array(match_view_i)
+        match_view_j = np.array(match_view_j)
+        return match_view_i, match_view_j
 
     def update_train_proc(self, train_proc):
         self.train_proc = min(max(train_proc, 0.0), 1.0)
@@ -265,7 +254,7 @@ class Synthetic_Dataset(Base_Dataset):
         return sample_list
 
     def __len__(self):
-        return len(self.sample_list) #// 10 * 2
+        return len(self.sample_list)
     
     def fetch_meta(self, sample_idx):
         if hasattr(self, "data_list"):
@@ -330,8 +319,9 @@ class Synthetic_Dataset(Base_Dataset):
             )
             if crop_ratio is not None:
                 all_data = self.aug_by_crop(all_data, crop_ratio=crop_ratio)
-            all_data = self.prepare_data_for_dino_encode(all_data)
-            all_data = self.filter_top_depth(all_data, p=0.004)
+            max_image_size = MAX_IMAGE_SIZES[np.random.randint(0, len(MAX_IMAGE_SIZES))]
+            all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size)
+            all_data = self.filter_top_depth(all_data, p=0.003)
             all_images = all_data["input_images"]
             all_depths = all_data["input_depths"]
             all_depth_masks = all_data["input_depth_masks"]
@@ -340,20 +330,17 @@ class Synthetic_Dataset(Base_Dataset):
             timer.record_end("2_Preprocess")
             
             ## Try at most MAX_SAMPLE_RETRY times to get a legal sample.
-            current_try = 0
             batch_data = []
             timer.record_start("4_exhaustive_matching")
-            grid_size = 100
-            _, _, visibs_all = cm.exhaustive_geo2match(all_depths, calc_extr_inv(extr_list), intr_list, eps=self.match_eps, grid_size=grid_size)
+            grid_size = 50
+            _, _, visibs_all = cm.exhaustive_geo2match(all_depths, all_depth_masks, calc_extr_inv(extr_list), intr_list, eps=self.match_eps, grid_size=grid_size)
             visibs_all = visibs_all.to(dtype=torch.float32).mean(dim=-1) # v(v-1)/2
             timer.record_end("4_exhaustive_matching")
-            while current_try < MAX_SAMPLE_RETRY and len(batch_data) < batch_size:
-                current_try += 1
-                
-                # samp_view_ids = self.view_sampler(clip_view_num=V)
-                samp_view_ids = self.view_sampler_iterative(visibs_all, clip_view_num=V, thre=self.overlap_thre)
+            while len(batch_data) < batch_size:
+                samp_view_ids = self.view_sampler_iterative(visibs_all, clip_view_num=V, thre=self.overlap_thre, bidirect=True)
                 if samp_view_ids is None:
-                    continue
+                    print("[ WARNING ] Failure in sampling sample {} for dataset {}".format(sample_idx, self.__class__.__name__))
+                    return None
                 
                 samp_view_ids_tensor = torch.tensor(samp_view_ids, dtype=torch.int64)
                 images = all_images[samp_view_ids_tensor]
@@ -370,29 +357,28 @@ class Synthetic_Dataset(Base_Dataset):
                     input_extrs=extrs, # v 4 4
                     input_intrs=intrs, # v 3 3
                     dataset_name=self.__class__.__name__, 
+                    data_type="synthetic", 
                 )
                 
                 timer.record_start("3_MatchCalc")
                 ## Dataset extrinsics are defined as world-to-camera. Transform to camera-to-world when passed.
                 tracks0, tracks1, visibs = cm.exhaustive_geo2match(
-                    depths, calc_extr_inv(extrs), intrs, eps=self.match_eps, samples_to_keep=10000, grid_size=grid_size)
+                    depths, depth_masks, calc_extr_inv(extrs), intrs, eps=self.match_eps, samples_to_keep=10000, grid_size=grid_size)
                 ## Validate if the image group is connected by checking covisibilitu.
                 matched_pairs = self.is_visib_valid(visibs.sum(dim=-1) / (grid_size * grid_size), 
-                                                    view_num=len(samp_view_ids), min_thres=0.0)
+                                                    view_num=len(samp_view_ids), min_thres=0.0, bidirect=True)
                 timer.record_end("3_MatchCalc")
                 assert matched_pairs is not None, "This should not happen."
-                if matched_pairs is None:
-                    continue
                 matched_view_i, matched_view_j = matched_pairs
                 data.update(dict(input_tracks_view_id0=torch.from_numpy(matched_view_i), # v-1
                                  input_tracks_view_id1=torch.from_numpy(matched_view_j), # v-1
-                                 input_tracks0=torch.stack([tracks0[cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids))] \
+                                 input_tracks0=torch.stack([tracks0[cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids), True)] \
                                                             for i, j in zip(matched_view_i, matched_view_j)]), # v-1 k 2
-                                 input_tracks1=torch.stack([tracks1[cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids))] \
+                                 input_tracks1=torch.stack([tracks1[cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids), True)] \
                                                             for i, j in zip(matched_view_i, matched_view_j)]), # v-1 k 2
-                                 input_visibs0=torch.stack([visibs[cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids))] \
+                                 input_visibs0=torch.stack([visibs[cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids), True)] \
                                                             for i, j in zip(matched_view_i, matched_view_j)]), # v-1 k
-                                 input_visibs1=torch.stack([visibs[cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids))] \
+                                 input_visibs1=torch.stack([visibs[cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids), True)] \
                                                             for i, j in zip(matched_view_i, matched_view_j)]), # v-1 k
                                  input_points=depth2pointmap(depths, extrs, intrs, device="cpu", is_intr_normalized=True), # v h w 3
                                  ))
@@ -400,13 +386,9 @@ class Synthetic_Dataset(Base_Dataset):
                     data.update(dict(input_depths=cm.zdepth_to_rdepth(depths, intrs)))
                 
                 ## Normalize geometrics.
-                # if sample_idx <= len(self) // 2:
                 data["input_points"], data["input_extrs"], data["input_depths"] = \
                     trans_geo_to_first_frame_and_norm(data["input_points"], data["input_extrs"], data["input_depths"])
                 data["input_points_local"] = globalpoint2local(data["input_points"], data["input_extrs"])
-                # else:
-                #     data["input_points"] = None
-                #     data["input_points_local"] = None
                 
                 batch_data.append(data)
             
@@ -414,20 +396,22 @@ class Synthetic_Dataset(Base_Dataset):
                 timer.record_end("0_Total")
                 timer.report()
                 return batch_data
-            # print("[ WARNING ] Max retries exceed!")
+            print("[ WARNING ] Max retries exceed! Failure in sample idx {}".format(sample_idx))
             # print("[ WARNING ] Error data from max retries from {}".format(self.__class__.__name__))
             return None
 
         except:
+            print("[ WARNING ] Unexpected exception!")
             return None
 
 
 class Realistic_Dataset(Base_Dataset):
-    def __init__(self, overlap_thre_real=0.25, **kwargs):
+    def __init__(self, overlap_thre_real=0.25, depth_format=".exr", **kwargs):
         super().__init__(**kwargs)
         self.clip_length = 32
         self.sample_list = self.get_sample_list()
         self.overlap_thre = overlap_thre_real
+        self.depth_format = depth_format
         print("[ INFO ] {} samples found for {} as {}.".format(
             len(self), self.__class__.__name__,"training set" if self.is_train else "validation set"))
     
@@ -441,9 +425,9 @@ class Realistic_Dataset(Base_Dataset):
             print("[ INFO ] Creating sample list for {}".format(self.__class__.__name__))
             sample_list = sorted(glob(os.path.join(self.data_root, "sub_*", "*")))
             filtered_sample_list = []
-            for sample_folder in tqdm(sample_list):
-                if not io.run_check(sample_folder, 32):
-                    continue
+            for sample_idx, sample_folder in enumerate(tqdm(sample_list)):
+                # if not io.run_check(sample_folder, 32):
+                #     continue
                 if (os.path.exists(os.path.join(sample_folder, "rgb")) and 
                     os.path.exists(os.path.join(sample_folder, "moge_depth")) and 
                     os.path.exists(os.path.join(sample_folder, "moge_depth_mask")) and 
@@ -451,26 +435,61 @@ class Realistic_Dataset(Base_Dataset):
                     filtered_sample_list.append(sample_folder)
             np.savez_compressed(sample_list_file, data=filtered_sample_list)
             
-        valid_sample_num = int(len(filtered_sample_list) * VAL_RATIO)
+        valid_sample_num = max(int(len(filtered_sample_list) * VAL_RATIO), 1)
         if self.is_train is not None and valid_sample_num > 0:
             filtered_sample_list = filtered_sample_list[:-valid_sample_num] if self.is_train else filtered_sample_list[-valid_sample_num:]
         return filtered_sample_list
     
+    def __len__(self):
+        return len(self.sample_list)
+
+    def validate_tracking_by_foundation_matrix(self, tracking_info, extrs, intrs, H, W, eps=1e-2):
+        """
+        Filter pseudo tracking label with foundation matrix validation. 
+        """
+        normalizer = torch.tensor([W, H]).unsqueeze(0).unsqueeze(0)
+        tracks0 = tracking_info["track0"] / normalizer # v(v-1)/2 k 2
+        tracks1 = tracking_info["track1"] / normalizer # v(v-1)/2 k 2
+        rel_extrs, inv_intrs0, inv_T_intrs1 = [], [], []
+        for i in range(len(extrs)):
+            for j in range(i + 1, len(extrs)):
+                rel_extrs.append(extrs[j] @ calc_extr_inv(extrs[i]))
+                inv_intrs0.append(calc_intr_inv(intrs[i]))
+                inv_T_intrs1.append(calc_intr_inv(intrs[j]).transpose(-1, -2))
+        rel_extrs = torch.stack(rel_extrs, dim=0)
+        inv_intrs0 = torch.stack(inv_intrs0, dim=0)
+        inv_T_intrs1 = torch.stack(inv_T_intrs1, dim=0)
+        rel_rot = rel_extrs[..., :3, :3]
+        rel_t_rasym = torch.zeros_like(rel_extrs[..., :3, :3])
+        rel_t_rasym[..., 0, 1] = -rel_extrs[..., 2, 2]
+        rel_t_rasym[..., 1, 0] = rel_extrs[..., 2, 2]
+        rel_t_rasym[..., 0, 2] = rel_extrs[..., 1, 2]
+        rel_t_rasym[..., 2, 0] = -rel_extrs[..., 1, 2]
+        rel_t_rasym[..., 1, 2] = -rel_extrs[..., 0, 2]
+        rel_t_rasym[..., 2, 1] = rel_extrs[..., 0, 2]
+        esssential_mats = rel_t_rasym @ rel_rot # v(v-1)/2 3 3
+        foundation_mats = inv_T_intrs1 @ esssential_mats @ inv_intrs0 # v(v-1)/2 3 3
+        foundation_mats = foundation_mats[:, None, :, :] # v(v-1)/2 1 3 3
+        tracks0 = torch.cat([tracks0, torch.ones_like(tracks0[..., :1])], dim=-1)[..., None] # v(v-1)/2 k 3 1
+        tracks1 = torch.cat([tracks1, torch.ones_like(tracks1[..., :1])], dim=-1)[..., None] # v(v-1)/2 k 3 1
+        epipolar_error = (tracks1.transpose(-1, -2) @ foundation_mats @ tracks0).abs() # v(v-1)/2 k 1 1
+        epipolar_error = epipolar_error[..., 0, 0]
+        tracking_info["visib0"] = tracking_info["visib0"] & (epipolar_error < eps)
+        tracking_info["visib1"] = tracking_info["visib1"] & (epipolar_error < eps)
+        return tracking_info
+
     def update_track_visib_by_depth_mask(self, track: torch.Tensor, visib: torch.Tensor, depth_mask: torch.Tensor):
-        """Filter out illegal tracking points from visib by identifying the illegal values in depth mask.
+        """Filter out illegal tracking points from visib by identifying the illegal values in depth mask. 
 
         Args:
-            track (torch.Tensor): Tensor of shape (k, 2).
-            visib (torch.Tensor): Tensor of shape (k).
-            depth_mask (torch.Tensor): Tensor of shape (1, H, W).
+            track (torch.Tensor): Tensor of shape (k, 2). 
+            visib (torch.Tensor): Tensor of shape (k). 
+            depth_mask (torch.Tensor): Tensor of shape (1, H, W). 
         """
         valid_track = samp_points_by_pixel(depth_mask[None], track[None], mode="nearest", padding_mode="zeros")[0, :, 0] # k
         valid_track = valid_track > 0.5
         valid_track = valid_track & visib
         return valid_track
-    
-    def __len__(self):
-        return len(self.sample_list)
 
     def _getitem_fn(self, sample_idx, crop_ratio=None, batch_size=1):
         try:
@@ -481,9 +500,8 @@ class Realistic_Dataset(Base_Dataset):
             ## List files
             sample_folder = self.sample_list[sample_idx]
             image_list = sorted(glob(os.path.join(sample_folder, "rgb", "*{}".format(self.image_format))))
-            depth_list = sorted(glob(os.path.join(sample_folder, "moge_depth", "*.exr")))
+            depth_list = sorted(glob(os.path.join(sample_folder, "moge_depth", "*{}".format(self.depth_format))))
             depth_mask_list = sorted(glob(os.path.join(sample_folder, "moge_depth_mask", "*.png")))
-            # tracking_file = sorted(glob(os.path.join(sample_folder, "cotracker3", "*.npz")))
             tracking_file = sorted(glob(os.path.join(sample_folder, "romav2", "*.npz")))
             if len(tracking_file) == 0:
                 return None
@@ -505,9 +523,12 @@ class Realistic_Dataset(Base_Dataset):
             if clip_view_num < self.sample_num:
                 return None
             
-            invert_extr = (self.__class__.__name__ == "ScanNet_Dataset" or self.__class__.__name__ == "ScanNetpp_Dataset")
-            # extrs_raw, intrs_raw = io.read_realistic_camera_npy(camera_file, inv_extr=invert_extr)
+            invert_extr = self.__class__.__name__ in ["ScanNet_Dataset", "ScanNetpp_Dataset", "DL3DV_Dataset"]
             extrs_raw, intrs_raw = io.read_realistic_camera_npy(camera_file)
+            if self.__class__.__name__ == "DL3DV_Dataset":
+                extrs_trans_mat = torch.tensor([[[0.0, 1.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0], [0.0, 0.0, -1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]])
+                extrs_raw = extrs_trans_mat @ extrs_raw
+                extrs_raw[:, 0:3, 1:3] *= -1
             if invert_extr:
                 extrs_raw = calc_extr_inv(extrs_raw)
             tracking_info_raw = io.read_cotracker_info_as_tensor(tracking_file)
@@ -534,6 +555,8 @@ class Realistic_Dataset(Base_Dataset):
             timer.record_end("1_IO")
             timer.record_start("2_Preprocess")
             
+            tracking_info_raw = self.validate_tracking_by_foundation_matrix(tracking_info_raw, extrs_raw, intrs_raw, 
+                                                                            all_images.shape[-2], all_images.shape[-1])
             all_data = dict(
                 input_images=all_images, # v 3 h w
                 input_depths=all_depths, # v 1 h w
@@ -549,7 +572,8 @@ class Realistic_Dataset(Base_Dataset):
             )
             if crop_ratio is not None:
                 all_data = self.aug_by_crop(all_data, crop_ratio=crop_ratio)
-            all_data = self.prepare_data_for_dino_encode(all_data)
+            max_image_size = MAX_IMAGE_SIZES[np.random.randint(0, len(MAX_IMAGE_SIZES))]
+            all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size)
             all_images = all_data["input_images"]
             all_depths = all_data["input_depths"]
             all_depth_masks = all_data["input_depth_masks"]
@@ -562,16 +586,13 @@ class Realistic_Dataset(Base_Dataset):
             timer.record_end("2_Preprocess")
             
             ## Try at most MAX_SAMPLE_RETRY times to get a legal sample.
-            current_try = 0
             batch_data = []
             visibs_all = torch.logical_and(tracking_info_raw["visib0"], 
                                            tracking_info_raw["visib1"]).to(dtype=torch.float32).mean(dim=-1) # v(v-1)/2
-            while current_try < MAX_SAMPLE_RETRY and len(batch_data) < batch_size:
-                current_try += 1
-                # samp_view_ids = self.view_sampler(clip_view_num)
-                samp_view_ids = self.view_sampler_iterative(visibs_all, clip_view_num, self.overlap_thre)
+            while len(batch_data) < batch_size:
+                samp_view_ids = self.view_sampler_iterative(visibs_all, clip_view_num, self.overlap_thre, bidirect=False)
                 if samp_view_ids is None:
-                    continue
+                    return None
                 
                 ## Load files
                 samp_view_ids_tensor = torch.tensor(samp_view_ids, dtype=torch.int64)
@@ -583,7 +604,7 @@ class Realistic_Dataset(Base_Dataset):
                 tracking_info = dict(track0=[], track1=[], visib0=[], visib1=[])
                 for i in range(len(samp_view_ids)):
                     for j in range(i + 1, len(samp_view_ids)):
-                        tracking_info_idx = cm.get_tracking_idx_by_pair(samp_view_ids[i], samp_view_ids[j], total=clip_view_num)
+                        tracking_info_idx = cm.get_tracking_idx_by_pair(samp_view_ids[i], samp_view_ids[j], total=clip_view_num, bidirect=False)
                         track0 = tracking_info_raw["track0"][tracking_info_idx]
                         track1 = tracking_info_raw["track1"][tracking_info_idx]
                         visib0 = tracking_info_raw["visib0"][tracking_info_idx]
@@ -618,24 +639,25 @@ class Realistic_Dataset(Base_Dataset):
                     input_points=None, 
                     input_points_local=None, 
                     dataset_name=self.__class__.__name__, 
+                    data_type="realistic"
                 )
                 
                 timer.record_start("3_MatchCalc")
                 matched_pairs = self.is_visib_valid(data["input_visibs0"].sum(dim=-1) / 625, 
-                                                    view_num=len(samp_view_ids), min_thres=0.0)
+                                                    view_num=len(samp_view_ids), min_thres=0.0, bidirect=False)
                 timer.record_end("3_MatchCalc")
                 if matched_pairs is None:
                     continue
                 matched_view_i, matched_view_j = matched_pairs
                 data.update(dict(input_tracks_view_id0=torch.from_numpy(matched_view_i), # v-1
                                  input_tracks_view_id1=torch.from_numpy(matched_view_j), # v-1
-                                 input_tracks0=torch.stack([data["input_tracks0"][cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids))] \
+                                 input_tracks0=torch.stack([data["input_tracks0"][cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids), False)] \
                                                for i, j in zip(matched_view_i, matched_view_j)], dim=0), # v-1 k 2
-                                 input_tracks1=torch.stack([data["input_tracks1"][cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids))] \
+                                 input_tracks1=torch.stack([data["input_tracks1"][cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids), False)] \
                                                for i, j in zip(matched_view_i, matched_view_j)], dim=0), # v-1 k 2
-                                 input_visibs0=torch.stack([data["input_visibs0"][cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids))] \
+                                 input_visibs0=torch.stack([data["input_visibs0"][cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids), False)] \
                                                for i, j in zip(matched_view_i, matched_view_j)], dim=0), # v-1 k
-                                 input_visibs1=torch.stack([data["input_visibs1"][cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids))] \
+                                 input_visibs1=torch.stack([data["input_visibs1"][cm.get_tracking_idx_by_pair(i, j, len(samp_view_ids), False)] \
                                                for i, j in zip(matched_view_i, matched_view_j)], dim=0), # v-1 k
                                  ))
                 if not self.pred_z_depth:
