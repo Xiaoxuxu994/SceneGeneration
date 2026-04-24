@@ -79,7 +79,7 @@ class Base_Dataset(Dataset):
             visibs (torch.Tensor): Covisibility of pair-wise tracking pixels. Tensor of shape (V(V-1)/2, gs*gs)
             clip_viwe_num (int): Number of views in the clip.
         """
-        visib_mat = cm.deflat_visibility_mat(visibs, clip_view_num, bidirect=bidirect) # v v, symmetric matrix.
+        visib_mat = cm.deflat_visibility_mat(visibs, clip_view_num) # v v, symmetric matrix.
         # visib_mat[visib_mat < thre] = 0
         first_view_id_seq = np.random.permutation(clip_view_num)
         for first_view_id in first_view_id_seq:
@@ -337,7 +337,7 @@ class Synthetic_Dataset(Base_Dataset):
             visibs_all = visibs_all.to(dtype=torch.float32).mean(dim=-1) # v(v-1)/2
             timer.record_end("4_exhaustive_matching")
             while len(batch_data) < batch_size:
-                samp_view_ids = self.view_sampler_iterative(visibs_all, clip_view_num=V, thre=self.overlap_thre, bidirect=True)
+                samp_view_ids = self.view_sampler_iterative(visibs_all, clip_view_num=V, thre=self.overlap_thre, bidirect=False)
                 if samp_view_ids is None:
                     print("[ WARNING ] Failure in sampling sample {} for dataset {}".format(sample_idx, self.__class__.__name__))
                     return None
