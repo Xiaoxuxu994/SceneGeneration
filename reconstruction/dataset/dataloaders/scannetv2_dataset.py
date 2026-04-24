@@ -36,6 +36,7 @@ class ScanNetv2_Dataset(Synthetic_Dataset):
                 depth_clip_list.append(depth_file)
                 extr_clip_list.append(extr)
                 intr_clip_list.append(intr)
+                assert os.path.exists(image_file) and os.path.exists(depth_file)
                 
                 if (len(image_clip_list) + 1) * self.samp_interval > self.clip_length:
                     sample_list.append(dict(

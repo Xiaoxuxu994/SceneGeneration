@@ -267,7 +267,9 @@ def matching_error_3D_dist(points: torch.Tensor,
     points = samp_points_by_pixel(points, tracks.reshape(-1, *tracks.shape[-2:])) # bv k c
     points = points.reshape(-1, view_per_batch, *points.shape[-2:]) # bv 2 k c
     # dist_loss = (points[..., 0, :, :] - points[..., 1, :, :]).square().sum(dim=-1) # bv k
-    dist_loss = (points[..., 0, :, :] - points[..., 1, :, :]).abs().sum(dim=-1) # bv k
+    points_diff = points[..., 0, :, :] - points[..., 1, :, :]
+    # dist_loss = points_diff.abs().sum(dim=-1) + points_diff.square().sum(dim=-1) # bv k
+    dist_loss = points_diff.abs().sum(dim=-1) # bv k
     dist_loss = ((dist_loss * mask).sum(dim=-1) / (mask.sum(dim=-1) + 1e-8)).mean()
     
     return dist_loss.mean()
@@ -497,8 +499,6 @@ class LossFunction(torch.nn.Module):
         ## Point loss, disabled for self-sup learning
         if data.get("input_points_local", None) is not None:
             point_loss, point_loss_details, S_opt_local = self.point_loss(output_dict, data)
-            if w_point == 0.0 and w_extr > 0:
-                S_opt_local = None
         else:
             point_loss, S_opt_local = torch.tensor(0.0), None
         if self.enable_alternate_geometric_opt:
