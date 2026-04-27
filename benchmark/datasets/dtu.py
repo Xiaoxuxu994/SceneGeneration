@@ -209,6 +209,7 @@ class DTUDataset(BaseDataset):
             image_pils=image_pils,
             images_cpu=images_cpu,
             depths=depths,
+            tracks={},
             raw_w2c=raw_w2c,
             raw_K=raw_K,
             meta={

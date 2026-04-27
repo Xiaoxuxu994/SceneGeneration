@@ -13,11 +13,11 @@ source ./scripts/config/re10k/518x294.sh
 
 # CKPT="./ckpts/Pi3/model.safetensors"
 # CONFIG=""
-# PREFIX="Reliev3R-260410-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newModel-DepthScalerFalse_ckptpi3"
+# PREFIX="Reliev3R-260415-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode_ckptpi3"
 
-CKPT="experiments/Reliev3R-260410-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newModel-DepthScalerFalse/ckpt/20000.ckpt"
-CONFIG="experiments/Reliev3R-260410-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newModel-DepthScalerFalse/config.json"
-PREFIX="Reliev3R-260410-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newModel-DepthScalerFalse_ckpt20k"
+CKPT="experiments/Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit/ckpt/55000.ckpt"
+CONFIG="experiments/Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit/config.json"
+PREFIX="Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit_ckpt55k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 
@@ -77,7 +77,7 @@ USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 SKIP_POINTMAP=0 # 1 if skip pointmap evaluation
 SKIP_NORMAL=1 # 1 if skip point normal evaluation
 
-NPU_ID="0"
+NPU_ID="1"
 DEVICE="npu:0"
 DTYPE="fp32"
 

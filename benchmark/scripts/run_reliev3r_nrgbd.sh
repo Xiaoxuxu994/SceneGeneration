@@ -11,13 +11,13 @@ MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 MODEL_SIZE=""
 source ./scripts/config/nrgbd/518x392.sh
 
-CKPT="./ckpts/Pi3/model.safetensors"
-CONFIG=""
-PREFIX="Reliev3R-260410-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newModel-DepthScalerFalse_ckptpi3"
+# CKPT="./ckpts/Pi3/model.safetensors"
+# CONFIG=""
+# PREFIX="Reliev3R-260415-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode_ckptpi3"
 
-# CKPT="experiments/Reliev3R-260410-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newModel-DepthScalerFalse/ckpt/20000.ckpt"
-# CONFIG="experiments/Reliev3R-260410-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newModel-DepthScalerFalse/config.json"
-# PREFIX="Reliev3R-260410-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newModel-DepthScalerFalse_ckpt20k"
+CKPT="experiments/Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit/ckpt/55000.ckpt"
+CONFIG="experiments/Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit/config.json"
+PREFIX="Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit_ckpt55k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 
@@ -77,7 +77,7 @@ USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 SKIP_POINTMAP=0 # 1 if skip pointmap evaluation
 SKIP_NORMAL=1 # 1 if skip point normal evaluation
 
-NPU_ID="0"
+NPU_ID="2"
 DEVICE="npu:0"
 DTYPE="fp32"
 
@@ -263,67 +263,67 @@ for DATASET in "${DATASETS[@]}"; do
   t1=$(date +%s)
   echo "[TIME] INFER seconds=$((t1-t0))"
 
-  # # -------------------------
-  # # 1) EVAL
-  # # -------------------------
-  # banner_stage "EVAL"
-  # t0=$(date +%s)
-
-  # # per-dataset POINTMAP_THRESHOLD
-  # case "${DATASET}" in
-  #   7scenes) POINTMAP_THRESHOLD=0.1 ;;
-  #   nrgbd)   POINTMAP_THRESHOLD=0.1 ;;
-  #   dtu)     POINTMAP_THRESHOLD=0.1 ;;
-  #   scannet) POINTMAP_THRESHOLD=0.1 ;;
-  #   *)       POINTMAP_THRESHOLD=0.1 ;;
-  # esac
-
-  # # per-model PREDICTED_POINTMAP
-  # case "${MODEL}" in
-  #   vggt)     PREDICTED_POINTMAP=0 ;;
-  #   pi3)      PREDICTED_POINTMAP=1 ;;
-  #   reliev3r) PREDICTED_POINTMAP=0 ;;
-  #   *)        PREDICTED_POINTMAP=0 ;;
-  # esac
-
-  # echo "[EVAL] root=${ROOT_DIR}"
-  # echo "[EVAL] gt_subdir=gt  pred_subdir=${PRED_SUBDIR}"
-  # echo "[EVAL] pointmap_threshold=${POINTMAP_THRESHOLD}  predicted_pointmap=${PREDICTED_POINTMAP}"
-  # echo "[EVAL] skip_pointmap=${SKIP_POINTMAP}  skip_normal=${SKIP_NORMAL}"
-  # echo "[PATH] GT_DIR=${GT_DIR}"
-  # echo "[PATH] PRED_DIR=${PRED_DIR}"
-
-  # ASCEND_RT_VISIBLE_DEVICES=${NPU_ID} ${PYTHON} ${EVAL_SCRIPT} \
-  #   --root "${ROOT_DIR}" \
-  #   --dataset_name "${DATASET}" \
-  #   --gt_subdir "gt" \
-  #   --pred_subdir "${PRED_SUBDIR}" \
-  #   --pose_threshold "${POSE_THRESHOLD}" \
-  #   --pointmap_threshold "${POINTMAP_THRESHOLD}" \
-  #   --predicted_pointmap "${PREDICTED_POINTMAP}" \
-  #   --skip_pointmap "${SKIP_POINTMAP}" \
-  #   --skip_normal "${SKIP_NORMAL}" \
-  #   --depth_align "${DEPTH_ALIGN}" \
-  #   --device "${EVAL_DEVICE}"
-
-  # t1=$(date +%s)
-  # echo "[TIME] EVAL seconds=$((t1-t0))"
-
   # -------------------------
-  # 2) VIS
+  # 1) EVAL
   # -------------------------
-  banner_stage "VIS"
+  banner_stage "EVAL"
   t0=$(date +%s)
 
-  echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
-  echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
+  # per-dataset POINTMAP_THRESHOLD
+  case "${DATASET}" in
+    7scenes) POINTMAP_THRESHOLD=0.1 ;;
+    nrgbd)   POINTMAP_THRESHOLD=0.1 ;;
+    dtu)     POINTMAP_THRESHOLD=0.1 ;;
+    scannet) POINTMAP_THRESHOLD=0.1 ;;
+    *)       POINTMAP_THRESHOLD=0.1 ;;
+  esac
 
-  # requirement: if gt has no gt_vis -> run; if exists -> skip
-  run_vis_if_needed "${GT_DIR}"
-  run_vis_if_needed "${PRED_DIR}"
+  # per-model PREDICTED_POINTMAP
+  case "${MODEL}" in
+    vggt)     PREDICTED_POINTMAP=0 ;;
+    pi3)      PREDICTED_POINTMAP=1 ;;
+    reliev3r) PREDICTED_POINTMAP=0 ;;
+    *)        PREDICTED_POINTMAP=0 ;;
+  esac
+
+  echo "[EVAL] root=${ROOT_DIR}"
+  echo "[EVAL] gt_subdir=gt  pred_subdir=${PRED_SUBDIR}"
+  echo "[EVAL] pointmap_threshold=${POINTMAP_THRESHOLD}  predicted_pointmap=${PREDICTED_POINTMAP}"
+  echo "[EVAL] skip_pointmap=${SKIP_POINTMAP}  skip_normal=${SKIP_NORMAL}"
+  echo "[PATH] GT_DIR=${GT_DIR}"
+  echo "[PATH] PRED_DIR=${PRED_DIR}"
+
+  ASCEND_RT_VISIBLE_DEVICES=${NPU_ID} ${PYTHON} ${EVAL_SCRIPT} \
+    --root "${ROOT_DIR}" \
+    --dataset_name "${DATASET}" \
+    --gt_subdir "gt" \
+    --pred_subdir "${PRED_SUBDIR}" \
+    --pose_threshold "${POSE_THRESHOLD}" \
+    --pointmap_threshold "${POINTMAP_THRESHOLD}" \
+    --predicted_pointmap "${PREDICTED_POINTMAP}" \
+    --skip_pointmap "${SKIP_POINTMAP}" \
+    --skip_normal "${SKIP_NORMAL}" \
+    --depth_align "${DEPTH_ALIGN}" \
+    --device "${EVAL_DEVICE}"
 
   t1=$(date +%s)
-  echo "[TIME] VIS seconds=$((t1-t0))"
+  echo "[TIME] EVAL seconds=$((t1-t0))"
+
+  # # -------------------------
+  # # 2) VIS
+  # # -------------------------
+  # banner_stage "VIS"
+  # t0=$(date +%s)
+
+  # echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
+  # echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
+
+  # # requirement: if gt has no gt_vis -> run; if exists -> skip
+  # run_vis_if_needed "${GT_DIR}"
+  # run_vis_if_needed "${PRED_DIR}"
+
+  # t1=$(date +%s)
+  # echo "[TIME] VIS seconds=$((t1-t0))"
 
   banner_done "${IDX}" "${TOTAL}" "${DATASET}"
 done

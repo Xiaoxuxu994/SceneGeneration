@@ -5,6 +5,7 @@ import os
 import os.path as osp
 from pathlib import Path
 from typing import List, Tuple
+from glob import glob
 
 import numpy as np
 import torch
@@ -68,8 +69,9 @@ class RE10KDataset(BaseDataset):
         rgbs = list(sorted((seq_root / "rgb").iterdir()))
         images = [rgbs[i] for i in frame_ids]
         cameras = str(seq_root / "{}.npy".format(str(seq_root.name)))
+        tracks = glob(str(seq_root / "romav2" / "*.npz"))[0]
         
-        return images, cameras
+        return images, cameras, tracks
     
     def _load_rgb(self, image_paths: List[str], target_width=518, target_height=294):
         # image_pils = [Image.open(p).convert("RGB").resize((target_width, target_height), Image.Resampling.BICUBIC) \
@@ -165,12 +167,27 @@ class RE10KDataset(BaseDataset):
         
         return poses, pix_K, norm_K
     
+    def _load_track(self, track_paths, device="cpu", dtype=torch.float32, dtype_visib=torch.bool):
+        track_info = np.load(track_paths, allow_pickle=True)["data"]
+        track0 = torch.from_numpy(np.concatenate([matching_info["tracks"][0] for matching_info in track_info], axis=0)) # n k 2
+        track1 = torch.from_numpy(np.concatenate([matching_info["tracks"][1] for matching_info in track_info], axis=0)) # n k 2
+        visib0 = torch.from_numpy(np.concatenate([matching_info["visibility"][0] for matching_info in track_info], axis=0)) # n k
+        visib1 = torch.from_numpy(np.concatenate([matching_info["visibility"][1] for matching_info in track_info], axis=0)) # n k
+        
+        return dict(
+            track0=track0.to(device=device, dtype=dtype), 
+            track1=track1.to(device=device, dtype=dtype), 
+            visib0=visib0.to(device=device, dtype=dtype_visib),
+            visib1=visib1.to(device=device, dtype=dtype_visib), 
+        )
+    
     def load_sequence(self, seq, frame_ids) -> SequenceBatch:
-        image_paths, camera_paths = self.make_paths(seq, frame_ids)
+        image_paths, camera_paths, track_paths = self.make_paths(seq, frame_ids)
         
         image_pils, images_cpu = self._load_rgb(image_paths)
         depths = self._load_depth(images_cpu)     # (V,H,W) meters, no resize
         raw_w2c, pix_K, norm_K = self._load_w2c_and_K(camera_paths, frame_ids, images_cpu)   # (V,4,4)
+        tracks = self._load_track(track_paths)
         
         return SequenceBatch(
             seq=seq,
@@ -181,6 +198,7 @@ class RE10KDataset(BaseDataset):
             image_pils=image_pils,
             images_cpu=images_cpu,
             depths=depths,
+            tracks=tracks,
             raw_w2c=raw_w2c,
             raw_K=pix_K,
             norm_K=norm_K,

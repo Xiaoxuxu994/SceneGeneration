@@ -24,6 +24,7 @@ class SequenceBatch:
     image_pils: List[Image.Image]         # len=V, 原始PIL
     images_cpu: torch.Tensor              # (V,3,H,W) CPU tensor, 预处理后
     depths: torch.Tensor                  # (V,H,W) meters, CPU tensor
+    tracks: dict
 
     raw_w2c: torch.Tensor                 # (V,4,4) or (V,3,4) 统一为 w2c
     raw_K: torch.Tensor                   # (V,3,3) 每帧内参
@@ -190,11 +191,18 @@ class BaseDataset(ABC):
                 depths          = batch.depths           # V,H,W
                 w2c             = batch.raw_w2c.float()  # V,4,4
                 norm_K          = batch.norm_K            # V,3,3
+                tracks          = batch.tracks
                 
-                ## Dataset extrinsics are defined as world-to-camera. Transform to camera-to-world when passed.
-                _, _, visibs = exhaustive_geo2match(
-                    depths, closed_form_inverse_se3(w2c), norm_K, eps=match_eps, samples_to_keep=samples_to_keep, grid_size=grid_size)
-                visibs = visibs.to(dtype=torch.float32).mean(dim=-1)
+                try:
+                    visibs = torch.logical_and(
+                        tracks["visib0"], 
+                        tracks["visib1"]
+                    ).to(dtype=torch.float32).mean(dim=-1) # v(v-1)/2
+                except:
+                    ## Dataset extrinsics are defined as world-to-camera. Transform to camera-to-world when passed.
+                    _, _, visibs = exhaustive_geo2match(
+                        depths, closed_form_inverse_se3(w2c), norm_K, eps=match_eps, samples_to_keep=samples_to_keep, grid_size=grid_size)
+                    visibs = visibs.to(dtype=torch.float32).mean(dim=-1)
                 
                 for try_id in range(max_retry):
                     ids = self.view_sampler_iterative(visibs, max_seq_len, seq_len, min_thres)
