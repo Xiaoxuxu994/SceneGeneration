@@ -252,7 +252,11 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             depth=head_depth,
             use_checkpoint=(USE_CHECKPOINT=='True')
         )
-        self.camera_head = CameraHead(dim=512, pred_fov=hasattr(self, "depth_head"))
+        if cfg.get("enable_camera_register", False):
+            self.camera_head = CameraHead(dim=512, pred_fov=hasattr(self, "depth_head"), 
+                                        input_register_token_num=self.patch_start_idx)
+        else:
+            self.camera_head = CameraHead(dim=512, pred_fov=hasattr(self, "depth_head"))
 
         # For ImageNet Normalize
         image_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
@@ -337,7 +341,8 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         with torch.amp.autocast(device_type=DEVICE_NAME, enabled=False):
             # camera
             camera_hidden = camera_hidden.float()
-            camera_poses = self.camera_head(camera_hidden[:, self.patch_start_idx:], patch_h, patch_w)
+            camera_poses = self.camera_head(camera_hidden[:, self.patch_start_idx:], patch_h, patch_w, 
+                                            register_tokens=camera_hidden[:, :self.patch_start_idx])
             if hasattr(self, "depth_head"):
                 camera_poses, camera_fovs = camera_poses
                 camera_poses = camera_poses.reshape(B, N, 4, 4)
