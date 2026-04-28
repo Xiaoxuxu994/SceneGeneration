@@ -16,9 +16,9 @@ source ./scripts/config/dl3dv/476x266.sh
 # CONFIG=""
 # PREFIX="Reliev3R-260415-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode_ckptpi3"
 
-CKPT="experiments/Reliev3R_bs2v8_260424_DL3DV_ss_aug_rgst/ckpt/20000.ckpt"
+CKPT="experiments/Reliev3R_bs2v8_260424_DL3DV_ss_aug_rgst/ckpt/30000.ckpt"
 CONFIG="experiments/Reliev3R_bs2v8_260424_DL3DV_ss_aug_rgst/config.json"
-PREFIX="Reliev3R_bs2v8_260424_DL3DV_ss_aug_rgst_ckpt20k"
+PREFIX="Reliev3R_bs2v8_260424_DL3DV_ss_aug_rgst_ckpt30k"
 
 # CKPT="experiments/Reliev3R_bs2v8_260421_SpvidDL3DV/ckpt/70000.ckpt"
 # CONFIG="experiments/Reliev3R_bs2v8_260421_SpvidDL3DV/config.json"
