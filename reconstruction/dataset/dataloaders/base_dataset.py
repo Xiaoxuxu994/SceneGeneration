@@ -210,12 +210,13 @@ class Base_Dataset(Dataset):
 
 
 class Realistic_Dataset(Base_Dataset):
-    def __init__(self, overlap_thre_real=0.25, depth_format=".exr", **kwargs):
+    def __init__(self, overlap_thre_real=0.25, depth_format=".exr", apply_matching_filter=False, **kwargs):
         super().__init__(**kwargs)
         self.clip_length = 32
         self.sample_list = self.get_sample_list()
         self.overlap_thre = overlap_thre_real
         self.depth_format = depth_format
+        self.apply_matching_filter = apply_matching_filter
         print("[ INFO ] {} samples found for {} as {}.".format(
             len(self), self.__class__.__name__,"training set" if self.is_train else "validation set"))
     
@@ -363,8 +364,9 @@ class Realistic_Dataset(Base_Dataset):
             timer.record_end("1_IO")
             timer.record_start("2_Preprocess")
             
-            tracking_info_raw = self.validate_tracking_by_foundation_matrix(tracking_info_raw, extrs_raw, intrs_raw, 
-                                                                            all_images.shape[-2], all_images.shape[-1])
+            if self.apply_matching_filter:
+                tracking_info_raw = self.validate_tracking_by_foundation_matrix(tracking_info_raw, extrs_raw, intrs_raw, 
+                                                                                all_images.shape[-2], all_images.shape[-1])
             all_data = dict(
                 input_images=all_images, # v 3 h w
                 input_depths=all_depths, # v 1 h w
