@@ -45,7 +45,7 @@ ours:
 
 pi3:
   pos_type: rope100
-  model_size: dinov3_huge+_5.17B
+  model_size: dinov3_huge+_3.00B
   depth_scaler:
     enabled: false
   point_head:
@@ -53,6 +53,7 @@ pi3:
   depth_head:
     enabled: true
   pred_z_depth: false
+  enable_camera_register: true
 
 depth_scaler:
   enabled: false

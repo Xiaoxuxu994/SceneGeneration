@@ -15,7 +15,12 @@ from utils.common import calc_extr_inv, calc_intr_inv, normalize_trans, depth2po
 from utils.loss_utils import samp_points_by_pixel
 
 VAL_RATIO = 0.02
-MAX_IMAGE_SIZES = [518, 504, 490, 476, 462, 448, 434, 420]
+# dinov2
+# MAX_IMAGE_SIZES = [518, 504, 490, 476, 462, 448, 434, 420]
+#PATCH_SIZE = 14
+# dinov3
+MAX_IMAGE_SIZES = [512, 496, 480, 464, 448, 432, 416, 400]
+PATCH_SIZE = 16
 # MAX_IMAGE_SIZES = [252, 238, 224, 210, 196]
 
 
@@ -108,12 +113,12 @@ class Base_Dataset(Dataset):
                 return np.array(view_ids)
         return None
     
-    def prepare_data_for_dino_encode(self, data, max_size=518):
+    def prepare_data_for_dino_encode(self, data, max_size=518, patch_size=14):
         data["input_images"], data["input_intrs"], cbox, scale_factor = preprocess_images_for_encode(
-            data["input_images"], intrs=data["input_intrs"], interp_method="bilinear", max_size=max_size)
-        data["input_depths"], _, _, _ = preprocess_images_for_encode(data["input_depths"], cbox=cbox, max_size=max_size)
+            data["input_images"], intrs=data["input_intrs"], interp_method="bilinear", max_size=max_size, patch_size=patch_size)
+        data["input_depths"], _, _, _ = preprocess_images_for_encode(data["input_depths"], cbox=cbox, max_size=max_size, patch_size=patch_size)
         if data["input_depth_masks"] is not None:
-            data["input_depth_masks"], _, _, _ = preprocess_images_for_encode(data["input_depth_masks"], cbox=cbox, max_size=max_size)
+            data["input_depth_masks"], _, _, _ = preprocess_images_for_encode(data["input_depth_masks"], cbox=cbox, max_size=max_size, patch_size=patch_size)
         if data.get("input_tracks0", None) is not None:
             ## Crop processed tracking information for realistic dataset. 
             ## For synthetic dataset, we resize images first and then calculate matching. 
@@ -383,7 +388,7 @@ class Realistic_Dataset(Base_Dataset):
             if crop_ratio is not None:
                 all_data = self.aug_by_crop(all_data, crop_ratio=crop_ratio)
             max_image_size = MAX_IMAGE_SIZES[np.random.randint(0, len(MAX_IMAGE_SIZES))]
-            all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size)
+            all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size, patch_size=PATCH_SIZE)
             all_images = all_data["input_images"]
             all_depths = all_data["input_depths"]
             all_depth_masks = all_data["input_depth_masks"]
@@ -598,7 +603,7 @@ class Synthetic_Dataset(Base_Dataset):
             if crop_ratio is not None:
                 all_data = self.aug_by_crop(all_data, crop_ratio=crop_ratio)
             max_image_size = MAX_IMAGE_SIZES[np.random.randint(0, len(MAX_IMAGE_SIZES))]
-            all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size)
+            all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size, patch_size=PATCH_SIZE)
             all_data = self.filter_top_depth(all_data, p=0.003)
             all_images = all_data["input_images"]
             all_depths = all_data["input_depths"]
