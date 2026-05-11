@@ -1,13 +1,6 @@
-NPU = 7
-CONFIG = '/efs-m3ga/y00959808/SceneGeneration/reconstruction/configs/reliev3r_quant.json'
-H, W = 700, 1274
-N_VIEWS = 12
-DTYPE = 'mxfp8'
-COMPILE = False
-OUTPUT = f'/efs-m3ga/y00959808/SceneGeneration/benchmark/profile/{DTYPE}{"-compile" if COMPILE else ""}'
 
 import os
-os.environ['ASCNED_RT_VISIBLE_DEVICES'] = str(NPU)
+os.environ['ASCNED_RT_VISIBLE_DEVICES'] = '6'
 os.environ['USE_CHECKPOINT'] = 'False'
 import torch
 from torch import nn
@@ -77,47 +70,64 @@ def quant_model(model, quant_type="mxfp8"):
     layer_counter = 0
     for name, module in model.named_modules():
         if isinstance(module, nn.Linear):
-            print(f"  replaced layer: {name}")
             _set_module(model, name, QCls(float_module=module, layer_name=name))
             layer_counter += 1
     print(f"[INFO] Replaced Quant Layer Num: {layer_counter}")
 
-profiler = torch_npu.profiler.profile(
-    activities=[torch_npu.profiler.ProfilerActivity.CPU, torch_npu.profiler.ProfilerActivity.NPU],
-    schedule=torch_npu.profiler.schedule(0, 1, 1, 1, 0),
-    on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(OUTPUT),
-    record_shapes=True,
-    # profile_memory=True,
-    # with_stack=True,
-    # with_flops=True,
-    # with_modules=True,
-    experimental_config=torch_npu.profiler._ExperimentalConfig(
-        profiler_level=torch_npu.profiler.ProfilerLevel.Level1,
-        # aic_metrics=torch_npu.profiler.AiCMetrics.PipeUtilization,
-        # l2_cache=True, msprof_tx=True, mstx=True,
-        export_type=[torch_npu.profiler.ExportType.Text],
-        # sys_io=True, sys_interconnection=True
-    )
-)
+CONFIG = '/efs-m3ga/y00959808/SceneGeneration/reconstruction/configs/reliev3r_quant.json'
+H, W = 1078, 1918
+N_VIEWS = 12
+DTYPE = 'mxfp8'
+COMPILE = False
+
 pi3 = Pi3(LoadConfig(CONFIG).model.depth_aligner.pi3)
 pi3 = pi3.to('npu', torch.bfloat16).eval().requires_grad_(False)
 if DTYPE == 'mxfp8': quant_model(pi3)
 xpos_max = max(H//pi3.patch_size, W//pi3.patch_size)
+images = torch.randn(N_VIEWS, 3, H, W, device='npu', dtype=torch.bfloat16)
 
 def infer(images: torch.Tensor):
     hidden = pi3.encoder.forward(images, is_training=True)["x_norm_patchtokens"]
     return pi3.decode(hidden, N_VIEWS, H, W, xpos_max=xpos_max)[0]
 
-if COMPILE:
-    # set_compile_mode(jit_compile=True)
-    # npu_backend = get_npu_backend(compiler_config=CompilerConfig())
-    # infer = torch.compile(infer, backend=npu_backend, dynamic=False)
-    infer = torch.compile(infer, backend='npugraph_ex')
+for SPARSE in 2048, 4096, 8192, 16384, 32768, 65536:
+    OUTPUT = f'/efs-m3ga/y00959808/SceneGeneration/benchmark/profiler/{DTYPE}{"-compile" if COMPILE else ""}-{N_VIEWS}x{H}x{W}-sparse{SPARSE}'
 
-images = torch.randn(N_VIEWS, 3, H, W, device='npu', dtype=torch.bfloat16)
-profiler.start()
-for _ in trange(2):
-    infer(images)
-    torch_npu.npu.synchronize()
-    profiler.step()
-profiler.stop()
+    if SPARSE > 1:
+        patch_counter = 0
+        for name, module in pi3.decoder.named_modules():
+            if name.endswith('attn') and int(name.split('.')[0]) % 2:
+                module.sparsity = SPARSE
+                patch_counter += 1
+        print(f"[INFO] Patched Sparse-Attention Module Num: {patch_counter}, with sparsity {SPARSE}")
+
+    if COMPILE:
+        # set_compile_mode(jit_compile=True)
+        # npu_backend = get_npu_backend(compiler_config=CompilerConfig())
+        # infer = torch.compile(infer, backend=npu_backend, dynamic=False)
+        infer = torch.compile(infer, backend='npugraph_ex')
+
+    profiler = torch_npu.profiler.profile(
+        activities=[torch_npu.profiler.ProfilerActivity.CPU, torch_npu.profiler.ProfilerActivity.NPU],
+        schedule=torch_npu.profiler.schedule(0, 1, 1, 1, 0),
+        on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(OUTPUT),
+        record_shapes=True,
+        # profile_memory=True,
+        # with_stack=True,
+        # with_flops=True,
+        # with_modules=True,
+        experimental_config=torch_npu.profiler._ExperimentalConfig(
+            profiler_level=torch_npu.profiler.ProfilerLevel.Level1,
+            # aic_metrics=torch_npu.profiler.AiCMetrics.PipeUtilization,
+            # l2_cache=True, msprof_tx=True, mstx=True,
+            export_type=[torch_npu.profiler.ExportType.Text],
+            # sys_io=True, sys_interconnection=True
+        )
+    )
+
+    profiler.start()
+    for _ in trange(2, desc=f'Sparse {SPARSE}'):
+        infer(images)
+        torch_npu.npu.synchronize()
+        profiler.step()
+    profiler.stop()

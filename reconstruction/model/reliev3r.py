@@ -65,8 +65,8 @@ class Reliev3R(nn.Module):
             if self.pred_gs:
                 intrinsics = aligned_depth_dict["camera_intrs"]
                 feature = aligned_depth_dict["enc_feat"]
-                gs, render = self.anchorsplat.forward(pred_depths[:, :, 0], feature, intrinsics, cameras, img.shape[-2:])
-                output_dict.update(gs=gs, render=render)
+                render = self.anchorsplat.forward(pred_depths[:, :, 0], feature, intrinsics, cameras, img.shape[-2:])
+                output_dict.update(render=render)
         else:
             raise NotImplementedError("Not implemented depth aligner type: {}".format(self.cfg.depth_aligner.type))
         

@@ -109,9 +109,9 @@ def create_mixed_dataloader(cfg: DottedDict, data_type="train", batch_size=1, ra
                                                                         shuffle=True, 
                                                                         drop_last=True) \
                                     if data_type == "train" else torch.utils.data.RandomSampler(mixed_dataset), 
-                            num_workers=num_workers, 
-                            persistent_workers=True,
-                            multiprocessing_context="fork", 
+                            # num_workers=num_workers, 
+                            # persistent_workers=True,
+                            # multiprocessing_context="fork", 
                             )
     return dataloader
 

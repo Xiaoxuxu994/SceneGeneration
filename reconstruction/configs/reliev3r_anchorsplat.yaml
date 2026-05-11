@@ -112,8 +112,8 @@ model:
       contract_scene: &contract true
     point_net:
       dim_in: 1024
-      dim: &point_net_dim 512
-      num_heads: 8
+      dim: &point_net_dim 768
+      num_heads: 12
       depth: 16
       num_kv: *num_kv
       num_pe_freqs: 12
@@ -160,5 +160,5 @@ training:
   lr_scheduler: cosine
   optimizer:
     type: AdamW
-  verbose_interval: 1000
+  verbose_interval: 100
   warm_up_iterations: 2000

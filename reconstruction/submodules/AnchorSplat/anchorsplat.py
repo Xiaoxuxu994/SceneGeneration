@@ -1,12 +1,13 @@
 from torch import nn, Tensor
 
-from submodules.AnchorSplat.point_sampler import ClosePackedSampler, ConsistentSampler
+from submodules.AnchorSplat.point_sampler import ClosePackedSampler  # ConsistentSampler
 from submodules.AnchorSplat.point_net import PointBackbone
 from submodules.AnchorSplat.gs_head import SplitGaussianHead
 from submodules.AnchorSplat.renderer import Renderer
 
 
 def affine_inverse(extrinsics: Tensor) -> Tensor:
+    # return extrinsics.float().inverse().to(extrinsics.dtype)
     out = extrinsics.new_zeros(extrinsics.shape)
     out[..., :3, :3] = RT = extrinsics[..., :3, :3].mT
     out[..., :3, 3:] = RT @ -extrinsics[..., :3, 3:]
@@ -16,10 +17,10 @@ def affine_inverse(extrinsics: Tensor) -> Tensor:
 
 def normalize_extrinsics(extrinsics: Tensor) -> tuple[Tensor, float]:
     '''Normalize input and view extrinsics according to translations'''
-    extrinsics = extrinsics @ affine_inverse(extrinsics[:1])
-    translations = affine_inverse(extrinsics)[:, :3, 3]
-    median_dist = translations.norm(dim=1).median().clamp(.1)
-    extrinsics[:, :3, 3] /= median_dist
+    extrinsics = extrinsics @ affine_inverse(extrinsics[..., :1, :, :])
+    translations = affine_inverse(extrinsics)[..., :3, 3]
+    median_dist = translations.norm(dim=-1).median().clamp(.1)
+    extrinsics[..., :3, 3] /= median_dist
     return extrinsics
 
 
@@ -41,7 +42,7 @@ class AnchorSplatNet(nn.Module):
         self.renderer = Renderer()
 
     def forward(self, depth: Tensor, feature: Tensor, intrinsics: Tensor, extrinsics: Tensor,
-                resolution: tuple[int, int]) -> tuple[Tensor, Tensor]:
+                resolution: tuple[int, int]) -> Tensor:
         extrinsics = normalize_extrinsics(extrinsics)
         anchors, feature, voxel_sizes = self.anchor_sampler.forward(
             depth, feature, intrinsics, extrinsics)
@@ -49,4 +50,4 @@ class AnchorSplatNet(nn.Module):
         num_kv = self.anchor_sampler.num_points[0]
         gs = self.gs_head.forward(feature[:, num_kv:], anchors[:, num_kv:], voxel_sizes)
         render = self.renderer.forward(gs, intrinsics, extrinsics, resolution)
-        return gs, render
+        return render

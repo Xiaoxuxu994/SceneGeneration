@@ -11,6 +11,7 @@ import logging
 import os
 import warnings
 
+from einops import rearrange
 from torch import Tensor
 from torch import nn
 import torch
@@ -31,6 +32,7 @@ try:
 except ImportError:
     XFORMERS_AVAILABLE = False
     # warnings.warn("xFormers is not available (Attention)")
+from torch_npu import npu_fusion_attention
 
 
 class Attention(nn.Module):
@@ -324,6 +326,9 @@ class FlashAttentionRope(AttentionRope):
     sparsity = 0
     num_views = 12
     num_registers = 5
+    topk = 0
+    condense = 0
+    n_patch_w = 0
     def forward(self, x: Tensor, attn_bias=None, xpos=None, xpos_max=None) -> Tensor:
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).transpose(1, 3)
@@ -334,9 +339,32 @@ class FlashAttentionRope(AttentionRope):
 
         if self.rope is not None:
             q = self.rope(q, xpos, xpos_max=xpos_max)
-            k: Tensor = self.rope(k, xpos, xpos_max=xpos_max)
+            k = self.rope(k, xpos, xpos_max=xpos_max)
 
-        if self.sparsity:  # keep register kv and sample patch kv
+        if self.condense > 1:
+            q_reg, q_patch = q.unflatten(2, (self.num_views, -1)).tensor_split((self.num_registers,), 3)
+            k_reg, k_patch = k.unflatten(2, (self.num_views, -1)).tensor_split((self.num_registers,), 3)
+            v_reg, v_patch = v.unflatten(2, (self.num_views, -1)).tensor_split((self.num_registers,), 3)
+            q_patch = rearrange(q_patch, 'b h v (H p W q) d -> (b v H W) h (p q) d',
+                                p=self.condense, q=self.condense, W=self.n_patch_w)
+            k_patch = rearrange(k_patch, 'b h v (H p W q) d -> (b v H W) h (p q) d',
+                                p=self.condense, q=self.condense, W=self.n_patch_w)
+            v_patch = rearrange(v_patch, 'b h v (H p W q) d -> (b v H W) h (p q) d',
+                                p=self.condense, q=self.condense, W=self.n_patch_w)
+            q_patch = q_patch.mean(2, True)
+            # kv_patch = torch.cat((k_patch, v_patch), 3)
+            # kv_patch = scaled_dot_product_attention(q_patch, k_patch, kv_patch)
+            # k_patch, v_patch = rearrange(kv_patch, '(b n) h 1 d -> b h n d', b=B).split(2, -1)
+            k_patch_ = scaled_dot_product_attention(q_patch, k_patch, k_patch)
+            v_patch_ = scaled_dot_product_attention(q_patch, k_patch, v_patch)
+            k_patch = rearrange(k_patch_, '(b n) h 1 d -> b h n d', b=B)
+            v_patch = rearrange(v_patch_, '(b n) h 1 d -> b h n d', b=B)
+            k = torch.cat((k_reg.flatten(2, 3), k_patch), 2)
+            v = torch.cat((v_reg.flatten(2, 3), v_patch), 2)
+
+        elif self.sparsity:  # keep register kv and sample patch kv
+            # indices = torch.randperm(N, device=x.device)[:N // self.sparsity]
+            # k, v = k[:, :, indices], v[:, :, indices]
             k_reg, k_patch = k.unflatten(2, (self.num_views, -1)).tensor_split((self.num_registers,), 3)
             k_reg, k_patch = k_reg.flatten(2, 3), k_patch.flatten(2, 3)
             v_reg, v_patch = v.unflatten(2, (self.num_views, -1)).tensor_split((self.num_registers,), 3)
@@ -345,11 +373,15 @@ class FlashAttentionRope(AttentionRope):
             indices = torch.randperm(hw, device=x.device)[:hw // self.sparsity]
             k = torch.cat((k_reg, k_patch[:, :, indices]), 2)
             v = torch.cat((v_reg, v_patch[:, :, indices]), 2)
-        # if self.sparsity:  # sample all kv
-        #     indices = torch.randperm(N, device=x.device)[:N // self.sparsity]
-        #     k, v = k[:, :, indices], v[:, :, indices]
 
-        if q.dtype == torch.bfloat16:
+        if self.topk:
+            mask = x.new_ones(B, 1, N, N, dtype=torch.bool)
+            indices = (q @ k.mT).sum(1, True).topk(self.topk)[1]
+            mask.scatter_(-1, indices, 0)
+            x = npu_fusion_attention(q, k, v, self.num_heads, 'BNSD',
+                                     atten_mask=mask, scale=self.scale, sparse_mode=1)[0]
+            # print(x.shape)
+        elif q.dtype == torch.bfloat16:
             with nn.attention.sdpa_kernel(SDPBackend.FLASH_ATTENTION):
                 x = scaled_dot_product_attention(q, k, v)
         else:
