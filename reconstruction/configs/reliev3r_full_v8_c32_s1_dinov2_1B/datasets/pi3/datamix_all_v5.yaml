@@ -272,20 +272,20 @@ train_dataset:
         aug_focal: 0.9
         mode: 'train'
 
-    # ARKitScenes:
-    #     _target_: datasets.arkitscenes_dataset.ARKitScenesDataset
-    #     # data_root: /mnt/nvme3/z00533370/dataset/sample_data/ARKitScenes
-    #     data_root: /efs-mi-east4-2/z00533370/dataset/arkitscene_decode/
-    #     split_ratio: 1.0
-    #     max_distance: 8
-    #     z_far: 40
-    #     frame_num: 8
-    #     aug_crop: 16
-    #     transform:
-    #         _partial_: true
-    #         _target_: datasets.base.transforms.JitterJpegLossBlurring
-    #     aug_focal: 0.9
-    #     mode: 'train'
+    ARKitScenes:
+        _target_: datasets.arkitscenes_dataset.ARKitScenesDataset
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/ARKitScenes
+        data_root: /efs-mi-east4-2/z00533370/dataset/arkitscene_decode/
+        split_ratio: 1.0
+        max_distance: 8
+        z_far: 40
+        frame_num: 8
+        aug_crop: 16
+        transform:
+            _partial_: true
+            _target_: datasets.base.transforms.JitterJpegLossBlurring
+        aug_focal: 0.9
+        mode: 'train'
 
     Mapillary:
         _target_: dataset.pi3_dataset.mapillary_dataset.MapillaryDataset

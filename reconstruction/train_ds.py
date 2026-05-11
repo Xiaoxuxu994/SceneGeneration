@@ -71,15 +71,15 @@ def dataloader_step(data_iter, dataloader, step):
     return data, data_iter, epoch_ends
 
 
-def export_image_samples(cfg, step, subfolder, data, pred, loss_dict):
+def export_image_samples(cfg, step, subfolder, data, pred, loss_dict, dataset_name='None'):
     """Visualize images and depths. """
     os.makedirs(os.path.join(cfg.output_dir, subfolder), exist_ok=True)
     verbose_image = visualize_prediction(pred, data, loss_dict["matching_info"][-1])
-    torchvision.utils.save_image(verbose_image, os.path.join(cfg.output_dir, subfolder, "iter_{:06d}.png").format(step))
+    torchvision.utils.save_image(verbose_image, os.path.join(cfg.output_dir, subfolder, dataset_name+"_iter_{:06d}.png").format(step))
     print("[ INFO ] Images saved successfully.")
 
 
-def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
+def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5, dataset_name='None'):
     """Visualize point maps. """
     os.makedirs(os.path.join(cfg.output_dir, subfolder), exist_ok=True)
     
@@ -89,11 +89,11 @@ def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
         pred_points = localpoint2global(rearrange(pred["local_points"], "b v c h w -> b v h w c"), cam_poses)
         pred_points_conf = pred["depths_conf"]
     
-    export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}".format(step)), 
+    export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, dataset_name+"_step{:07d}".format(step)), 
                                pred_points, data["input_images"], cam_poses, 
                                pred_points_conf, conf_thre=thre)
     if data.get("input_points", None) is not None:
-        export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}_GT".format(step)), 
+        export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, dataset_name+"_step{:07d}_GT".format(step)), 
                                    data["input_points"], data["input_images"], data["input_viewmats"], 
                                    data["input_depth_masks"], conf_thre=thre)
     print("[ INFO ] Point maps saved successfully.")
@@ -193,6 +193,16 @@ def run(rank, cfg):
 
     step_begins = step
     
+    step_begins = step
+    print(f'[DEBUG] step_begin_stage1={cfg.training.dataset_schedule.stage1.step_begin}, ',
+                  f'step_begin_stage2={cfg.training.dataset_schedule.stage2.step_begin}, ',
+                  f'step_begin_stage3={cfg.training.dataset_schedule.stage3.step_begin}=step_unsupervise_in')
+    loss_func._set_stage_steps(step_begins, 
+                               step_begin_stage1=cfg.training.dataset_schedule.stage1.step_begin,
+                               step_begin_stage2=cfg.training.dataset_schedule.stage2.step_begin,
+                               step_begin_stage3=cfg.training.dataset_schedule.stage3.step_begin,
+                               )
+    step_unsupervise_in = loss_func.step_begin_stage3
 
     engine.train()
     torch_device_lib.empty_cache()
@@ -425,10 +435,12 @@ if __name__ == '__main__':
     parser.add_argument("--no_load_optim", action="store_true", help="Set to disable loading optimizer when ckpt is given.")
     parser.add_argument("--learning_rate", type=float, default=None, help="Maximum learning rate.")
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
+    parser.add_argument("--freeze_backbone", action="store_true", help="default is freezing backbone")
     parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
     
     cfg = LoadConfig(args.config)
+    cfg.datasets.mix_start_step = cfg.training.dataset_schedule.stage3.step_begin
     
     if args.data_url is not None:
         cfg.datasets.dl3dv.data_root = args.data_url
@@ -450,6 +462,7 @@ if __name__ == '__main__':
         cfg.deepspeed = args.deepspeed
     if args.deepspeed_config is not None:
         cfg.deepspeed_config = args.deepspeed_config
+    cfg.freeze_backbone = args.freeze_backbone        
     cfg.eval = args.eval
     cfg.no_load_optim = args.no_load_optim
     

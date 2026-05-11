@@ -22,3 +22,6 @@ overlap_thre_real: 0.20
 
 crop_lowerbound: 0.0
 crop_upperbound: 0.15
+
+img_max_size: 512
+patch_size: 16
