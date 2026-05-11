@@ -25,7 +25,7 @@ from utils.optim_utils import create_optimizer, create_lr_scheduler
 from utils.log_utils import export_pcds_and_cam_as_ply
 from utils import make_loss_func
 from utils.common import normalize_trans, calc_extr_inv, localpoint2global
-from dataset.dataloaders import create_mixed_dataloader, load_data_to_device
+from dataset import Reliev3R_MixDataLoader
 
 from model import Reliev3R
 
@@ -38,15 +38,13 @@ def clean_up():
 
 def create_dataloaders(rank, global_rank, cfg):
     """Create data loaders. """
-    dataloader, data_iter, dataloader_eval, data_eval_iter = None, None, None, None
+    dataloader, dataloader_eval = None, None
     if not cfg.eval:
-        dataloader = create_mixed_dataloader(cfg.datasets, "train", cfg.training.batch_size, rank=rank)
-        data_iter  = iter(dataloader)
+        dataloader = Reliev3R_MixDataLoader(cfg.datasets, "train", cfg.training.batch_size)
     if global_rank == 0:
-        dataloader_eval = create_mixed_dataloader(cfg.datasets, "eval", cfg.training.batch_size, rank=rank, num_workers=8)
-        data_eval_iter  = iter(dataloader_eval)
+        dataloader_eval = Reliev3R_MixDataLoader(cfg.datasets, "test", cfg.training.batch_size)
     dist.barrier()
-    return dataloader, data_iter, dataloader_eval, data_eval_iter
+    return dataloader, dataloader_eval
 
 
 def dataloader_step(data_iter, dataloader, step):
@@ -142,7 +140,7 @@ def run(rank, cfg):
         from utils.eval_utils import eval_angle, eval_trajectory, eval_depth_map
     
     """Create data loaders. """
-    dataloader, data_iter, dataloader_eval, data_eval_iter = create_dataloaders(rank, global_rank, cfg)
+    dataloader, dataloader_eval = create_dataloaders(rank, global_rank, cfg)
     
     """Load models. """
     model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
@@ -179,7 +177,6 @@ def run(rank, cfg):
         lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations, 
                                            scheduler_type=cfg.training.get("lr_scheduler", "cosine"))
     step_begins = step
-    
     
     """Wrap model with ddp. """
     model = DDP(model, device_ids=[rank], bucket_cap_mb=100, gradient_as_bucket_view=True)
@@ -218,7 +215,7 @@ def run(rank, cfg):
                 step_start.record()
                 data_start.record()
             
-            data, data_iter, _ = dataloader_step(data_iter, dataloader, step)
+            data = dataloader.sample(step)
             step += 1
             if dataset_count.get(data["dataset_names"][0], None) is None:
                 dataset_count[data["dataset_names"][0]] = 1
@@ -312,7 +309,7 @@ def run(rank, cfg):
                 
                 """Validation, only performed on global rank 0"""
                 if step % cfg.training.eval_interval == 0 and global_rank == 0:
-                    data, data_eval_iter, _ = dataloader_step(data_eval_iter, dataloader_eval, step)
+                    data = dataloader_eval.sample(step)
                     with torch.no_grad():
                         pred = model.module._forward(data)
                         loss_dict = loss_func(pred, data)
@@ -357,7 +354,7 @@ def run(rank, cfg):
         eval_ends = False
         step_begins = step
         while True:
-            data, data_eval_iter, eval_ends = dataloader_step(data_eval_iter, dataloader_eval, None)
+            data = dataloader_eval.sample(step)
             step += 1
             if eval_ends or step - step_begins > 100:
                 break
