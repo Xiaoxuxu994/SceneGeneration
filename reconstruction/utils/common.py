@@ -6,6 +6,19 @@ from einops import rearrange
 from utils.platform import DEVICE_NAME
 
 
+def cross_prod(x: torch.Tensor, y: torch.Tensor):
+    """
+    Perform cross product between x and y, where the vector dimension is supposed to be on the last axis.
+    """
+    assert x.shape[-1] == 3 and y.shape[-1] == 3
+    z = torch.stack([
+        x[..., 1] * y[..., 2] - x[..., 2] * y[..., 1], 
+        x[..., 2] * y[..., 0] - x[..., 0] * y[..., 2], 
+        x[..., 0] * y[..., 1] - x[..., 1] * y[..., 0], 
+    ], dim=-1)
+    return z
+
+
 def concat_data_by_view(data):
     images = torch.cat([data["input_images"], data["output_images"]], dim=1)
     plucker_maps = torch.cat([data["input_cams_plucker"], data["output_cams_plucker"]], dim=1)
@@ -317,3 +330,32 @@ def trans_geo_to_first_frame_and_norm(point_maps: torch.Tensor, extrs: torch.Ten
     point_maps, extrs, depths = normalize_trans(point_maps, extrs, depths)
     return point_maps, extrs, depths
 
+
+def get_norm_map(points: torch.Tensor, normalize=True):
+    """Compute normals from the given points
+
+    Args:
+        points (torch.Tensor): Given point maps, tensor of shape (..., 3, H, W) or (..., H, W, 3)
+        normalize (bool): Whether to normalize the output normal maps.
+    Returns:
+        norms (torch.Tensor): The calculated normal maps, tensor of shape (..., 3, H, W) or (..., H, W, 3)
+    """
+    assert points.ndim == 4 and points.shape[-3] == 3 or points.shape[-1] == 3
+    raw_shape = points.shape
+    points = points.reshape(-1, *points.shape[-3:]) # b h w 3 / b 3 h w
+    flag = False
+    if points.shape[-3] == 3:
+        flag = True
+        points = rearrange(points, "b c h w -> b h w c")
+    norms_00 = cross_prod(points[..., :-1, :-1, :] - points[..., 1:, :-1, :], points[..., :-1, :-1, :] - points[..., :-1, 1:, :])       # b h-1 w-1 3
+    norms_01 = cross_prod(points[..., :-1, -1:, :] - points[..., :-1, -2:-1, :], points[..., :-1, -1:, :] - points[..., 1:, -1:, :])    # b h-1 1 3
+    norms_10 = cross_prod(points[..., -1:, :-1, :] - points[..., -1:, 1:, :], points[..., -1:, :-1, :] - points[..., -2:-1, :-1, :])    # b 1 w-1 3
+    norms_11 = cross_prod(points[..., -1:, -1:, :] - points[..., -2:-1, -1:, :], points[..., -1:, -1:, :] - points[..., -1:, -2:-1, :]) # b 1 1 3
+    norms = torch.cat([torch.cat([norms_00, norms_01], dim=-2), 
+                       torch.cat([norms_10, norms_11], dim=-2), ], dim=-3) # b h w 3
+    if normalize:
+        norms = norms / (norms.norm(dim=-1, keepdim=True) + 1e-8)
+    if flag:
+        norms = rearrange(norms, "b h w c -> b c h w")
+    norms = norms.reshape(*raw_shape)
+    return norms

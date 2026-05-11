@@ -13,6 +13,10 @@ matplotlib==3.10.8
 narwhals==2.20.0
 natsort==8.4.0
 nbformat==5.10.4
+huggingface-hub>=0.23.2,<1.0
+hydra-core
+plyfile
+pyquaternion
 numpy==1.26.4
 open3d==0.18.0
 plotly==6.7.0
@@ -24,3 +28,4 @@ ruamel.yaml==0.19.1
 seaborn==0.13.2
 torchvision==0.24.0
 zstandard==0.25.0
+deepspeed==0.17.6

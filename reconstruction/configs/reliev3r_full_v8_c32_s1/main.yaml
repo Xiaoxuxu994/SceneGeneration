@@ -25,6 +25,7 @@ datasets:
   # scannet:    !include datasets/scannet.yaml
   # scannetpp:  !include datasets/scannetpp.yaml
   # wildrgbd:   !include datasets/wildrgbd.yaml
+  # spatialvid: !include datasets/spatialvid.yaml
   
 loss:
   !include loss/loss.yaml

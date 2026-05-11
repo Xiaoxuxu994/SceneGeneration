@@ -38,14 +38,14 @@ def create_optimizer(model: nn.Module, weight_decay, learning_rate) -> torch.opt
         else:
             if name.startswith("depth_aligner.image_tokenizer") or name.startswith("depth_aligner.encoder"):
                 decay_params_small_lr.append(param)
-            # elif name.startswith("depth_aligner.camera_head"):
+            # elif name.startswith("depth_aligner.camera_head") or name.startswith("depth_aligner.camera_decoder"):
             #     camera_params.append(param)
             else:
                 decay_params.append(param)
     optim_groups = [
         {'params': decay_params, 'weight_decay': weight_decay, 'lr': learning_rate},
-        {'params': decay_params_small_lr, 'weight_decay': weight_decay, 'lr': learning_rate * 1e-2}, 
-        # {'params': camera_params, 'weight_decay': weight_decay, 'lr': learning_rate * 0.3}, 
+        {'params': decay_params_small_lr, 'weight_decay': weight_decay, 'lr': learning_rate * 1e-1}, 
+        # {'params': camera_params, 'weight_decay': weight_decay, 'lr': learning_rate * 0.2}, 
         {'params': nodecay_params, 'weight_decay': 0.0, 'lr': learning_rate}, 
     ]
     

@@ -16,3 +16,6 @@ torchrun --standalone --nproc_per_node npu \
   --train_url ./outputs/$EXPNAME \
   --verbose_interval 1 \
   # --iterations 20000
+    # --ckpt_path ckpt/Pi3 \
+      # --freeze_backbone \
+

@@ -26,7 +26,7 @@ from utils.optim_utils import create_optimizer, create_lr_scheduler
 from utils.log_utils import export_pcds_and_cam_as_ply
 from utils import make_loss_func
 from utils.common import normalize_trans, calc_extr_inv, localpoint2global
-from dataset.dataloaders import create_mixed_dataloader, load_data_to_device
+from dataset import Reliev3R_MixDataLoader
 
 from model import Reliev3R
 import numpy as np
@@ -42,15 +42,13 @@ def clean_up():
 
 def create_dataloaders(rank, global_rank, cfg):
     """Create data loaders. """
-    dataloader, data_iter, dataloader_eval, data_eval_iter = None, None, None, None
+    dataloader, dataloader_eval = None, None
     if not cfg.eval:
-        dataloader = create_mixed_dataloader(cfg.datasets, "train", cfg.training.batch_size, rank=rank)
-        data_iter  = iter(dataloader)
+        dataloader = Reliev3R_MixDataLoader(cfg.datasets, "train", cfg.training.batch_size)
     if global_rank == 0:
-        dataloader_eval = create_mixed_dataloader(cfg.datasets, "eval", cfg.training.batch_size, rank=rank, num_workers=8)
-        data_eval_iter  = iter(dataloader_eval)
+        dataloader_eval = Reliev3R_MixDataLoader(cfg.datasets, "test", cfg.training.batch_size)
     dist.barrier()
-    return dataloader, data_iter, dataloader_eval, data_eval_iter
+    return dataloader, dataloader_eval
 
 
 def dataloader_step(data_iter, dataloader, step):
@@ -73,15 +71,15 @@ def dataloader_step(data_iter, dataloader, step):
     return data, data_iter, epoch_ends
 
 
-def export_image_samples(cfg, step, subfolder, data, pred, loss_dict):
+def export_image_samples(cfg, step, subfolder, data, pred, loss_dict, dataset_name='None'):
     """Visualize images and depths. """
     os.makedirs(os.path.join(cfg.output_dir, subfolder), exist_ok=True)
     verbose_image = visualize_prediction(pred, data, loss_dict["matching_info"][-1])
-    torchvision.utils.save_image(verbose_image, os.path.join(cfg.output_dir, subfolder, "iter_{:06d}.png").format(step))
+    torchvision.utils.save_image(verbose_image, os.path.join(cfg.output_dir, subfolder, dataset_name+"_iter_{:06d}.png").format(step))
     print("[ INFO ] Images saved successfully.")
 
 
-def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
+def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5, dataset_name='None'):
     """Visualize point maps. """
     os.makedirs(os.path.join(cfg.output_dir, subfolder), exist_ok=True)
     
@@ -91,11 +89,11 @@ def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
         pred_points = localpoint2global(rearrange(pred["local_points"], "b v c h w -> b v h w c"), cam_poses)
         pred_points_conf = pred["depths_conf"]
     
-    export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}".format(step)), 
+    export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, dataset_name+"_step{:07d}".format(step)), 
                                pred_points, data["input_images"], cam_poses, 
                                pred_points_conf, conf_thre=thre)
     if data.get("input_points", None) is not None:
-        export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}_GT".format(step)), 
+        export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, dataset_name+"_step{:07d}_GT".format(step)), 
                                    data["input_points"], data["input_images"], data["input_viewmats"], 
                                    data["input_depth_masks"], conf_thre=thre)
     print("[ INFO ] Point maps saved successfully.")
@@ -158,7 +156,7 @@ def run(rank, cfg):
     ds_config["flops_profiler"]["output_file"] = f"{cfg.output_dir}/profile_{global_rank}.log"
   
     """Create data loaders. """
-    dataloader, data_iter, dataloader_eval, data_eval_iter = create_dataloaders(rank, global_rank, cfg)
+    dataloader, dataloader_eval = create_dataloaders(rank, global_rank, cfg)
     
     """Load models. """
     model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
@@ -195,6 +193,16 @@ def run(rank, cfg):
 
     step_begins = step
     
+    step_begins = step
+    print(f'[DEBUG] step_begin_stage1={cfg.training.dataset_schedule.stage1.step_begin}, ',
+                  f'step_begin_stage2={cfg.training.dataset_schedule.stage2.step_begin}, ',
+                  f'step_begin_stage3={cfg.training.dataset_schedule.stage3.step_begin}=step_unsupervise_in')
+    loss_func._set_stage_steps(step_begins, 
+                               step_begin_stage1=cfg.training.dataset_schedule.stage1.step_begin,
+                               step_begin_stage2=cfg.training.dataset_schedule.stage2.step_begin,
+                               step_begin_stage3=cfg.training.dataset_schedule.stage3.step_begin,
+                               )
+    step_unsupervise_in = loss_func.step_begin_stage3
 
     engine.train()
     torch_device_lib.empty_cache()
@@ -253,7 +261,7 @@ def run(rank, cfg):
                 step_start.record()
                 data_start.record()
             
-            data, data_iter, _ = dataloader_step(data_iter, dataloader, step)
+            data = dataloader.sample(step)
             step += 1
             if dataset_count.get(data["dataset_names"][0], None) is None:
                 dataset_count[data["dataset_names"][0]] = 1
@@ -350,7 +358,7 @@ def run(rank, cfg):
                 
                 """Validation, only performed on global rank 0"""
                 if step % cfg.training.eval_interval == 0:
-                    data, data_eval_iter, _ = dataloader_step(data_eval_iter, dataloader_eval, step)
+                    data = dataloader_eval.sample(step)
                     engine.eval()
                     with torch.no_grad():
                         pred = engine(data)
@@ -392,7 +400,7 @@ def run(rank, cfg):
         eval_ends = False
         step_begins = step
         while True:
-            data, data_eval_iter, eval_ends = dataloader_step(data_eval_iter, dataloader_eval, None)
+            data = dataloader_eval.sample(step)
             step += 1
             if eval_ends or step - step_begins > 100:
                 break
@@ -427,10 +435,12 @@ if __name__ == '__main__':
     parser.add_argument("--no_load_optim", action="store_true", help="Set to disable loading optimizer when ckpt is given.")
     parser.add_argument("--learning_rate", type=float, default=None, help="Maximum learning rate.")
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
+    parser.add_argument("--freeze_backbone", action="store_true", help="default is freezing backbone")
     parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
     
     cfg = LoadConfig(args.config)
+    cfg.datasets.mix_start_step = cfg.training.dataset_schedule.stage3.step_begin
     
     if args.data_url is not None:
         cfg.datasets.dl3dv.data_root = args.data_url
@@ -452,6 +462,7 @@ if __name__ == '__main__':
         cfg.deepspeed = args.deepspeed
     if args.deepspeed_config is not None:
         cfg.deepspeed_config = args.deepspeed_config
+    cfg.freeze_backbone = args.freeze_backbone        
     cfg.eval = args.eval
     cfg.no_load_optim = args.no_load_optim
     

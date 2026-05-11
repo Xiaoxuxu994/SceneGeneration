@@ -32,26 +32,29 @@ class ResConvBlock(nn.Module):
         return res
 
 class CameraHead(nn.Module):
-    def __init__(self, dim=512, pred_fov=False):
+    def __init__(self, dim=512, pred_fov=False, input_register_token_num=None):
         super().__init__()
         output_dim = dim
         self.res_conv = nn.ModuleList([deepcopy(ResConvBlock(output_dim, output_dim)) 
                 for _ in range(2)])
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.more_mlps = nn.Sequential(
-            nn.Linear(output_dim,output_dim),
+            nn.Linear(output_dim,output_dim) if input_register_token_num is None \
+                else nn.Linear(output_dim*(input_register_token_num+1),output_dim*(input_register_token_num+1)),
             nn.ReLU(),
-            nn.Linear(output_dim,output_dim),
+            nn.Linear(output_dim,output_dim) if input_register_token_num is None \
+                else nn.Linear(output_dim*(input_register_token_num+1),output_dim),
             nn.ReLU()
             )
         self.fc_t = nn.Linear(output_dim, 3)
         self.fc_rot = nn.Linear(output_dim, 9)
         self.zero_4x4 = torch.zeros((4, 4), device=DEVICE_NAME)
         self.pred_fov = pred_fov
+        self.input_register_token_num = input_register_token_num
         if self.pred_fov:
             self.fc_fov = nn.Linear(output_dim, 2)
 
-    def forward(self, feat, patch_h, patch_w, v=None):
+    def forward(self, feat, patch_h, patch_w, v=None, register_tokens=None):
         BN, hw, c = feat.shape
 
         for i in range(2):
@@ -59,6 +62,10 @@ class CameraHead(nn.Module):
 
         feat = self.avgpool(feat.permute(0, 2, 1).reshape(BN, -1, patch_h, patch_w).contiguous())              ##########
         feat = feat.view(feat.size(0), -1)
+        
+        if register_tokens is not None and self.input_register_token_num is not None:
+            register_tokens = register_tokens.reshape(register_tokens.size(0), -1)
+            feat = torch.cat([feat, register_tokens], dim=-1)
 
         feat = self.more_mlps(feat)  # [B, D_]
         with torch.amp.autocast(device_type=DEVICE_NAME, enabled=False):
