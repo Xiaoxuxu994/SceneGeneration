@@ -15,9 +15,9 @@ source ./scripts/config/nrgbd/518x392.sh
 # CONFIG=""
 # PREFIX="Reliev3R-260415-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode_ckptpi3"
 
-CKPT="experiments/Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit/ckpt/55000.ckpt"
-CONFIG="experiments/Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit/config.json"
-PREFIX="Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit_ckpt55k"
+CKPT="experiments/Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9/ckpt/70000.ckpt"
+CONFIG="experiments/Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9/config.json"
+PREFIX="Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9_ckpt70k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 

@@ -51,6 +51,7 @@ from lib.geometry import unproject_depth_map_to_point_map, closed_form_inverse_s
 DATA_ROOT_DEFAULTS = {
     "7scenes": BENCH_ROOT / "data" / "7scenes" / "data",
     "dtu":     BENCH_ROOT / "data" / "DTU" / "spann3r_version" / "dtu_test_mvsnet_release",
+    "eth3d":   BENCH_ROOT / "data" / "ETH3D" / "multi_view_training_dslr",
     "nrgbd":   BENCH_ROOT / "data" / "NRGBD" / "data",
     "scannet": BENCH_ROOT / "data" / "scannet" / "posed_images",
     # "dl3dv":   "/mnt/nvme1/share/chenyouyu/dataset/DL3DV/data/1K/",

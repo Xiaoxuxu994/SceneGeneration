@@ -7,6 +7,8 @@ from .scannet import ScanNetDataset
 from .ase import ASEDataset
 from .dl3dv import NewDL3DVDataset
 from .re10k import RE10KDataset
+from .dtu import DTUDataset
+from .eth3d import ETH3DDataset
 from .base import DatasetConfig
 
 from pathlib import Path
@@ -14,6 +16,7 @@ from pathlib import Path
 DATASET_REGISTRY = {
     "7scenes": SevenScenesDataset,
     "dtu": DTUDataset,
+    "eth3d": ETH3DDataset,
     "nrgbd": NRGBDDataset,
     "scannet": ScanNetDataset,
     # "dl3dv": DL3DVDataset, # no depth gt

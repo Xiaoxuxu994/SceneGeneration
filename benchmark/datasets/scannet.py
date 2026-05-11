@@ -262,7 +262,7 @@ class ScanNetDataset(BaseDataset):
         norm_K, pix_K = self._load_K(seq, num_frames=len(frame_ids))       # (V,3,3)
 
         # from lib.geometry import depth_to_cam_coords_points
-        # local_points = depth_to_cam_coords_points(depths.numpy()[0], raw_K.numpy()[0])
+        # local_points = depth_to_cam_coords_points(depths.numpy()[0], pix_K.numpy()[0])
         
         # import open3d as o3d
         # pcd = o3d.geometry.PointCloud()
