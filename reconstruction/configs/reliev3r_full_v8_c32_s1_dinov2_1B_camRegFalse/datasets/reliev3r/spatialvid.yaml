@@ -1,4 +1,4 @@
-data_root: /efs-m3ga/c50041401/datasets/SpatialVID/reliev3r_clips_all
+data_root: /efs-mi-east4-3/c50041401/datasets/SpatialVID/reliev3r_clips_all
 
 image_format: .jpg
 depth_format: .png

@@ -8,7 +8,7 @@ train:
     max_img_per_gpu: 16
     aspect_ratio_range: [0.5, 2.0]
     pixel_count_range: [100000, 173000]
-    patch_size: 16 #14 for dinov2 # 16 for dinov3
+    patch_size: 14 #14 for dinov2 # 16 for dinov3
     base_seed: 666
 
 test:
@@ -39,9 +39,9 @@ train_dataset:
 
         # real / scanned / internet / object
         ScanNet:           6000
-        # ARKitScenes:       7000
+        ARKitScenes:      16000
         Scannetpp:         4000
-        Taskonomy:         3500
+        Taskonomy:        10000
         Wildrgbd:          2600
         CO3D:              2200
         MegaDepth:         1800
@@ -273,7 +273,7 @@ train_dataset:
         mode: 'train'
 
     ARKitScenes:
-        _target_: datasets.arkitscenes_dataset.ARKitScenesDataset
+        _target_: dataset.pi3_dataset.arkitscenes_dataset.ARKitScenesDataset
         # data_root: /mnt/nvme3/z00533370/dataset/sample_data/ARKitScenes
         data_root: /efs-mi-east4-2/z00533370/dataset/arkitscene_decode/
         split_ratio: 1.0
@@ -283,7 +283,7 @@ train_dataset:
         aug_crop: 16
         transform:
             _partial_: true
-            _target_: datasets.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
 
@@ -435,8 +435,8 @@ test_dataset:
         z_far: 64
         frame_num: 8
         resolution:
-          - [512, 336]
-        #   - [518, 308]
+        #   - [512, 336]
+          - [518, 308]
         transform:
             _partial_: true
             _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
@@ -451,8 +451,8 @@ test_dataset:
         z_far: 80
         frame_num: 8
         resolution:
-          - [512, 336]
-        #   - [518, 308]
+        #   - [512, 336]
+          - [518, 308]
         transform:
             _partial_: true
             _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
@@ -466,8 +466,8 @@ test_dataset:
         max_distance: 8
         z_far: 80
         resolution:
-          - [512, 336]
-        #   - [518, 308]
+        #   - [512, 336]
+          - [518, 308]
         frame_num: 8
         transform:
             _partial_: true
@@ -482,8 +482,8 @@ test_dataset:
         max_distance: 8
         z_far: 80
         resolution:
-          - [512, 336]
-        #   - [518, 308]
+        #   - [512, 336]
+          - [518, 308]
         frame_num: 8
         transform:
             _partial_: true
@@ -497,8 +497,8 @@ test_dataset:
         max_distance: 16
         z_far: 80
         resolution:
-          - [512, 336]
-        #   - [518, 308]
+        #   - [512, 336]
+          - [518, 308]
         frame_num: 8
         transform:
             _partial_: true
@@ -512,8 +512,8 @@ test_dataset:
         max_distance: 8
         z_far: 20
         resolution:
-          - [512, 336]
-        #   - [518, 308]
+        #   - [512, 336]
+          - [518, 308]
         frame_num: 8
         transform:
             _partial_: true
