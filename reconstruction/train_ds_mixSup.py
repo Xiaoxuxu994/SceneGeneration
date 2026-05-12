@@ -320,7 +320,7 @@ def run(rank, cfg):
         config = ds_config,
     )
 
-    if cfg.get("ckpt_path") is not None:
+    if cfg.get("ckpt_path") is not None and not cfg.ckpt_path.endswith(".ckpt"):
         _, client_state = engine.load_checkpoint(
             load_dir=cfg.get("ckpt_path"), 
             tag=cfg.get("ckpt_id"),
@@ -330,8 +330,6 @@ def run(rank, cfg):
         )
         step = client_state["step"]
         print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
-
-    step_begins = step
     
     step_begins = step
     print(f'[DEBUG] step_begin_stage1={cfg.training.dataset_schedule.stage1.step_begin}, ',
@@ -554,7 +552,7 @@ def run(rank, cfg):
                 break
             with torch.no_grad():
                 pred = engine(data)
-                loss_dict = loss_func(pred, data)
+                loss_dict = loss_func(pred, data, step)
             if global_rank == 0:
                 """Visualize depth maps. """
                 export_image_samples(cfg, step, "vis_img_eval", data, pred, loss_dict, dataset_name=data["dataset_names"][0])
