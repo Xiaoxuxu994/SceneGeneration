@@ -60,6 +60,7 @@ class Reliev3R(nn.Module):
                 "depths":                 pred_depths,                      # Predicted depth, b v 1 h w
                 "depths_conf":            aligned_depth_dict["confs"],      # Predicted depth confidence, b v 1 h w
                 "camera_extrs":           cameras,                          # Predicted camera poses, b v 4 4.
+                "cam_rays":               cam_rays,
             }
             if self.pred_gs:
                 intrinsics = aligned_depth_dict["camera_intrs"]

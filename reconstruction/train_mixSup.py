@@ -18,7 +18,9 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from torch.utils.tensorboard import SummaryWriter
 from einops import rearrange
+from safetensors.torch import load_file
 
+from train_utils import freeze_selected_parts, print_trainable_summary, assert_frozen_status, _adapt_camera_head_more_mlps_for_register, summarize_state_dict_coverage
 from utils.config_loader import LoadConfig
 from utils.image_utils import visualize_prediction
 from utils.optim_utils import create_optimizer, create_lr_scheduler
@@ -29,7 +31,6 @@ from dataset import Reliev3R_MixDataLoader
 
 from model import Reliev3R
 
-from safetensors.torch import load_file
 
 
 ENABLE_TIME_PROFILING = True
@@ -129,6 +130,7 @@ def compute_depth_metrics_and_log(pred, data, step, tb_writter, eval_depth_map, 
         pass
 
 
+
 def run(rank, cfg):
     print("[ INFO ] Start DDP on rank {}".format(rank))
     
@@ -152,6 +154,7 @@ def run(rank, cfg):
     
     """Load model checkpoint. """
     step = 0
+    enable_camreg = (cfg.model.depth_aligner.pi3.enable_camera_register is True and cfg.model.depth_aligner.pi3.model_size == "dinov2_large_0.95B")
     if cfg.get("ckpt_path") is not None:
         print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
 
@@ -163,13 +166,37 @@ def run(rank, cfg):
             print(f"[ INFO ] Loading Pi3 safetensors from: {safetensor_path}")
 
             state_dict = load_file(safetensor_path, device="cpu")
+
+            # if cfg.model.depth_aligner.pi3.enable_camera_register == True and cfg.model.depth_aligner.pi3.model_size == 'dinov2_large_0.95B':
+            #     print('[ INFO ] delete camera_head.more_mlps for camera registered token!')
+            #     for k in state_dict.keys():
+            #         if k.startswith("camera_head.more_mlps"):
+            #             print("Will remove:", k)
+            #     keys_to_remove = [k for k in state_dict.keys() if k.startswith("camera_head.more_mlps")]
+            #     for k in keys_to_remove:
+            #         del state_dict[k]
+            #     print("Remaining keys:", [k for k in state_dict.keys() if k.startswith("camera_head.more_mlps")])
+
             target_module = model.depth_aligner
             target_name = "model.depth_aligner"
             target_state_dict = target_module.state_dict()
+            
+            # --------------------
+            # 不再 delete camera_head.more_mlps，而是尽量扩展旧权重
+            state_dict, adapted_keys = _adapt_camera_head_more_mlps_for_register(
+                state_dict=state_dict,
+                target_state_dict=target_state_dict,
+                enable=enable_camreg,
+            )
+            camera_mlp_adapted = len(adapted_keys) > 0
+
             target_keys = set(target_state_dict.keys())
             ckpt_keys = set(state_dict.keys())
             print(f"[ INFO ] target module: {target_name}, target expects {len(target_keys)},  safetensors contains {len(ckpt_keys)}")
             # print(f"[ INFO ] target module: {target_name}, \n   target expects {len(target_keys)}: {target_keys}, \n   safetensors contains {len(ckpt_keys)}: {ckpt_keys}")
+            coverage_info = summarize_state_dict_coverage(loaded_state_dict=state_dict,
+                                                          target_state_dict=target_state_dict,
+                                                          title=f"{target_name} load coverage")
             missing_keys, unexpected_keys = target_module.load_state_dict(state_dict, strict=False)
             # remapped_state_dict = remap_pi3_state_dict_for_multi_decoder(state_dict, target_module)
             # print(f"[ INFO ] original ckpt keys: {len(state_dict)},  remapped ckpt keys: {len(remapped_state_dict)},  target model keys : {len(target_module.state_dict())}")
@@ -207,7 +234,43 @@ def run(rank, cfg):
         else:
             print('-------------------------------')
             ckpt_info = torch.load(cfg.ckpt_path, map_location="cpu", weights_only=False)
-            model.load_state_dict(ckpt_info["model"])
+
+            state_dict = ckpt_info["model"]
+
+            # if cfg.model.depth_aligner.pi3.enable_camera_register == True and cfg.model.depth_aligner.pi3.model_size == 'dinov2_large_0.95B' and not '60000_camreg.ckpt' in cfg.ckpt_path:
+            #     print('[ INFO ] delete camera_head.more_mlps for camera registered token!')
+            #     for k in state_dict.keys():
+            #         if "camera_head.more_mlps" in k:
+            #             print("Will remove:", k)
+            #     keys_to_remove = [k for k in state_dict.keys() if "camera_head.more_mlps" in k]
+            #     for k in keys_to_remove:
+            #         del state_dict[k]
+            #     print("Remaining keys:", [k for k in state_dict.keys() if "camera_head.more_mlps" in k])
+
+            target_module = model
+            target_name = "model"
+            target_state_dict = target_module.state_dict()
+
+            # 如果这个 ckpt 本身已经是 camreg 版本，就不会发生 shape mismatch，函数里会自动跳过
+            state_dict, adapted_keys = _adapt_camera_head_more_mlps_for_register(
+                state_dict=state_dict,
+                target_state_dict=target_state_dict,
+                enable=enable_camreg,
+            )
+            camera_mlp_adapted = len(adapted_keys) > 0
+
+            target_keys = set(target_state_dict.keys())
+            ckpt_keys = set(state_dict.keys())
+            print(f"[ INFO ] target module: {target_name}, target expects {len(target_keys)}, ckpt contains {len(ckpt_keys)}")
+
+            coverage_info = summarize_state_dict_coverage(loaded_state_dict=state_dict,
+                                                          target_state_dict=target_state_dict,
+                                                          title=f"{target_name} load coverage")
+
+            msg = target_module.load_state_dict(state_dict, strict=False)
+            print(f"[ INFO ] missing_keys: {msg.missing_keys}")
+            print(f"[ INFO ] unexpected_keys: {msg.unexpected_keys}")
+
             model = model.to(device=DEVICE_NAME)    
             del ckpt_info
 
@@ -312,7 +375,7 @@ def run(rank, cfg):
                 forward_end.record()
                 loss_start.record()
 
-            loss_dict = loss_func(pred, data)
+            loss_dict = loss_func(pred, data, step)
             
             if enable_time_profiling:
                 loss_end.record()
@@ -366,39 +429,47 @@ def run(rank, cfg):
                     pred["local_points"][..., -1:, :, :].min().item(), pred["local_points"][..., -1:, :, :].max().item(), 
                     pred["depths_conf"].min().item(), pred["depths_conf"].max().item(), 
                     pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item(), 
-                    data["dataset_names"][0]))
+                    data["dataset_names"][0], loss_dict["mode"]))
                 for loss_name, loss_value in loss_dict.items():
-                    if loss_name == "matching_info":
+                    if loss_name in ["matching_info", "mode"]:
                         continue
                     tb_writer.add_scalar("loss/{}".format(loss_name), loss_value.item(), step)
+                tb_writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], step)
                 compute_camera_metrics_and_log(pred, data, step, tb_writer, eval_angle, eval_trajectory, "metric_train")
             
                 if step % cfg.training.verbose_interval == 0:
                     """Visualize image, tracking, depth maps and confidence maps"""
-                    export_image_samples(cfg, step, "vis_img_train", data, pred, loss_dict)
+                    export_image_samples(cfg, step, "vis_img_train", data, pred, loss_dict, dataset_name=data["dataset_names"][0])
                     """Visualize point cloud"""
-                    export_point_cloud(cfg, step, "vis_pcd_train", data, pred, thre=TRAIN_PCD_VISUALIZE_THRE)
+                    export_point_cloud(cfg, step, "vis_pcd_train", data, pred, thre=TRAIN_PCD_VISUALIZE_THRE, dataset_name=data["dataset_names"][0])
                 
                 """Validation, only performed on global rank 0"""
                 if step % cfg.training.eval_interval == 0 and global_rank == 0:
                     data = dataloader_eval.sample(step)
                     with torch.no_grad():
                         pred = model.module._forward(data)
-                        loss_dict = loss_func(pred, data)
+                        loss_dict = loss_func(pred, data, step)
                         print("[ INFO - val ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]".format(
                             step, loss_dict["total"].item(), 
                             pred["local_points"][..., :2, :, :].min().item(), pred["local_points"][..., :2, :, :].max().item(), 
                             pred["local_points"][..., -1:, :, :].min().item(), pred["local_points"][..., -1:, :, :].max().item(), 
                             pred["depths_conf"].min().item(), pred["depths_conf"].max().item(), 
-                            pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item()))
+                            pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item(), loss_dict["mode"]))
                         for loss_name, loss_value in loss_dict.items():
-                            if loss_name == "matching_info":
+                            if loss_name in ["matching_info", "mode"]:
                                 continue
                             tb_writer.add_scalar("loss_val/{}".format(loss_name), loss_value.item(), step)
+                        tb_writer.add_scalar("val/lr", optimizer.param_groups[0]["lr"], step)
                         """Report camera metrics of a single sample."""
                         compute_camera_metrics_and_log(pred, data, step, tb_writer, eval_angle, eval_trajectory, "metric_val")
                         compute_depth_metrics_and_log(pred, data, step, tb_writer, eval_depth_map, "metric_val")
-                
+
+                        if step % cfg.training.verbose_interval == 0:
+                            """Visualize image, tracking, depth maps and confidence maps"""
+                            export_image_samples(cfg, step, "vis_img_val", data, pred, loss_dict, dataset_name=data["dataset_names"][0])
+                            """Visualize point cloud"""
+                            export_point_cloud(cfg, step, "vis_pcd_val", data, pred, thre=TRAIN_PCD_VISUALIZE_THRE, dataset_name=data["dataset_names"][0])
+
                 """Save model checkpoint. """
                 if (step % cfg.training.ckpt_interval == 0 or step == cfg.training.iterations) and global_rank == 0:
                     print("[ INFO ] Saving checkpoint at iteration {}".format(step))
@@ -432,11 +503,11 @@ def run(rank, cfg):
                 break
             with torch.no_grad():
                 pred = model.module._forward(data)
-                loss_dict = loss_func(pred, data)
+                loss_dict = loss_func(pred, data, step)
             """Visualize depth maps. """
-            export_image_samples(cfg, step, "vis_img_eval", data, pred, loss_dict)
+            export_image_samples(cfg, step, "vis_img_eval", data, pred, loss_dict, dataset_name=data["dataset_names"][0])
             """Export point cloud. """
-            export_point_cloud(cfg, step, "vis_pcd_eval", data, pred, thre=EVAL_PCD_VISUALIZE_THRE)
+            export_point_cloud(cfg, step, "vis_pcd_eval", data, pred, thre=EVAL_PCD_VISUALIZE_THRE, dataset_name=data["dataset_names"][0])
             print("[ INFO ] Eval step {} done.".format(step - step_begins))
     clean_up()
 
