@@ -8,8 +8,8 @@ train_dataset:
 
     ASE:
         _target_: datasets.ase_dataset.ASEDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/ASE
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/ASE
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE
         split_ratio: 0.9
         z_far: 80
         frame_num: 8
@@ -29,8 +29,8 @@ test_dataset:
         ASE: 1
     ASE:
         _target_: datasets.ase_dataset.ASEDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/ASE
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/ASE
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE
         split_ratio: 0.9
         z_far: 80
         frame_num: 8

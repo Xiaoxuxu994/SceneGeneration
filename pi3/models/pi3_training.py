@@ -26,6 +26,8 @@ from .dinov3.hub.backbones import (
 
 from torch.utils.checkpoint import checkpoint
 from safetensors.torch import load_file
+from pathlib import Path
+from transformers.modeling_utils import load_sharded_checkpoint
 
 def freeze_all_params(modules):
     for module in modules:
@@ -249,14 +251,25 @@ class Pi3(nn.Module):
 
         self.num_dec_blk_not_to_checkpoint = num_dec_blk_not_to_checkpoint
 
+        # if ckpt is not None:
+        #     checkpoint = torch.load(ckpt, weights_only=False, map_location='cpu')
+
+        #     res = self.load_state_dict(checkpoint, strict=False)
+        #     print(f'[Pi3] Load checkpoints from {ckpt}: {res}')
+
+        #     del checkpoint
+        #     torch.cuda.empty_cache()
         if ckpt is not None:
-            checkpoint = torch.load(ckpt, weights_only=False, map_location='cpu')
+            ckpt = Path(ckpt)
 
-            res = self.load_state_dict(checkpoint, strict=False)
-            print(f'[Pi3] Load checkpoints from {ckpt}: {res}')
+            if ckpt.is_dir():
+                res = load_sharded_checkpoint(self, str(ckpt), strict=False)
+            else:
+                checkpoint = torch.load(str(ckpt), weights_only=False, map_location="cpu")
+                res = self.load_state_dict(checkpoint, strict=False)
+                del checkpoint
 
-            del checkpoint
-            torch.cuda.empty_cache()
+            print(f"[Pi3] Load checkpoints from {ckpt}: {res}")
 
     @staticmethod
     def _resolve_model_spec(decoder_size,model_size):
@@ -396,7 +409,15 @@ class Pi3(nn.Module):
                     'builder': dinov3_vitl16,
                     'model_dir': 'ckpts/dinov3_vitl16',
                     'default_decoder': None,
-                    'variants':{}
+                    'variants':{
+                        '0.95B': dict(
+                            dec_embed_dim=1024,
+                            dec_num_heads=16,
+                            mlp_ratio=4,
+                            dec_depth=36,
+                            head_depth=5,
+                        ),
+                    }
                 },
                 'huge+':{
                     'builder': dinov3_vith16plus,
@@ -410,6 +431,13 @@ class Pi3(nn.Module):
                             dec_depth=36,
                             head_depth=5,
                         ),
+                        '5Bv2': dict(
+                            dec_embed_dim=2560,
+                            dec_num_heads=32,
+                            mlp_ratio=4,
+                            dec_depth=56,
+                            head_depth=6,
+                        ),                        
                         '3B': dict(
                             dec_embed_dim=1792,
                             dec_num_heads=28,

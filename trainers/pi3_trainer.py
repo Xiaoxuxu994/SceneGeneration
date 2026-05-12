@@ -5,6 +5,8 @@ from datasets.base.base_dataset import sample_resolutions
 import hydra
 
 from pi3.models.loss import Pi3Loss
+from utils.eval_utils import eval_angle, eval_trajectory, eval_depth_map
+from pi3.utils.geometry import se3_inverse
 
 class Pi3Trainer(BaseTrainer):
     def __init__(self, cfg):
@@ -144,6 +146,77 @@ class Pi3Trainer(BaseTrainer):
             **details
         )
 
+    def calculate_metrics(self, output, batch, mode='test'):
+        if mode != 'test':
+            return {}
+
+        pred, gt_raw = output
+        metrics = {}
+
+        try:
+            device = pred['local_points'].device
+
+            gt = self.test_loss.prepare_gt(gt_raw, device)
+            # 避免 inplace 改原始 pred，做一个浅拷贝 + tensor clone
+            pred_norm = EasyDict()
+            for k, v in pred.items():
+                pred_norm[k] = v.clone() if torch.is_tensor(v) else v
+
+            pred_norm = self.test_loss.normalize_pred(pred_norm, gt)
+            pred_pose = pred_norm["camera_poses"]                  # [B, N, 4, 4], c2w
+            pred_w2c0 = se3_inverse(pred_pose[:, 0])              # [B, 4, 4]
+            pred_norm["camera_poses"] = torch.einsum(
+                "bij,bnjk->bnik", pred_w2c0, pred_pose
+            )
+            # ---------------------------
+            # camera metrics
+            # ---------------------------
+            try:
+                pr_cam_norm = pred_norm["camera_poses"][0].detach()
+                gt_cam_norm = gt["camera_poses"][0]
+                rra_acc, rta_acc, auc_at_thre = eval_angle(pr_cam_norm, gt_cam_norm)
+                ate, rpe_trans, rpe_rot = eval_trajectory(pr_cam_norm, gt_cam_norm)
+
+                metrics["cam_rra_acc"] = float(rra_acc)
+                metrics["cam_rta_acc"] = float(rta_acc)
+                metrics["cam_auc_at_thre"] = float(auc_at_thre)
+                metrics["cam_ate"] = float(ate)
+                metrics["cam_rpe_trans"] = float(rpe_trans)
+                metrics["cam_rpe_rot"] = float(rpe_rot)
+            except Exception as e:
+                if self.accelerator.is_main_process:
+                    self.log_info(f"[validate] camera metric skipped: {e}")
+
+            # ---------------------------
+            # depth metrics
+            # 用 normalize 后的 local_points z 来算
+            # ---------------------------
+            try:
+                pr_depth = pred_norm["local_points"][0, ..., 2].unsqueeze(1)   # [N,1,H,W]
+                gt_depth = gt["local_points"][0, ..., 2].unsqueeze(1)          # [N,1,H,W]
+                gt_mask = gt["valid_masks"][0].unsqueeze(1)                    # [N,1,H,W]
+
+                depth_metrics = eval_depth_map(
+                    pr_depth.detach(),
+                    gt_depth,
+                    gt_mask > 0.0,
+                    align_with_lstsq=True,
+                    device=str(self.accelerator.device),
+                )
+
+                if "Abs Rel" in depth_metrics:
+                    metrics["depth_abs_rel"] = float(depth_metrics["Abs Rel"])
+                if "δ < 1.25" in depth_metrics:
+                    metrics["depth_delta_1.25"] = float(depth_metrics["δ < 1.25"])
+            except Exception as e:
+                if self.accelerator.is_main_process:
+                    self.log_info(f"[validate] depth metric skipped: {e}")
+
+        except Exception as e:
+            if self.accelerator.is_main_process:
+                self.log_info(f"[validate] metric prepare failed: {e}")
+
+        return metrics
 
 def recursive_get_dataset(dataset, res=[]):
     if hasattr(dataset, 'datasets'):

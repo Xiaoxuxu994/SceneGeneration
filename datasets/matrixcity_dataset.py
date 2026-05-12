@@ -3,11 +3,14 @@ sys.path.append('.')
 
 import os
 import os.path as osp
+from glob import glob
 import json
 import hashlib
-from glob import glob
 from pathlib import Path
 
+os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
+
+import cv2
 import torch
 import numpy as np
 from PIL import Image
@@ -35,9 +38,11 @@ class MatrixCityDataset(BaseDataset):
         use_normal=False,
         **kwargs,
     ):
-        '''
-            https://github.com/city-super/MatrixCity
-        '''
+        """
+        https://github.com/city-super/MatrixCity
+        基于这个脚本更新：
+        https://github.com/city-super/MatrixCity/blob/main/scripts/rgbd2pc.py
+        """
         super().__init__(**kwargs)
         assert data_root is not None
 
@@ -203,18 +208,22 @@ class MatrixCityDataset(BaseDataset):
     # =========================
     def _read_exr_depth(self, path):
         """
-        读取单通道 EXR depth。
+        读取单通道 EXR depth，和参考脚本保持一致。
         """
         depth = cv2.imread(path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
         if depth is None:
             raise ValueError(f"Failed to read EXR depth: {path}")
 
         if depth.ndim == 3:
-            # 有些 exr 会读成 HxWx3，这里取第一通道
             depth = depth[..., 0]
+        elif depth.ndim != 2:
+            raise ValueError(f"Unexpected depth shape {depth.shape} @ {path}")
 
         depth = depth.astype(np.float32)
+        invalid_mask = (depth == 65504.0)
         depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+        depth[invalid_mask] = 0.0
+        depth[depth <= 0] = 0.0
         return depth
 
     def _read_exr_normal(self, path):
@@ -223,11 +232,12 @@ class MatrixCityDataset(BaseDataset):
         """
         normal = cv2.imread(path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
         if normal is None:
-            raise ValueError(f"Failed to read EXR depth: {path}")
+            raise ValueError(f"Failed to read EXR normal: {path}")
 
         normal = normal.astype(np.float32)
         normal = np.nan_to_num(normal, nan=0.0, posinf=0.0, neginf=0.0)
         return normal
+
     # =========================
     # sample
     # =========================
@@ -259,10 +269,9 @@ class MatrixCityDataset(BaseDataset):
         rgb_image = Image.open(rec["rgb_path"]).convert("RGB")
 
         depthmap = self._read_exr_depth(rec["depth_path"])
-        if depthmap.ndim == 3:
-            depthmap = depthmap[..., 0]
-        depthmap = depthmap * 0.01  # cm -> m
+        depthmap = depthmap / 100.0   # 与参考脚本有出入，这里/100, 原始脚本/10000 ->100m
         depthmap = np.nan_to_num(depthmap, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+        depthmap[depthmap <= 0] = 0.0
         depthmap = threshold_depth_map(depthmap, min_percentile=-1, max_percentile=98)
 
         normal = None
@@ -296,11 +305,18 @@ class MatrixCityDataset(BaseDataset):
             )
 
         depthmap = np.nan_to_num(depthmap, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+        depthmap[depthmap <= 0] = 0.0
+
+        # 和参考脚本对齐：
+        # 它是在 cam_coords 上翻 y/z；
+        # 等价到 pose 上，就是翻 c2w 的第 1、2 列
+        camera_pose = rec["transform_matrix"].copy().astype(np.float32)
+        camera_pose[:, 1:3] *= -1
 
         out = dict(
             img=rgb_image,
             depthmap=depthmap,
-            camera_pose=rec["transform_matrix"].astype(np.float32),   # c2w
+            camera_pose=camera_pose,   # c2w, aligned with reference script
             camera_intrinsics=intrinsic_.astype(np.float32),
             dataset=self.dataset_label,
             label=scene_name,
@@ -358,12 +374,13 @@ if __name__ == "__main__":
         mode="train",
         resolution=[[224, 224]],
         frame_num=8,
-        max_distance=8,
+        max_distance=16,
         min_num_images=24,
         split_ratio=0.9,
+        z_far=160,
         verbose=False,
         shuffle=False,
-        use_normal=True,
+        use_normal=False,
     )
 
     print(f"len(dataset) = {len(dataset)}")
@@ -380,8 +397,6 @@ if __name__ == "__main__":
             f"pts3d={v['pts3d'].shape}, "
             f"valid={v['valid_mask'].sum()}"
         )
-        if "normal" in v:
-            msg += f", normal={v['normal'].shape}"
         print(msg)
 
     visualize_gt(views, out_dir, prefix="MatrixCity_GT")

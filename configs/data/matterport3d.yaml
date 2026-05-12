@@ -1,0 +1,48 @@
+# @package _global_
+
+train_dataset:
+    length: 10000000         # dummy
+
+    weights: 
+        Matterport3D: 1
+
+    Matterport3D:
+        _target_: datasets.matterport3d_dataset.Matterport3DDataset
+        data_root: /mnt/nvme3/z00533370/dataset/sample_data/Matterport3D_decode
+        # data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
+        split_ratio: 0.9
+        max_distance: 8
+        z_far: 80
+        frame_num: 8
+        aug_crop: 16
+        transform:
+            _partial_: true
+            _target_: datasets.base.transforms.JitterJpegLossBlurring
+        aug_focal: 0.9
+        mode: 'train'
+
+train_dataloader:
+    drop_last: True
+    shuffle: True
+
+test_dataset:
+    weights: 
+        Matterport3D: 1
+    Matterport3D:
+        _target_: datasets.matterport3d_dataset.Matterport3DDataset
+        data_root: /mnt/nvme3/z00533370/dataset/sample_data/Matterport3D_decode
+        # data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
+        split_ratio: 0.9
+        z_far: 80
+        frame_num: 8
+        resolution:
+            # - [518, 336]
+            - [512, 336]
+        transform:
+            _partial_: true
+            _target_: datasets.base.transforms.ImgToTensor
+        mode: 'test'
+
+test_dataloader:
+    drop_last: False
+    shuffle: False

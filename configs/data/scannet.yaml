@@ -7,11 +7,11 @@ train_dataset:
         ScanNet: 1
 
     ScanNet:
-        _target_: datasets.scannet_dataset.ScannetDataset
-        data_root: /efs-m3ga/z00533370/dataset/scannet_v2_decode/
-        invalid_list_path: data/scannet_invalid_list.json
-        seq_num: -1
-        verbose: true
+        _target_: datasets.scannet_dataset.ScanNetDataset
+        data_root: /mnt/nvme3/z00533370/dataset/sample_data/ScanNet
+        # data_root: /efs-m3ga/z00533370/dataset/scannet_v2_decode/
+        split_ratio: 0.9
+        max_distance: 8
         z_far: 80
         frame_num: 8
         aug_crop: 16
@@ -29,15 +29,15 @@ test_dataset:
     weights: 
         ScanNet: 1
     ScanNet:
-        _target_: datasets.scannet_dataset.ScannetDataset
-        data_root: /efs-m3ga/z00533370/dataset/scannet_v2_decode/
-        invalid_list_path: data/scannet_invalid_list.json
-        seq_num: -1
-        verbose: true
+        _target_: datasets.scannet_dataset.ScanNetDataset
+        data_root: /mnt/nvme3/z00533370/dataset/sample_data/ScanNet
+        # data_root: /efs-m3ga/z00533370/dataset/scannet_v2_decode/
+        split_ratio: 0.9
         z_far: 80
         frame_num: 8
         resolution:
-            - [518, 336]
+            # - [518, 336]
+            - [512, 336]
         transform:
             _partial_: true
             _target_: datasets.base.transforms.ImgToTensor

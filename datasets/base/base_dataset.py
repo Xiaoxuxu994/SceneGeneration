@@ -155,11 +155,13 @@ class BaseDataset(EasyDataset):
         if self.aug_crop > 1:
             target_resolution += rng.integers(0, self.aug_crop)
         image, depthmap, intrinsics, normal, far_mask = cropping.rescale_image_depthmap(image, depthmap, intrinsics, target_resolution, normal=normal, far_mask=far_mask) # slightly scale the image a bit larger than the target resolution
+        # image, depthmap, intrinsics, normal, far_mask = cropping.rescale_image_depthmap(image, None, intrinsics, target_resolution, normal=normal, far_mask=far_mask) # slightly scale the image a bit larger than the target resolution
 
         # actual cropping (if necessary) with bilinear interpolation
         intrinsics2 = cropping.camera_matrix_of_crop(intrinsics, image.size, resolution, offset_factor=0.5)
         crop_bbox = cropping.bbox_from_intrinsics_in_out(intrinsics, intrinsics2, resolution)
         image, depthmap, intrinsics2, normal, far_mask = cropping.crop_image_depthmap(image, depthmap, intrinsics, crop_bbox, normal=normal, far_mask=far_mask)
+        # image, depthmap, intrinsics2, normal, far_mask = cropping.crop_image_depthmap(image, None, intrinsics, crop_bbox, normal=normal, far_mask=far_mask)
 
         other = [x for x in [normal, far_mask] if x is not None]
         return image, depthmap, intrinsics2, *other

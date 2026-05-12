@@ -7,6 +7,9 @@ from .transforms import *
 import math
 from torch.utils.data.dataloader import default_collate
 import random
+import os.path as osp
+import h5py
+import re
 
 def tensor2pil(img):
     if -1 <= img.min() <= 0:
@@ -642,3 +645,209 @@ def normalize_poses(poses: torch.Tensor,
         augmented_poses[:, :, :3, 3] = augmented_translations
 
     return normalized_poses, scale
+
+
+def read_any_file(file_name, read_dtype=np.float16, return_dtype=None):
+    """
+    Reads any kind file either from a local path or a remote URL.
+
+    Args:
+        file_name (str): The file name.
+        dtype (np.dtype): data type for read binary data
+        return_dtype (np.dtype): data type for return data, use only when necessary
+
+    Returns:
+        np.Array: file
+    """
+    obs_file = file_name.startswith("obs://")
+
+    ext = osp.splitext(file_name)[-1].lower()
+    if ext == ".png" or ext == ".jpeg" or ext == ".ppm" or ext == ".jpg":
+        with open(file_name, "rb") as f:
+            return np.array(Image.open(f), return_dtype)
+
+    elif ext == ".bin" or ext == ".raw":
+        return np.frombuffer(open(file_name, "rb").read(), read_dtype)
+
+    elif ext == ".tiff" or ext == ".exr":
+        if not obs_file:
+            return np.asarray(
+                cv2.imread(
+                    file_name,
+                    (cv2.IMREAD_UNCHANGED | cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR),
+                ),
+                return_dtype,
+            )
+        else:
+            return np.asarray(
+                cv2.imdecode(
+                    np.frombuffer(open(file_name, "rb").read(), read_dtype),
+                    (cv2.IMREAD_UNCHANGED | cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR),
+                ),
+                return_dtype,
+            )
+
+    elif ext == ".hdf5" or ext == ".h5":
+        if not obs_file:
+            result = h5py.File(file_name, "r")
+            result = result.get("depth", result.get("dataset"))[:]
+        else:
+            with open(file_name, "rb") as f:
+                result = h5py.File(f, "r")
+                result = result.get("depth", result.get("dataset"))[:]
+        return np.asarray(result, return_dtype)
+
+    elif ext == ".npy" or ext == ".npz":
+        return np.load(file_name)
+
+    elif ext == ".pfm":
+        return np.asarray(read_pfm_file(file_name))
+
+    raise NotImplementedError(f"Unsupported File: {file_name}")
+
+def read_pfm_file(file_path):
+    with open(file_path, "rb") as file:
+        header = file.readline().decode("UTF-8").strip()
+
+        if header == "PF":
+            is_color = True
+        elif header == "Pf":
+            is_color = False
+        else:
+            raise ValueError("The provided file is not a valid PFM file.")
+
+        dimensions = re.match(r"^(\d+)\s(\d+)\s$", file.readline().decode("UTF-8"))
+        if dimensions:
+            img_width, img_height = map(int, dimensions.groups())
+        else:
+            raise ValueError("Invalid PFM header format.")
+
+        endian_scale = float(file.readline().decode("UTF-8").strip())
+        if endian_scale < 0:
+            dtype = "<f"  # little-endian
+        else:
+            dtype = ">f"  # big-endian
+
+        data_buffer = file.read()
+        img_data = np.frombuffer(data_buffer, dtype=dtype)
+
+        if is_color:
+            img_data = np.reshape(img_data, (img_height, img_width, 3))
+        else:
+            img_data = np.reshape(img_data, (img_height, img_width))
+
+        img_data = cv2.flip(img_data, 0)
+
+    return img_data
+
+def parse_colmap_to_dict(images_txt_path, cameras_txt_path):
+    """
+    Parse COLMAP format images.txt and cameras.txt files and return a dictionary
+    mapping image names (without .jpg) to (intrinsics, extrinsics) tuples.
+
+    Args:
+        images_txt_path (str): Path to COLMAP images.txt file
+        cameras_txt_path (str): Path to COLMAP cameras.txt file
+
+    Returns:
+        dict: {image_name_without_jpg: (intrinsics_3x3, extrinsics_3x4)}
+    """
+    # First, parse cameras.txt to get intrinsics for each camera ID
+    cameras = {}
+    with open(cameras_txt_path) as f:
+        for line in f:
+            if line.startswith("#") or not line.strip():
+                continue
+
+            parts = line.strip().split()
+            camera_id = int(parts[0])
+            model = parts[1]
+            width = int(parts[2])
+            height = int(parts[3])
+            params = [float(x) for x in parts[4:]]
+
+            # Create intrinsic matrix based on camera model
+            if model == "SIMPLE_PINHOLE":
+                # SIMPLE_PINHOLE: f, cx, cy
+                f, cx, cy = params
+                K = np.array([[f, 0, cx], [0, f, cy], [0, 0, 1]])
+            elif model == "PINHOLE":
+                # PINHOLE: fx, fy, cx, cy
+                fx, fy, cx, cy = params
+                K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
+            elif model == "SIMPLE_RADIAL":
+                # SIMPLE_RADIAL: f, cx, cy, k1
+                f, cx, cy, k1 = params
+                K = np.array([[f, 0, cx], [0, f, cy], [0, 0, 1]])
+            else:
+                raise ValueError(f"Unsupported camera model: {model}")
+
+            cameras[camera_id] = K
+
+    # Parse images.txt to get extrinsics and map to camera IDs
+    result_dict = {}
+    with open(images_txt_path) as f:
+        lines = f.readlines()
+
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+
+            # Skip comments and empty lines
+            if line.startswith("#") or not line:
+                i += 1
+                continue
+
+            # Parse image line: IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME
+            parts = line.split()
+            if len(parts) >= 10:
+                image_id = int(parts[0])
+                qw, qx, qy, qz = map(float, parts[1:5])
+                tx, ty, tz = map(float, parts[5:8])
+                camera_id = int(parts[8])
+                image_name = parts[9]
+
+                # Convert quaternion to rotation matrix
+                # Normalize quaternion
+                q_norm = np.sqrt(qw * qw + qx * qx + qy * qy + qz * qz)
+                qw, qx, qy, qz = qw / q_norm, qx / q_norm, qy / q_norm, qz / q_norm
+
+                # Quaternion to rotation matrix
+                R = np.array(
+                    [
+                        [
+                            1 - 2 * (qy * qy + qz * qz),
+                            2 * (qx * qy - qw * qz),
+                            2 * (qx * qz + qw * qy),
+                        ],
+                        [
+                            2 * (qx * qy + qw * qz),
+                            1 - 2 * (qx * qx + qz * qz),
+                            2 * (qy * qz - qw * qx),
+                        ],
+                        [
+                            2 * (qx * qz - qw * qy),
+                            2 * (qy * qz + qw * qx),
+                            1 - 2 * (qx * qx + qy * qy),
+                        ],
+                    ]
+                )
+
+                # Translation vector
+                t = np.array([[tx], [ty], [tz]])
+
+                # Create extrinsics matrix [R|t]
+                extrinsics = np.hstack([R, t])
+
+                # Get intrinsics from camera ID
+                intrinsics = cameras[camera_id]
+
+                # Remove .jpg/.JPG extension from image name
+                name_without_ext = image_name.replace(".jpg", "").replace(".JPG", "")
+
+                result_dict[name_without_ext] = (intrinsics, extrinsics)
+
+            # Skip the next line (POINTS2D data)
+            i += 2
+
+    return result_dict
