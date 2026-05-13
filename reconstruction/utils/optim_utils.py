@@ -18,7 +18,7 @@ def format_number(num):
     return str(num)
 
 
-def create_optimizer(model: nn.Module, weight_decay, learning_rate) -> torch.optim.Optimizer:
+def create_optimizer(model: nn.Module, weight_decay: float, learning_rate: float, backbone_lr_ratio: float = 0) -> torch.optim.Optimizer:
     """Create optimizer. 
     
     Reference to https://github.com/Haian-Jin/LVSM/blob/main/utils/training_utils.py#L33.
@@ -31,10 +31,12 @@ def create_optimizer(model: nn.Module, weight_decay, learning_rate) -> torch.opt
     all_param_dict = {name: param for name, param in model.named_parameters()}
     optimized_param_dict = {name: param for name, param in all_param_dict.items() if param.requires_grad}
     
-    decay_params, decay_params_small_lr, camera_params, nodecay_params = [], [], [], []
+    decay_params, decay_params_small_lr, camera_params, nodecay_params, backbone_params = [], [], [], [], []
     for name, param in optimized_param_dict.items():
         if param.dim() == 1 or getattr(param, '_no_weight_decay', False):
             nodecay_params.append(param)
+        elif backbone_lr_ratio > 0 and not ('_decoder' in name or '_head' in name):
+            backbone_params.append(param)
         else:
             if name.startswith("depth_aligner.image_tokenizer") or name.startswith("depth_aligner.encoder"):
                 decay_params_small_lr.append(param)
@@ -48,6 +50,9 @@ def create_optimizer(model: nn.Module, weight_decay, learning_rate) -> torch.opt
         # {'params': camera_params, 'weight_decay': weight_decay, 'lr': learning_rate * 0.2}, 
         {'params': nodecay_params, 'weight_decay': 0.0, 'lr': learning_rate}, 
     ]
+    if backbone_params: optim_groups.append(
+        {'params': backbone_params, 'weight_decay': weight_decay, 'lr': learning_rate * backbone_lr_ratio}
+    )
     
     # specified_param_group_dicts = {
     #     learning_rate * 1e-2: ["depth_aligner.image_tokenizer", "depth_aligner.encoder"], 

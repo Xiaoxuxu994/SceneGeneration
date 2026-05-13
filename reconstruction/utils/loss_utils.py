@@ -417,7 +417,7 @@ def sparse_rigid_ray_flow_loss_from_pairs(
     # --- relative pose T10 = w2c1 @ inv(w2c0) ---
     T0 = paired_extrs[:, 0].float()
     T1 = paired_extrs[:, 1].float()
-    T10 = T1 @ torch.linalg.inv(T0)
+    T10 = T1 @ T0.inverse()
     R10 = T10[:, :3, :3]  # (BP,3,3)
     t10 = T10[:, :3, 3]   # (BP,3)
 

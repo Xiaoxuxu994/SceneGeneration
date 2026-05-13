@@ -28,7 +28,7 @@ from utils.optim_utils import create_optimizer, create_lr_scheduler
 from utils.log_utils import export_pcds_and_cam_as_ply
 from utils import make_loss_func
 from utils.common import normalize_trans, calc_extr_inv, localpoint2global
-from dataset import Reliev3R_MixDataLoader
+from dataset import Reliev3R_MixDataLoader, load_data_to_device
 
 from model import Reliev3R
 import numpy as np
@@ -304,7 +304,7 @@ def run(rank, cfg):
             print("[ INFO ] Checkpoint loaded successfully")
     else:
         """Create optimizers from scratch. """
-        optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate)
+        optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.backbone_lr_ratio)
         lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations, 
                                            scheduler_type=cfg.training.get("lr_scheduler", "cosine"))
     # """Create optimizers from scratch. """
@@ -582,6 +582,7 @@ if __name__ == '__main__':
     parser.add_argument("--learning_rate", type=float, default=None, help="Maximum learning rate.")
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
     parser.add_argument("--freeze_backbone", action="store_true", help="default is freezing backbone")
+    parser.add_argument("--backbone_lr_ratio", type=float, default=0., help="finetune backbone with lower training rate")
     parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
     
@@ -609,6 +610,7 @@ if __name__ == '__main__':
     if args.deepspeed_config is not None:
         cfg.deepspeed_config = args.deepspeed_config
     cfg.freeze_backbone = args.freeze_backbone        
+    cfg.backbone_lr_ratio = args.backbone_lr_ratio
     cfg.eval = args.eval
     cfg.no_load_optim = args.no_load_optim
     
