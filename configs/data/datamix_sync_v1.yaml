@@ -15,8 +15,8 @@ train_dataset:
 
     Hypersim:
         _target_: datasets.hypersim_dataset.HypersimDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/Hypersim
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/Hypersim
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim
         split_ratio: 0.9
         max_distance: 24
         z_far: 256
@@ -30,8 +30,8 @@ train_dataset:
 
     Kubric:
         _target_: datasets.kubric_dataset.KubricDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/Kubric
-        # data_root: /efs-m3ga/z00533370/reliev3r_data/Kubric
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/Kubric
+        data_root: /efs-m3ga/z00533370/reliev3r_data/Kubric
         split_ratio: 0.9
         max_distance: 8
         z_far: 64
@@ -45,8 +45,8 @@ train_dataset:
 
     TarTanAir:
         _target_: datasets.tartanair_dataset.TarTanAirDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/TartanAir
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/TartanAir
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir
         split_ratio: 0.9
         max_distance: 16
         z_far: 128
@@ -60,8 +60,8 @@ train_dataset:
 
     ASE:
         _target_: datasets.ase_dataset.ASEDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/ASE
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/ASE
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE
         split_ratio: 0.9
         max_distance: 24
         z_far: 80
@@ -75,8 +75,8 @@ train_dataset:
 
     MatrixCity:
         _target_: datasets.matrixcity_dataset.MatrixCityDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/MatrixCity
-        # data_root: /efs-m3ga/z00533370/reliev3r_data/MatrixCity
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MatrixCity
+        data_root: /efs-m3ga/z00533370/reliev3r_data/MatrixCity
         split_ratio: 0.9
         max_distance: 16
         z_far: 160
@@ -90,8 +90,8 @@ train_dataset:
 
     MVSSynth:
         _target_: datasets.mvssynth_dataset.MVSSynthDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/MVS-Synth/GTAV_540/
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MVS-Synth/GTAV_540/
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
         split_ratio: 0.9
         max_distance: 16
         z_far: 160
@@ -105,8 +105,8 @@ train_dataset:
 
     BlendedMVS:
         _target_: datasets.blendedmvs_dataset.BlendedMVSDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/BlendedMVS
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/BlendedMVS
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS
         split_ratio: 0.9
         max_distance: 8
         z_far: 256
@@ -120,8 +120,8 @@ train_dataset:
 
     VirtualKitti:
         _target_: datasets.vkitti_dataset.VKittiDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/vKitti2
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/vKitti2
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2
         split_ratio: 0.9
         max_distance: 16
         z_far: 160
@@ -150,8 +150,8 @@ test_dataset:
 
     Hypersim:
         _target_: datasets.hypersim_dataset.HypersimDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/Hypersim
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/Hypersim
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim
         split_ratio: 0.9
         max_distance: 24
         z_far: 256
@@ -165,8 +165,8 @@ test_dataset:
 
     Kubric:
         _target_: datasets.kubric_dataset.KubricDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/Kubric
-        # data_root: /efs-m3ga/z00533370/reliev3r_data/Kubric
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/Kubric
+        data_root: /efs-m3ga/z00533370/reliev3r_data/Kubric
         split_ratio: 0.9
         max_distance: 8
         z_far: 64
@@ -180,8 +180,8 @@ test_dataset:
 
     TarTanAir:
         _target_: datasets.tartanair_dataset.TarTanAirDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/TartanAir
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/TartanAir
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir
         split_ratio: 0.9
         max_distance: 16
         z_far: 128
@@ -195,8 +195,8 @@ test_dataset:
 
     ASE:
         _target_: datasets.ase_dataset.ASEDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/ASE
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/ASE
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE
         split_ratio: 0.9
         max_distance: 24
         z_far: 80
@@ -210,8 +210,8 @@ test_dataset:
 
     MatrixCity:
         _target_: datasets.matrixcity_dataset.MatrixCityDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/MatrixCity
-        # data_root: /efs-m3ga/z00533370/reliev3r_data/MatrixCity
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MatrixCity
+        data_root: /efs-m3ga/z00533370/reliev3r_data/MatrixCity
         split_ratio: 0.9
         max_distance: 16
         z_far: 160
@@ -225,8 +225,8 @@ test_dataset:
 
     MVSSynth:
         _target_: datasets.mvssynth_dataset.MVSSynthDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/MVS-Synth/GTAV_540/
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MVS-Synth/GTAV_540/
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
         split_ratio: 0.9
         max_distance: 16
         z_far: 160
@@ -240,8 +240,8 @@ test_dataset:
 
     BlendedMVS:
         _target_: datasets.blendedmvs_dataset.BlendedMVSDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/BlendedMVS
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/BlendedMVS
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS
         split_ratio: 0.9
         max_distance: 8
         z_far: 256
@@ -255,8 +255,8 @@ test_dataset:
 
     VirtualKitti:
         _target_: datasets.vkitti_dataset.VKittiDataset
-        data_root: /mnt/nvme3/z00533370/dataset/sample_data/vKitti2
-        # data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/vKitti2
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2
         split_ratio: 0.9
         max_distance: 16
         z_far: 160

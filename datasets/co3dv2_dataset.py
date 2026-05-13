@@ -18,7 +18,7 @@ SEEN_CATEGORIES = [
     "ball", 
     "banana",
     "baseballbat",
-    "baseballglove",
+    # "baseballglove",
     "bench",
     "bicycle",
     "book", 
