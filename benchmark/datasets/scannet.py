@@ -36,14 +36,6 @@ class ScanNetDataset(BaseDataset):
       - pose/{id}.txt is typically c2w (4x4). return w2c via inverse (same as 7scenes).
     """
 
-    # DEPTH_SCALE = 1000.0  # mm -> m
-    # NUM_TEST = 10
-
-    # def __init__(self, root: str | Path, num_seq: int = NUM_TEST,
-    #              depth_scale: float = DEPTH_SCALE):
-    #     super().__init__(root, num_seq)
-    #     self.config.depth_scale = depth_scale
-
     def __init__(self, config: DatasetConfig):
         super().__init__(config)
 
@@ -70,27 +62,6 @@ class ScanNetDataset(BaseDataset):
         depths = [osp.join(seq_dir, "depth", f"{i}.png") for i in frame_ids]
         poses  = [osp.join(seq_dir, "pose",  f"{i}.txt") for i in frame_ids]
         return images, poses, depths
-
-    # def _load_rgb(self, image_paths: List[str], target_width=518, target_height=392, border=15):
-    #     # crop input images
-    #     image_pils, images_cpu = [], []
-    #     for image_path in image_paths:
-    #         img = Image.open(image_path).convert("RGB")
-            
-    #         # crop borders 15px
-    #         width, height = img.size
-    #         left, top, right, bottom = int(border), int(border), int(width-border), int(height-border)
-    #         img = img.crop((left, top, right, bottom))
-            
-    #         # resize to 392x518
-    #         img_rs = img.resize((target_width, target_height), Image.Resampling.BICUBIC)
-    #         image_pils.append(img_rs)
-    #         img_tensor = TF.ToTensor()(img_rs)
-    #         images_cpu.append(img_tensor)
-            
-    #     images_cpu = torch.stack(images_cpu)
-        
-    #     return image_pils, images_cpu
     
     def _load_rgb(self, image_paths: List[str], 
             target_width=518, target_height=392, border=15):
@@ -138,26 +109,6 @@ class ScanNetDataset(BaseDataset):
         
         return image_pils, images_cpu
     
-    # def _load_depth(self, depth_paths: List[str], 
-    #         target_width=518, target_height=392, border=15) -> torch.Tensor:
-        
-    #     depths = []
-    #     for depth_path in depth_paths:
-    #         # loading with PIL has value issues
-    #         depth = imageio.v2.imread(depth_path).astype(np.float32)
-            
-    #         # resize to 392x518
-    #         depth = cv2.resize(depth, (target_width, target_height), interpolation = cv2.INTER_NEAREST)
-
-    #         # to tensor
-    #         depth = np.array(depth).astype(np.float32)
-    #         depths.append(depth)
-            
-    #     depths = np.stack(depths)
-    #     depths = depths / self.config.depth_scale  # mm -> m
-    #     depths = torch.from_numpy(depths)
-        
-    #     return depths
     
     def _load_depth(self, depth_paths: List[str], 
             target_width=518, target_height=392, border=15) -> torch.Tensor:
@@ -209,21 +160,6 @@ class ScanNetDataset(BaseDataset):
         c2w = torch.from_numpy(c2w)
         w2c = closed_form_inverse_se3(c2w)  # (V,4,4)
         return w2c
-
-    # def _load_K(self, seq: str, num_frames: int,
-    #         target_width=518, target_height=392) -> torch.Tensor:
-    #     intr_path = osp.join(self.config.data_root, seq, "intrinsic", "intrinsic_depth.txt")
-    #     intr = np.loadtxt(intr_path).astype(np.float32)
-    #     K = intr[:3, :3].astype(np.float32)
-    #     K = torch.from_numpy(K)
-        
-    #     K_rs = K.clone()
-    #     K_rs[0, 0] = K[0, 0] / (K[0, 2] * 2) * target_width
-    #     K_rs[0, 2] = K[0, 2] / (K[0, 2] * 2) * target_width
-    #     K_rs[1, 1] = K[1, 1] / (K[1, 2] * 2) * target_height
-    #     K_rs[1, 2] = K[1, 2] / (K[1, 2] * 2) * target_height
-        
-    #     return K_rs.view(1, 3, 3).repeat(num_frames, 1, 1)
     
     def _load_K(self, seq: str, num_frames: int,
             target_width=518, target_height=392) -> torch.Tensor:

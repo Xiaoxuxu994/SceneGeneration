@@ -212,18 +212,16 @@ class ETH3DDataset(BaseDataset):
         pix_K = []
         for image_name in image_names:
             camera_id = view_metas[image_name]["camera_id"]
-            fx, fy, cx, cy = cameras[camera_id]["params"]
+            fx, fy, cx, cy = np.array(cameras[camera_id]["params"])
+            cur_W, cur_H = cx * 2, cy * 2
             cur_K = np.array([
-                [fx, 0, cx],
-                [0, fy, cy],
+                [fx/cur_W, 0, cx/cur_W],
+                [0, fy/cur_H, cy/cur_H],
                 [0, 0, 1]
             ]).astype(np.float32)
             cur_K = torch.from_numpy(cur_K)
             pix_K.append(cur_K)
         pix_K = torch.stack(pix_K)
-        
-        pix_W, pix_H = pix_K[0, 0, 2] * 2, pix_K[0, 1, 2] * 2
-        norm_K = self._normalize_K(pix_K, pix_H, pix_W)
         pix_K = self._denormalize_K(norm_K, self.config.rgb_origin_W, self.config.rgb_origin_H)
         
         # normalize again

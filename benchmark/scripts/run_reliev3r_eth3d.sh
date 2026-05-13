@@ -7,19 +7,19 @@ EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
-# MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-# MODEL_SIZE=""
-# source ./scripts/config/eth3d/518x350.sh
+MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+MODEL_SIZE=""
+source ./scripts/config/eth3d/518x350.sh
 
 # CKPT="./ckpts/Pi3/model.safetensors"
 # CONFIG=""
 # PREFIX="Reliev3R-260415-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode_ckptpi3"
 
-# CKPT="experiments/Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit/ckpt/60000.ckpt"
-# CONFIG="experiments/Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit/config.json"
-# PREFIX="Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit_ckpt60k"
+CKPT="experiments/Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9/ckpt/70000.ckpt"
+CONFIG="experiments/Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9/config.json"
+PREFIX="Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9_ckpt70k"
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
 
 # MODEL_SIZE="dinov3_huge+_3Bv2"
 # CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4/ckpts/model_ckpt19"
@@ -27,11 +27,11 @@ MODEL="pi3" # ['vggt','pi3','reliev3r']
 # CONFIG=""
 # source ./scripts/config/ase_512x336.sh
 
-MODEL_SIZE="dinov2_large_0.95B"
-CKPT="./ckpts/Pi3/model.safetensors"
-PREFIX="pi3_official"
-CONFIG=""
-source ./scripts/config/eth3d/518x350.sh
+# MODEL_SIZE="dinov2_large_0.95B"
+# CKPT="./ckpts/Pi3/model.safetensors"
+# PREFIX="pi3_official"
+# CONFIG=""
+# source ./scripts/config/eth3d/518x350.sh
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 
@@ -309,21 +309,21 @@ for DATASET in "${DATASETS[@]}"; do
   t1=$(date +%s)
   echo "[TIME] EVAL seconds=$((t1-t0))"
 
-  # -------------------------
-  # 2) VIS
-  # -------------------------
-  banner_stage "VIS"
-  t0=$(date +%s)
+  # # -------------------------
+  # # 2) VIS
+  # # -------------------------
+  # banner_stage "VIS"
+  # t0=$(date +%s)
 
-  echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
-  echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
+  # echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
+  # echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
 
-  # requirement: if gt has no gt_vis -> run; if exists -> skip
-  run_vis_if_needed "${GT_DIR}"
-  run_vis_if_needed "${PRED_DIR}"
+  # # requirement: if gt has no gt_vis -> run; if exists -> skip
+  # run_vis_if_needed "${GT_DIR}"
+  # run_vis_if_needed "${PRED_DIR}"
 
-  t1=$(date +%s)
-  echo "[TIME] VIS seconds=$((t1-t0))"
+  # t1=$(date +%s)
+  # echo "[TIME] VIS seconds=$((t1-t0))"
 
   banner_done "${IDX}" "${TOTAL}" "${DATASET}"
 done

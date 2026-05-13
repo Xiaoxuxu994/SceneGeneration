@@ -3,6 +3,7 @@ from .sevenscenes import SevenScenesDataset
 from .dtu import DTUDataset
 from .nrgbd import NRGBDDataset
 from .scannet import ScanNetDataset
+from .scannetpp import ScanNetPPDataset
 # from .dl3dv import DL3DVDataset
 from .ase import ASEDataset
 from .dl3dv import NewDL3DVDataset
@@ -19,6 +20,7 @@ DATASET_REGISTRY = {
     "eth3d": ETH3DDataset,
     "nrgbd": NRGBDDataset,
     "scannet": ScanNetDataset,
+    "scannetpp": ScanNetPPDataset,
     # "dl3dv": DL3DVDataset, # no depth gt
     "dl3dv": NewDL3DVDataset, # no depth gt
     "ase": ASEDataset, # currently only support sampled sequences as a .npz file

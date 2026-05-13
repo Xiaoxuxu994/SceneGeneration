@@ -54,6 +54,7 @@ DATA_ROOT_DEFAULTS = {
     "eth3d":   BENCH_ROOT / "data" / "ETH3D" / "multi_view_training_dslr",
     "nrgbd":   BENCH_ROOT / "data" / "NRGBD" / "data",
     "scannet": BENCH_ROOT / "data" / "scannet" / "posed_images",
+    "scannetpp": BENCH_ROOT / "data" / "scannetppv2_val50",
     # "dl3dv":   "/mnt/nvme1/share/chenyouyu/dataset/DL3DV/data/1K/",
     "dl3dv":   "/efs-m3ga/z00818731/dl3dv-new/reliev3r_sample_list_c32.npz",
     "ase":     BENCH_ROOT / "data" / "ASE" /"reliev3r_sample_list_c32_s1.npz.update.npz",
