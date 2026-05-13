@@ -1,0 +1,312 @@
+import sys
+sys.path.append('.')
+
+import os
+import os.path as osp
+
+import torch
+import numpy as np
+import hashlib
+import math
+from tqdm import tqdm
+
+FILE_DIR = os.path.dirname(os.path.abspath(__file__))        
+PROJECT_ROOT = os.path.dirname(FILE_DIR)                     
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from .base.base_dataset import BaseDataset, CACHE_DIR
+from .base.transforms import *
+from .sample_utils.common import threshold_depth_map
+from .base.utils import read_any_file
+
+from scipy.spatial.transform import Rotation as R
+import cv2
+
+class ARKitScenesDataset(BaseDataset):
+    def __init__(
+        self,
+        data_root=None,
+        verbose=False,
+        max_distance=24,
+        split_ratio=0.9,
+        seq_num=-1,
+        min_num_images=24,
+        tol=0.0005,
+        **kwargs,
+    ):
+
+        super().__init__(**kwargs)
+        assert data_root is not None
+
+        self.dataset_label = "ARKitScenes"
+        self.data_root = data_root
+        self.verbose = verbose
+        self.max_distance = max_distance
+        self.split_ratio = split_ratio
+        self.min_num_images = min_num_images
+        self.tol = tol
+        self.ARKITSCENES_DIR = data_root
+
+        #
+        self.all_sequences = []
+        self.scene_meta = {}
+
+        # 1) load/save cache
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_path = os.path.join(CACHE_DIR, f"{self.dataset_label}_{root_hash}_cache.pkl")
+        if not os.path.exists(cache_path):
+            print(f'[Dataset] Constructing cache {cache_path}..')
+            self._scan_scenes()
+            self._save_cache(keys=["all_sequences", "scene_to_path", "scene_meta"],save_path=cache_path)
+            print(f'[Dataset] Cache is saved {cache_path}..')
+        else:
+            print(f'[Dataset] Loading cache from {cache_path}..')
+            res = self._load_cache(cache_path)
+            if res:
+                self.cache_loaded = True
+                print(f'[Dataset] Cache is loaded.')
+
+        # 2) train/val split
+        self.sequences = self._split_sequences(self.all_sequences)
+
+        if seq_num > 0:
+            self.sequences = self.sequences[:seq_num]
+
+        if self.verbose:
+            print(f"[{self.dataset_label}] Sequences: {self.sequences}")
+
+        print(
+            f"[{self.dataset_label}] Found {len(self.sequences)} unique videos in {self.data_root} ({self.mode})",
+            flush=True,
+        )
+
+    def __len__(self):
+        return len(self.sequences)
+
+    # =========================
+    # scan / cache
+    # =========================
+    def _scan_scenes(self):
+        all_sequences = []
+        scene_to_path = {}
+        scene_meta = {}
+        for subdir in os.listdir(self.ARKITSCENES_DIR):
+            subdir_path = osp.join(self.ARKITSCENES_DIR, subdir)
+            if not osp.isdir(subdir_path):
+                continue
+
+            for scene_id in tqdm(
+                sorted(os.listdir(subdir_path)),
+                desc=f"{subdir}",
+                leave=False
+            ):
+                intri_path = osp.join(self.ARKITSCENES_DIR, subdir, scene_id, "vga_wide_intrinsics")
+                rgb_path = osp.join(self.ARKITSCENES_DIR, subdir, scene_id, "vga_wide")
+                depth_path = osp.join(self.ARKITSCENES_DIR, subdir, scene_id, "lowres_depth")
+                pose_path = osp.join(self.ARKITSCENES_DIR, subdir, scene_id, "lowres_wide.traj") 
+                if osp.exists(intri_path) and osp.exists(rgb_path) and osp.exists(depth_path) and osp.exists(pose_path):
+                    # get all timestamp of intrisic/rgb/depth/traj aand sorted
+                    intri_timestamp_list = sorted([s.split("_")[1].replace(".pincam", "") for s in os.listdir(intri_path)], key=lambda s: float(s))
+                    rgb_timestamp_list = sorted([s.split("_")[1].replace(".png", "") for s in os.listdir(rgb_path)], key=lambda s: float(s))
+                    depth_timestamp_list = sorted([s.split("_")[1].replace(".png", "") for s in os.listdir(depth_path)], key=lambda s: float(s))   
+                    traj_timestamp_list = []
+                    with open(pose_path, "r") as f:
+                        for line in f:
+                            parts = line.strip().split()  # 6790.13168783 1.212956130924529 -1.2455780157270364 1.2588744491484622 0.0613927 0.0737052 0.00398328
+                            if not parts:
+                                continue
+                            traj_timestamp_list.append(parts[0])
+                    traj_timestamp_list = sorted(traj_timestamp_list, key=lambda s: float(s))
+                    # get closest timestamp in intrisic/rgb/depth of timestamp in traj
+                    closest_in_intri = closest_in_b_for_each_a(traj_timestamp_list, intri_timestamp_list)
+                    closest_in_rgb = closest_in_b_for_each_a(traj_timestamp_list, rgb_timestamp_list)
+                    closest_in_depth = closest_in_b_for_each_a(traj_timestamp_list, depth_timestamp_list)
+                    # get final effective timestamp frames
+                    timestamp_list = []
+                    for res_intri, res_rgb, res_depth in zip(closest_in_intri, closest_in_rgb, closest_in_depth):
+                        if res_intri[2] < self.tol and res_rgb[2] < self.tol and res_depth[2] < self.tol:
+                            timestamp_list.append((res_intri[0], res_intri[1], res_rgb[1], res_depth[1])) 
+                    
+                    # print(subdir, scene_id, len(timestamp_list))
+                    if len(timestamp_list) > self.min_num_images:
+                        key = f"{subdir}/{scene_id}"
+                        all_sequences.append(key)
+                        scene_to_path[key] = key
+                        scene_meta[key] = {
+                            "frames_id": list(range(len(timestamp_list))),
+                            "frames_timestamp": timestamp_list,
+                        }
+        # print(all_sequences)
+        self.all_sequences = all_sequences
+        self.scene_to_path = scene_to_path
+        self.scene_meta = scene_meta
+
+    # =========================
+    # split
+    # =========================
+    def _split_sequences(self, all_sequences):
+        split_idx = int(len(all_sequences) * self.split_ratio)
+        if self.mode == "train":
+            return all_sequences[:split_idx]
+        return all_sequences[split_idx:]
+
+    # =========================
+    # sample
+    # =========================
+    def _sample_frame_ids(self, frame_ids, rng):
+        n = len(frame_ids)
+        assert n > 0
+
+        if self.frame_num > 16 and rng.random() < self.random_sample_thres:
+            pos = rng.choice(n, size=self.frame_num, replace=(n < self.frame_num))
+            return [frame_ids[int(i)] for i in pos]
+
+        ref = int(rng.integers(0, n))
+        max_dist = int(self.max_distance / 8 * self.frame_num)
+
+        start = max(0, ref - max_dist)
+        end = min(n, ref + max_dist + 1)
+        pool = np.arange(start, end)
+
+        extra = rng.choice(pool, size=self.frame_num - 1, replace=(len(pool) < self.frame_num - 1))
+        pos = [ref] + list(extra)
+        return [frame_ids[int(i)] for i in pos]
+
+    # =========================
+    # load one view
+    # =========================
+    def _load_one_view(self, scene_path, scene_id, timestamp_group, pose, fid, resolution, rng):
+        intri_path = osp.join(self.ARKITSCENES_DIR, scene_path, "vga_wide_intrinsics", f"{scene_id}_{timestamp_group[1]}.pincam")
+        image_path = osp.join(self.ARKITSCENES_DIR, scene_path, "vga_wide", f"{scene_id}_{timestamp_group[2]}.png")
+        depth_path = osp.join(self.ARKITSCENES_DIR, scene_path, "lowres_depth", f"{scene_id}_{timestamp_group[3]}.png")
+        rgb_image = read_any_file(image_path)
+        h,w = rgb_image.shape[:2]
+        depthmap = np.array(Image.open(depth_path).resize((w, h), resample=Image.NEAREST))/1000
+        with open(intri_path, "r") as f:
+            line = f.read().strip()
+            w, h, fx, fy, cx, cy = map(float, line.split())
+        intrinsic = np.eye(3,dtype=np.float32)
+        intrinsic[0,0] = fx
+        intrinsic[1,1] = fy
+        intrinsic[0,2] = cx
+        intrinsic[1,2] = cy
+
+        t = np.array(pose[3:])
+        rvec = np.array(pose[:3])
+        R, _ = cv2.Rodrigues(rvec)
+        T_cw = np.eye(4)
+        T_cw[:3,:3] = R
+        T_cw[:3,3] = t
+        extrinsic = np.linalg.inv(T_cw)
+
+        rgb_image, depthmap, intrinsic_ = self._crop_resize_if_necessary(
+            rgb_image,
+            depthmap,
+            intrinsic.copy(),
+            resolution,
+            rng=rng,
+            info=image_path,
+        )
+
+        depthmap = threshold_depth_map(depthmap, min_percentile=-1, max_percentile=98)
+
+        return dict(
+            img=rgb_image,
+            depthmap=depthmap.astype(np.float32),
+            camera_pose=extrinsic.astype(np.float32),
+            camera_intrinsics=intrinsic_.astype(np.float32),
+            dataset=self.dataset_label,
+            label=scene_path,
+            instance=str(fid),
+        )
+
+    # =========================
+    # main interface
+    # =========================
+    def _get_views(self, index, resolution, rng):
+        scene = self.sequences[index]
+        scene_path = self.scene_to_path[scene]
+        scene_id = scene_path.split('/')[1]
+        meta = self.scene_meta[scene]
+
+        idxs = self._sample_frame_ids(meta["frames_id"], rng)
+        
+        self.this_views_info = {
+            "scene": scene,
+            "idxs": idxs,
+        }
+
+        pose_dict = {}
+        pose_path = osp.join(self.ARKITSCENES_DIR, scene, "lowres_wide.traj") 
+        with open(pose_path, "r") as f:
+            for line in f:
+                parts = line.strip().split()  # 6790.13168783 1.212956130924529 -1.2455780157270364 1.2588744491484622 0.0613927 0.0737052 0.00398328
+                if not parts:
+                    continue
+                timestamp = parts[0]
+                pose_dict[timestamp] = [float(x) for x in parts[1:]] # tx,ty,tz,rx,ry,rz
+
+        views = []
+        for fid in idxs:
+            timestamp_group = meta['frames_timestamp'][fid]
+            # print(timestamp_group)
+            views.append(
+                self._load_one_view(
+                    scene_path=scene_path,
+                    scene_id=scene_id,
+                    timestamp_group=timestamp_group,
+                    pose=pose_dict[timestamp_group[0]],
+                    fid=fid,
+                    resolution=resolution,
+                    rng=rng,
+                )
+            )
+
+        return views
+
+# find the closest element in list b of each element of list a
+def closest_in_b_for_each_a(a:list[str], b:list[str]):
+    res = []
+    j = 0
+    for x in a:
+        while j+1 < len(b) and abs(float(b[j+1]) - float(x)) <= abs(float(b[j]) - float(x)):
+            j += 1
+        res.append((x, b[j], abs(float(b[j]) - float(x))))
+    return res
+
+if __name__ == "__main__":
+    from datasets.sample_utils.vis_util import visualize_gt
+    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/ARKitScenes"
+    out_dir = "output_debug/ARKitScenes/"
+    os.makedirs(out_dir, exist_ok=True)
+
+    dataset = ARKitScenesDataset(
+        data_root=data_root,
+        mode="train",
+        resolution=[[224, 224]],
+        frame_num=24,
+        max_distance=72,
+        split_ratio=1,
+        verbose=False,
+        shuffle=False,
+    )
+
+    print(f"len(dataset) = {len(dataset)}")
+
+    views = dataset[0]
+    print(f"[dataset] number of views = {len(views)}")
+    for i, v in enumerate(views):
+        print(
+            f"[dataset view {i}] "
+            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
+            f"depth={v['depthmap'].shape}, "
+            f"depthmin={v['depthmap'].min()}, "
+            f"depthmax={v['depthmap'].max()}, "
+            f"pts3d={v['pts3d'].shape}, "
+            f"valid={v['valid_mask'].sum()}"
+        )
+
+    """Visualize gt data. """
+    visualize_gt(views, out_dir, prefix="ARKitScenes_GT")

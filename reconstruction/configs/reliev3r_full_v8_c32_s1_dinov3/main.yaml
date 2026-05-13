@@ -9,22 +9,7 @@ model:
 training:
   !include run/training.yaml
 
-datasets:
-  default:    !include datasets/default.yaml
-  ase:        !include datasets/ase.yaml
-  # blendedmvs: !include datasets/blendedmvs.yaml
-  # hypersim:   !include datasets/hypersim.yaml
-  # mvssynth:   !include datasets/mvssynth.yaml
-  # replica:    !include datasets/replica.yaml
-  # tartanair:  !include datasets/tartanair.yaml
-  # vkitti:     !include datasets/vkitti.yaml
-  # scannetv2:  !include datasets/scannetv2.yaml
-  # co3dv2:     !include datasets/co3dv2.yaml
-  # dl3dv:      !include datasets/dl3dv.yaml
-  # re10k:      !include datasets/re10k.yaml
-  # scannet:    !include datasets/scannet.yaml
-  # scannetpp:  !include datasets/scannetpp.yaml
-  # wildrgbd:   !include datasets/wildrgbd.yaml
+datasets: !include datasets/default.yaml
   
 loss:
   !include loss/loss.yaml

@@ -44,7 +44,7 @@ def create_optimizer(model: nn.Module, weight_decay, learning_rate) -> torch.opt
                 decay_params.append(param)
     optim_groups = [
         {'params': decay_params, 'weight_decay': weight_decay, 'lr': learning_rate},
-        {'params': decay_params_small_lr, 'weight_decay': weight_decay, 'lr': learning_rate * 1e-2}, 
+        {'params': decay_params_small_lr, 'weight_decay': weight_decay, 'lr': learning_rate * 1e-1}, 
         # {'params': camera_params, 'weight_decay': weight_decay, 'lr': learning_rate * 0.2}, 
         {'params': nodecay_params, 'weight_decay': 0.0, 'lr': learning_rate}, 
     ]

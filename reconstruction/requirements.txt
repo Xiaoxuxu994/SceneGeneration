@@ -9,8 +9,16 @@ h5py
 pandas
 justpfm
 evo
+huggingface-hub>=0.23.2,<1.0
+hydra-core
+plyfile
+pyquaternion
 numpy==1.26.4
-torch==2.6.0
-torch_npu==2.6.0
-torchvision==0.21.0
+torch==2.9.0
+torch_npu==2.9.0
+torchvision==0.24.0
+# torch==2.6.0
+# torch_npu==2.6.0
+# torchvision==0.21.0
 deepspeed==0.17.6
+triton_ascend==3.2.0
