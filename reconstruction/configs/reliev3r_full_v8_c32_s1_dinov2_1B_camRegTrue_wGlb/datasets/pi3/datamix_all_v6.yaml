@@ -34,8 +34,8 @@ train_dataset:
         VirtualKitti:       600
         Replica:            200
         PointOdyssey:       500
-        OmniObject3DNew:    800
-        Matterport3D:       400
+        OmniObject3DNew:   2000
+        # Matterport3D:       400
         ADT:               3000
         Objaverse:         1000
 
@@ -55,7 +55,7 @@ train_dataset:
         _target_: dataset.pi3_dataset.hypersim_dataset.HypersimDataset
         # data_root: /mnt/nvme3/z00533370/dataset/sample_data/Hypersim
         data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim
-        split_ratio: 1.0
+        split_ratio: 0.99
         max_distance: 16
         z_far: 128
         frame_num: 8
@@ -85,7 +85,7 @@ train_dataset:
         _target_: dataset.pi3_dataset.tartanair_dataset.TarTanAirDataset
         # data_root: /mnt/nvme3/z00533370/dataset/sample_data/TartanAir
         data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir
-        split_ratio: 1.0
+        split_ratio: 0.99
         max_distance: 16
         z_far: 128
         frame_num: 8
@@ -115,7 +115,7 @@ train_dataset:
         _target_: dataset.pi3_dataset.matrixcity_dataset.MatrixCityDataset
         # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MatrixCity
         data_root: /efs-m3ga/z00533370/reliev3r_data/MatrixCity
-        split_ratio: 1.0
+        split_ratio: 0.99
         max_distance: 16
         z_far: 160
         frame_num: 8
@@ -126,26 +126,26 @@ train_dataset:
         aug_focal: 0.9
         mode: 'train'
 
-    MVSSynth:
-        _target_: dataset.pi3_dataset.mvssynth_dataset.MVSSynthDataset
-        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MVS-Synth/GTAV_540/
-        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
-        split_ratio: 1.0
-        max_distance: 16
-        z_far: 160
-        frame_num: 8
-        aug_crop: 16
-        transform:
-            _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
-        aug_focal: 0.9
-        mode: 'train'
+    # MVSSynth:
+    #     _target_: dataset.pi3_dataset.mvssynth_dataset.MVSSynthDataset
+    #     # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MVS-Synth/GTAV_540/
+    #     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
+    #     split_ratio: 0.99
+    #     max_distance: 16
+    #     z_far: 160
+    #     frame_num: 8
+    #     aug_crop: 16
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+    #     aug_focal: 0.9
+    #     mode: 'train'
 
     BlendedMVS:
         _target_: dataset.pi3_dataset.blendedmvs_dataset.BlendedMVSDataset
         # data_root: /mnt/nvme3/z00533370/dataset/sample_data/BlendedMVS
         data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS
-        split_ratio: 1.0
+        split_ratio: 0.999
         max_distance: 8
         z_far: 128
         frame_num: 8
@@ -160,7 +160,7 @@ train_dataset:
         _target_: dataset.pi3_dataset.vkitti_dataset.VKittiDataset
         # data_root: /mnt/nvme3/z00533370/dataset/sample_data/vKitti2
         data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2
-        split_ratio: 1.0
+        split_ratio: 0.99
         max_distance: 16
         z_far: 128
         frame_num: 8
@@ -175,7 +175,7 @@ train_dataset:
         _target_: dataset.pi3_dataset.gta_sfm_dataset.GTASfMDataset
         # data_root: "/mnt/nvme3/z00533370/dataset/sample_data/GTA-SfM"
         data_root: /efs-m3ga/h00548084/relive3r_raw/GTA-SfM/
-        split_ratio: 1.0
+        split_ratio: 0.9999
         max_distance: 8
         z_far: 200
         frame_num: 8
@@ -190,7 +190,7 @@ train_dataset:
         _target_: dataset.pi3_dataset.megadepth_dataset.MegaDepthDataset
         # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MegaDepth
         data_root: /efs-m3ga/z00533370/reliev3r_data/MegaDepth/
-        split_ratio: 1.0
+        split_ratio: 0.999
         max_distance: 8
         z_far: 80
         frame_num: 8
@@ -249,7 +249,7 @@ train_dataset:
     Replica:
         _target_: dataset.pi3_dataset.replica_dataset.ReplicaDataset
         data_root: /efs-m3ga/z00533370/reliev3r_data/Replica
-        split_ratio: 1.0
+        split_ratio: 0.99
         max_distance: 8
         z_far: 40
         frame_num: 8
@@ -279,7 +279,7 @@ train_dataset:
         _target_: dataset.pi3_dataset.arkitscenes_dataset.ARKitScenesDataset
         # data_root: /mnt/nvme3/z00533370/dataset/sample_data/ARKitScenes
         data_root: /efs-mi-east4-2/z00533370/dataset/arkitscene_decode/
-        split_ratio: 1.0
+        split_ratio: 0.99999
         max_distance: 8
         z_far: 40
         frame_num: 8
@@ -294,7 +294,7 @@ train_dataset:
         _target_: dataset.pi3_dataset.mapillary_dataset.MapillaryDataset
         # data_root: /mnt/nvme3/z00533370/dataset/sample_data/Mapillary
         data_root: /efs-m3ga/z00533370/reliev3r_data/Mapillary_Metropolis
-        split_ratio: 1.0
+        split_ratio: 0.9999
         max_distance: 8
         z_far: 80
         frame_num: 8
@@ -308,7 +308,7 @@ train_dataset:
     Spring:
         _target_: dataset.pi3_dataset.spring_dataset.SpringDataset
         data_root: /efs-m3ga/z00533370/reliev3r_data/Spring_decode/spring/train/
-        split_ratio: 1.0
+        split_ratio: 0.99
         max_distance: 16
         z_far: 120
         frame_num: 8
@@ -322,7 +322,7 @@ train_dataset:
     Unreal4k:
         _target_: dataset.pi3_dataset.unreal4k_dataset.Unreal4KDataset
         data_root: /efs-m3ga/z00533370/reliev3r_data/UnrealStereo4K_480P_decode/
-        split_ratio: 1.0
+        split_ratio: 0.9999
         max_distance: 8
         z_far: 200
         frame_num: 8
@@ -336,7 +336,7 @@ train_dataset:
     OmniObject3DNew:
         _target_: dataset.pi3_dataset.omniobject3d_dataset.OmniObject3DNewDataset
         data_root: /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New/blender_renders_decode
-        split_ratio: 1.0
+        split_ratio: 0.9999
         max_distance: 8
         z_far: 20
         frame_num: 8
@@ -347,19 +347,19 @@ train_dataset:
         aug_focal: 0.9
         mode: 'train'
 
-    Matterport3D:
-        _target_: dataset.pi3_dataset.matterport3d_dataset.Matterport3DDataset
-        data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
-        split_ratio: 1.0
-        max_distance: 8
-        z_far: 40
-        frame_num: 8
-        aug_crop: 16
-        transform:
-            _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
-        aug_focal: 0.9
-        mode: 'train'
+    # Matterport3D:
+    #     _target_: dataset.pi3_dataset.matterport3d_dataset.Matterport3DDataset
+    #     data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
+    #     split_ratio: 0.99
+    #     max_distance: 8
+    #     z_far: 40
+    #     frame_num: 8
+    #     aug_crop: 16
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+    #     aug_focal: 0.9
+    #     mode: 'train'
 
     Habitat:
         _target_: dataset.pi3_dataset.habitat_dataset.HabitatDataset
@@ -378,7 +378,7 @@ train_dataset:
     PointOdyssey:
         _target_: dataset.pi3_dataset.pointodyssey_dataset.PointOdysseyWAIDataset
         data_root: /efs-m3ga/z00533370/reliev3r_data/pointodyssey
-        split_ratio: 1.0
+        split_ratio: 0.999
         max_distance: 8
         z_far: 80
         frame_num: 8
@@ -420,7 +420,7 @@ train_dataset:
     TartanGround:
         _target_: dataset.pi3_dataset.tartanground_dataset.TartanGroundDataset
         data_root: /efs-m3ga/z00533370/reliev3r_data/TartanGround/
-        split_ratio: 1.0
+        split_ratio: 0.999
         max_distance: 16
         z_far: 160
         frame_num: 8
@@ -434,7 +434,7 @@ train_dataset:
     ADT:
         _target_: dataset.pi3_dataset.adt_dataset.ADTWAIDataset
         data_root: /efs-m3ga/z00533370/reliev3r_data/ADT_wai
-        split_ratio: 1.0
+        split_ratio: 0.9999
         max_distance: 8
         z_far: 80
         frame_num: 8
@@ -448,7 +448,7 @@ train_dataset:
     Objaverse:
         _target_: dataset.pi3_dataset.objaverse_dataset.ObjaverseWAIDataset
         data_root: /efs-m3ga/z00533370/reliev3r_data/objaverse_wai
-        split_ratio: 1.0
+        split_ratio: 0.9999
         max_distance: 8
         z_far: 64
         frame_num: 8
@@ -462,7 +462,7 @@ train_dataset:
     CO3DV2:
         _target_: dataset.pi3_dataset.co3dv2_dataset.CO3DV2Dataset
         data_root: /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode
-        split_ratio: 1.0
+        split_ratio: 0.99
         max_distance: 8
         z_far: 80
         frame_num: 8
@@ -477,11 +477,28 @@ train_dataloader:
     drop_last: True
     shuffle: True
 
+
 test_dataset:
     weights:
         ASE:           2000
         Kubric:        2000
         Habitat:       2000
+        BlendedMVS:    2000
+        VirtualKitti:  2000
+        GTA-sfm:       2000
+        MatrixCity:    2000
+        Hypersim:      2000
+        TarTanAir:     2000
+        TartanGround:  2000
+        ADT:           2000
+        Objaverse:     2000        
+        Spring:        2000
+        Unreal4k:      2000
+        Replica:       2000
+        PointOdyssey:  2000
+        OmniObject3DNew:   2000
+        # Matterport3D:   2000
+        # MVSSynth:     2000
 
         CO3D:          2000        
         Taskonomy:     2000
@@ -489,6 +506,10 @@ test_dataset:
         ScanNet:       2000
         DL3DV:         2000
         Scannetpp:     2000
+        ARKitScenes:   2000
+        MegaDepth:     2000
+        Mapillary:     2000
+        CO3DV2:        2000
 
     Kubric:
         _target_: dataset.pi3_dataset.kubric_dataset.KubricDataset
@@ -521,6 +542,239 @@ test_dataset:
             _partial_: true
             _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
+
+    BlendedMVS:
+        _target_: dataset.pi3_dataset.blendedmvs_dataset.BlendedMVSDataset
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/BlendedMVS
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS
+        split_ratio: 0.999
+        max_distance: 8
+        z_far: 128
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+
+    VirtualKitti:
+        _target_: dataset.pi3_dataset.vkitti_dataset.VKittiDataset
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/vKitti2
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2
+        split_ratio: 0.99
+        max_distance: 16
+        z_far: 128
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+
+    GTA-sfm:
+        _target_: dataset.pi3_dataset.gta_sfm_dataset.GTASfMDataset
+        # data_root: "/mnt/nvme3/z00533370/dataset/sample_data/GTA-SfM"
+        data_root: /efs-m3ga/h00548084/relive3r_raw/GTA-SfM/
+        split_ratio: 0.9999
+        max_distance: 8
+        z_far: 200
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+
+    MatrixCity:
+        _target_: dataset.pi3_dataset.matrixcity_dataset.MatrixCityDataset
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MatrixCity
+        data_root: /efs-m3ga/z00533370/reliev3r_data/MatrixCity
+        split_ratio: 0.99
+        max_distance: 16
+        z_far: 160
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+    
+    Hypersim:
+        _target_: dataset.pi3_dataset.hypersim_dataset.HypersimDataset
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/Hypersim
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim
+        split_ratio: 0.99
+        max_distance: 16
+        z_far: 128
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+    
+    TarTanAir:
+        _target_: dataset.pi3_dataset.tartanair_dataset.TarTanAirDataset
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/TartanAir
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir
+        split_ratio: 0.99
+        max_distance: 16
+        z_far: 128
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+    
+    TartanGround:
+        _target_: dataset.pi3_dataset.tartanground_dataset.TartanGroundDataset
+        data_root: /efs-m3ga/z00533370/reliev3r_data/TartanGround/
+        split_ratio: 0.999
+        max_distance: 16
+        z_far: 160
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+
+    ADT:
+        _target_: dataset.pi3_dataset.adt_dataset.ADTWAIDataset
+        data_root: /efs-m3ga/z00533370/reliev3r_data/ADT_wai
+        split_ratio: 0.9999
+        max_distance: 8
+        z_far: 80
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+    
+    Objaverse:
+        _target_: dataset.pi3_dataset.objaverse_dataset.ObjaverseWAIDataset
+        data_root: /efs-m3ga/z00533370/reliev3r_data/objaverse_wai
+        split_ratio: 0.9999
+        max_distance: 8
+        z_far: 64
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+    
+    Spring:
+        _target_: dataset.pi3_dataset.spring_dataset.SpringDataset
+        data_root: /efs-m3ga/z00533370/reliev3r_data/Spring_decode/spring/train/
+        split_ratio: 0.99
+        max_distance: 16
+        z_far: 120
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+    
+    Unreal4k:
+        _target_: dataset.pi3_dataset.unreal4k_dataset.Unreal4KDataset
+        data_root: /efs-m3ga/z00533370/reliev3r_data/UnrealStereo4K_480P_decode/
+        split_ratio: 0.9999
+        max_distance: 8
+        z_far: 200
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+
+    OmniObject3DNew:
+        _target_: dataset.pi3_dataset.omniobject3d_dataset.OmniObject3DNewDataset
+        data_root: /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New/blender_renders_decode
+        split_ratio: 0.9999
+        max_distance: 8
+        z_far: 20
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+
+    
+    PointOdyssey:
+        _target_: dataset.pi3_dataset.pointodyssey_dataset.PointOdysseyWAIDataset
+        data_root: /efs-m3ga/z00533370/reliev3r_data/pointodyssey
+        split_ratio: 0.999
+        max_distance: 8
+        z_far: 80
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+    
+    Replica:
+        _target_: dataset.pi3_dataset.replica_dataset.ReplicaDataset
+        data_root: /efs-m3ga/z00533370/reliev3r_data/Replica
+        split_ratio: 0.99
+        max_distance: 8
+        z_far: 40
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+    
+    # Matterport3D:
+    #     _target_: dataset.pi3_dataset.matterport3d_dataset.Matterport3DDataset
+    #     data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
+    #     split_ratio: 0.99
+    #     max_distance: 8
+    #     z_far: 40
+    #     resolution:
+    #     #   - [512, 336]
+    #       - [518, 308]
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+    #     mode: 'test'
+
+    # MVSSynth:
+    #     _target_: dataset.pi3_dataset.mvssynth_dataset.MVSSynthDataset
+    #     # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MVS-Synth/GTAV_540/
+    #     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
+    #     split_ratio: 0.99
+    #     max_distance: 16
+    #     z_far: 160
+    #     resolution:
+    #     #   - [512, 336]
+    #       - [518, 308]
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+    #     aug_focal: 0.9
+    #     mode: 'test'
 
     CO3D:
         _target_: dataset.pi3_dataset.co3d_dataset.CO3DDataset
@@ -630,6 +884,66 @@ test_dataset:
             _partial_: true
             _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
+    
+    ARKitScenes:
+        _target_: dataset.pi3_dataset.arkitscenes_dataset.ARKitScenesDataset
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/ARKitScenes
+        data_root: /efs-mi-east4-2/z00533370/dataset/arkitscene_decode/
+        split_ratio: 0.99999
+        max_distance: 8
+        z_far: 40
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+
+    Mapillary:
+        _target_: dataset.pi3_dataset.mapillary_dataset.MapillaryDataset
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/Mapillary
+        data_root: /efs-m3ga/z00533370/reliev3r_data/Mapillary_Metropolis
+        split_ratio: 0.9999
+        max_distance: 8
+        z_far: 80
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+    
+    MegaDepth:
+        _target_: dataset.pi3_dataset.megadepth_dataset.MegaDepthDataset
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MegaDepth
+        data_root: /efs-m3ga/z00533370/reliev3r_data/MegaDepth/
+        split_ratio: 0.999
+        max_distance: 8
+        z_far: 80
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+    
+    CO3DV2:
+        _target_: dataset.pi3_dataset.co3dv2_dataset.CO3DV2Dataset
+        data_root: /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode
+        split_ratio: 0.99
+        max_distance: 8
+        z_far: 80
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        mode: 'test'
+
 
 test_dataloader:
     drop_last: False
