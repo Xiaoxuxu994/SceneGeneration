@@ -19,8 +19,8 @@ train_dataset:
 
     weights:
         # synthetic / clean geometry anchor
-        ASE:              10000
-        Kubric:            1200
+        ASE:               8000
+        Kubric:             400
         GTA-sfm:           3200
         MatrixCity:        2200
         Hypersim:          1800
@@ -29,26 +29,26 @@ train_dataset:
         BlendedMVS:        1200
         Spring:            1600
         Unreal4k:           800
-        Habitat:           1800
-        MVSSynth:           300
-        VirtualKitti:       200
+        Habitat:           2800
+        # MVSSynth:           300
+        VirtualKitti:       600
         Replica:            200
         PointOdyssey:       500
         OmniObject3DNew:    800
-        Matterport3D:      2200
+        Matterport3D:       400
         ADT:               3000
-        Objaverse:          800
+        Objaverse:         1000
 
         # real / scanned / internet / object
-        ScanNet:           7000
+        ScanNet:           2000
         ARKitScenes:       8000
         Scannetpp:         5000
-        Taskonomy:         2500
+        Taskonomy:         5500
         Wildrgbd:          3500
         CO3D:              2200
         MegaDepth:         2600
         Mapillary:         3000
-        DL3DV:             2200
+        DL3DV:             3200
         CO3DV2:            2500
 
     Hypersim:
