@@ -6,11 +6,13 @@ import os.path as osp
 import json
 import hashlib
 
+os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
+
+import cv2
 import numpy as np
 import torch
 from PIL import Image
 from tqdm import tqdm
-import imageio.v3 as iio
 
 FILE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(FILE_DIR)
@@ -19,14 +21,7 @@ if PROJECT_ROOT not in sys.path:
 
 from .base.base_dataset import BaseDataset, CACHE_DIR
 from .base.transforms import *
-
-
-def _stem(x):
-    return osp.splitext(osp.basename(str(x)))[0]
-
-
-def _as_array(x, dtype=np.float32):
-    return np.asarray(x, dtype=dtype)
+from .sample_utils.common import rdepth_to_zdepth
 
 
 class PointOdysseyWAIDataset(BaseDataset):
@@ -56,6 +51,7 @@ class PointOdysseyWAIDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
+        # 1) load/save cache
         os.makedirs(CACHE_DIR, exist_ok=True)
         root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(CACHE_DIR, f"{self.dataset_label}_{root_hash}_cache.pkl")
@@ -91,15 +87,11 @@ class PointOdysseyWAIDataset(BaseDataset):
     def __len__(self):
         return len(self.sequences)
 
-    # =========================
-    # scan / cache
-    # =========================
     def _scan_scenes(self):
-        scene_names = [
+        scene_names = sorted([
             x for x in os.listdir(self.data_root)
             if osp.isdir(osp.join(self.data_root, x))
-        ]
-        scene_names = sorted(scene_names)
+        ])
 
         all_sequences = []
         scene_to_path = {}
@@ -119,7 +111,51 @@ class PointOdysseyWAIDataset(BaseDataset):
                 print(f"[PointOdyssey] Skip scene {scene}, failed to read scene_meta.json: {e}")
                 continue
 
-            frame_ids, camera_info, file_info = self._parse_scene_meta(scene_path, meta)
+            if "frames" not in meta or not isinstance(meta["frames"], list):
+                continue
+
+            frame_ids = []
+            camera_info = {}
+            file_info = {}
+
+            for fr in meta["frames"]:
+                if not all(k in fr for k in [
+                    "frame_name", "image", "depth", "transform_matrix",
+                    "fl_x", "fl_y", "cx", "cy"
+                ]):
+                    continue
+
+                fid = str(fr["frame_name"])
+
+                img_path = osp.join(scene_path, fr["image"])
+                depth_path = osp.join(scene_path, fr["depth"])
+
+                if not (osp.isfile(img_path) and osp.isfile(depth_path)):
+                    continue
+
+                K = np.array(
+                    [
+                        [float(fr["fl_x"]), 0.0, float(fr["cx"])],
+                        [0.0, float(fr["fl_y"]), float(fr["cy"])],
+                        [0.0, 0.0, 1.0],
+                    ],
+                    dtype=np.float32,
+                )
+
+                # 根据 json:
+                # camera_convention = opencv
+                # transform_matrix 直接当 c2w 用
+                pose = np.asarray(fr["transform_matrix"], dtype=np.float32).reshape(4, 4)
+
+                frame_ids.append(fid)
+                camera_info[fid] = {
+                    "camera_pose": pose.astype(np.float32),
+                    "camera_intrinsics": K.astype(np.float32),
+                }
+                file_info[fid] = {
+                    "img_path": img_path,
+                    "depth_path": depth_path,
+                }
 
             if len(frame_ids) < self.min_num_images:
                 continue
@@ -136,152 +172,12 @@ class PointOdysseyWAIDataset(BaseDataset):
         self.scene_to_path = scene_to_path
         self.scene_meta = scene_meta
 
-    def _parse_scene_meta(self, scene_path, meta):
-        """
-        兼容两种常见格式：
-        1) newer style:
-           {
-             "frames": [
-               {
-                 "frame_name": "...",
-                 "image": "images/xxx.png",
-                 "depth": "depths/xxx.npy",
-                 "transform_matrix": [...],
-                 "fl_x": ..., "fl_y": ..., "cx": ..., "cy": ..., "h": ..., "w": ...
-               },
-               ...
-             ]
-           }
-
-        2) older style:
-           {
-             "frame_names": {
-               "xxx.png": {...},
-               ...
-             }
-           }
-        """
-        frame_ids = []
-        camera_info = {}
-        file_info = {}
-
-        # ---- style 1: frames list ----
-        if "frames" in meta and isinstance(meta["frames"], list):
-            for fr in meta["frames"]:
-                fid = fr.get("frame_name", None)
-                if fid is None:
-                    # fallback: try image path stem
-                    if "image" in fr:
-                        fid = _stem(fr["image"])
-                    elif "file_path" in fr:
-                        fid = _stem(fr["file_path"])
-                    else:
-                        continue
-
-                image_rel = fr.get("image", fr.get("file_path", None))
-                depth_rel = fr.get("depth", None)
-
-                K = self._extract_intrinsics_from_frame(fr)
-                pose = self._extract_pose_from_frame(fr)
-
-                if K is None or pose is None:
-                    continue
-
-                image_path = self._resolve_file(scene_path, image_rel, "images", fid, [".png", ".jpg", ".jpeg"])
-                depth_path = self._resolve_file(scene_path, depth_rel, "depths", fid, [".npy", ".exr", ".png"])
-
-                if image_path is None or depth_path is None:
-                    continue
-
-                frame_ids.append(fid)
-                camera_info[fid] = {
-                    "camera_pose": pose.astype(np.float32),         # c2w
-                    "camera_intrinsics": K.astype(np.float32),
-                }
-                file_info[fid] = {
-                    "img_path": image_path,
-                    "depth_path": depth_path,
-                }
-
-            return frame_ids, camera_info, file_info
-
-        return [], {}, {}
-
-    def _extract_intrinsics_from_frame(self, fr):
-        # common explicit style
-        if all(k in fr for k in ["fl_x", "fl_y", "cx", "cy"]):
-            fx = float(fr["fl_x"])
-            fy = float(fr["fl_y"])
-            cx = float(fr["cx"])
-            cy = float(fr["cy"])
-            return np.array(
-                [
-                    [fx, 0.0, cx],
-                    [0.0, fy, cy],
-                    [0.0, 0.0, 1.0],
-                ],
-                dtype=np.float32,
-            )
-
-        # matrix style
-        for key in ["intrinsics", "camera_intrinsics", "K"]:
-            if key in fr:
-                arr = _as_array(fr[key], np.float32)
-                if arr.size == 9:
-                    return arr.reshape(3, 3)
-
-        return None
-
-    def _extract_pose_from_frame(self, fr):
-        # WAI / common processed format
-        for key in ["transform_matrix", "camera_pose", "c2w", "cam2world", "extrinsics", "pose"]:
-            if key in fr:
-                arr = _as_array(fr[key], np.float32)
-                if arr.size == 16:
-                    return arr.reshape(4, 4)
-
-        # optional traj path
-        traj_rel = fr.get("traj", None)
-        if traj_rel is not None:
-            return None
-
-        return None
-
-    def _resolve_file(self, scene_path, rel_path, default_subdir, fid, exts):
-        # 1) scene_meta relative path
-        if rel_path is not None:
-            p = osp.join(scene_path, rel_path)
-            if osp.isfile(p):
-                return p
-
-        # 2) default_subdir/fid.ext
-        for ext in exts:
-            p = osp.join(scene_path, default_subdir, f"{fid}{ext}")
-            if osp.isfile(p):
-                return p
-
-        # 3) default_subdir/stem(rel_path).ext
-        if rel_path is not None:
-            rel_stem = _stem(rel_path)
-            for ext in exts:
-                p = osp.join(scene_path, default_subdir, f"{rel_stem}{ext}")
-                if osp.isfile(p):
-                    return p
-
-        return None
-
-    # =========================
-    # split
-    # =========================
     def _split_sequences(self, all_sequences):
         split_idx = int(len(all_sequences) * self.split_ratio)
         if self.mode == "train":
             return all_sequences[:split_idx]
         return all_sequences[split_idx:]
 
-    # =========================
-    # sample
-    # =========================
     def _sample_frame_ids(self, frame_ids, rng):
         n = len(frame_ids)
         assert n > 0
@@ -301,27 +197,24 @@ class PointOdysseyWAIDataset(BaseDataset):
         pos = [ref] + list(extra)
         return [frame_ids[int(i)] for i in pos]
 
-    # =========================
-    # depth helpers
-    # =========================
     def _read_depth(self, path):
         ext = osp.splitext(path)[1].lower()
 
         if ext == ".npy":
             depth = np.load(path).astype(np.float32)
+        elif ext == ".exr":
+            depth = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+            if depth is None:
+                raise ValueError(f"Failed to read EXR depth: {path}")
+            depth = depth.astype(np.float32)
         else:
-            depth = iio.imread(path).astype(np.float32)
+            depth = np.array(Image.open(path)).astype(np.float32)
 
-        depth = np.asarray(depth, dtype=np.float32)
-
-        # 兼容 EXR 被读成 H x W x C
         if depth.ndim == 3:
             if depth.shape[2] == 1:
                 depth = depth[..., 0]
-            elif depth.shape[2] == 3:
-                depth = depth[..., 0]
             else:
-                raise ValueError(f"Unexpected depth shape {depth.shape} @ {path}")
+                depth = depth[..., 0]
 
         depth = np.squeeze(depth)
         if depth.ndim != 2:
@@ -331,9 +224,6 @@ class PointOdysseyWAIDataset(BaseDataset):
         depth[(depth <= 0)] = 0.0
         return depth.astype(np.float32)
 
-    # =========================
-    # load one view
-    # =========================
     def _load_one_view(self, scene_name, fid, cam_info, file_info, resolution, rng):
         img_path = file_info["img_path"]
         depth_path = file_info["depth_path"]
@@ -357,16 +247,13 @@ class PointOdysseyWAIDataset(BaseDataset):
         return dict(
             img=rgb_image,
             depthmap=depthmap.astype(np.float32),
-            camera_pose=cam_info["camera_pose"].astype(np.float32),   # c2w
+            camera_pose=cam_info["camera_pose"].astype(np.float32),
             camera_intrinsics=intrinsics_.astype(np.float32),
             dataset=self.dataset_label,
             label=scene_name,
             instance=fid,
         )
 
-    # =========================
-    # main interface
-    # =========================
     def _get_views(self, index, resolution, rng):
         if self.mode == "train":
             index = index % len(self.sequences)
