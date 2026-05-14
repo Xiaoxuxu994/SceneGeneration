@@ -447,8 +447,8 @@ class LossFunction(torch.nn.Module):
         self.w_geometric_def = self.cfg.geometric.w if self.cfg.get("geometric", None) is not None else 0.0
         self.w_intr_def      = self.cfg.camera_intr.w if self.cfg.get("camera_intr", None) is not None else 0.0
         self.w_extr_def      = self.cfg.camera_extr.w if self.cfg.get("camera_extr", None) is not None else 0.0
-        self.w_glbpoint_def  = self.cfg.point.w if self.cfg.get("point_glb", None) is not None else 0.0
-        self.w_locpoint_def  = self.cfg.point.w if self.cfg.get("point_loc", None) is not None else 0.0
+        self.w_glbpoint_def  = self.cfg.point_glb.w if self.cfg.get("point_glb", None) is not None else 0.0
+        self.w_locpoint_def  = self.cfg.point_loc.w if self.cfg.get("point_loc", None) is not None else 0.0
         self.w_normalize_def = self.cfg.normalize.w if self.cfg.get("normalize", None) is not None else 0.0
         self.w_normal_def    = self.cfg.normal.w if self.cfg.get("normal", None) is not None else 0.0
         self.w_dist_def      = self.cfg.dist.w if self.cfg.get("dist", None) is not None else 0.0
