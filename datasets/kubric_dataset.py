@@ -35,6 +35,7 @@ class KubricDataset(BaseDataset):
         split_ratio=0.9,
         seq_num=-1,
         min_num_images=24,
+        mask_background=True,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -46,6 +47,7 @@ class KubricDataset(BaseDataset):
         self.max_distance = max_distance
         self.split_ratio = split_ratio
         self.min_num_images = min_num_images
+        self.mask_background = mask_background
 
         #
         self.all_sequences = []
@@ -55,7 +57,7 @@ class KubricDataset(BaseDataset):
         cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
         os.makedirs(cache_dir, exist_ok=True)
         root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
-        cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
+        cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache_seg.pkl")
         if not os.path.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
@@ -108,9 +110,11 @@ class KubricDataset(BaseDataset):
                 continue
 
             try:
-                cam_data = np.load(str(cam_file), allow_pickle=True).item()["camera"]
+                full_data = np.load(str(cam_file), allow_pickle=True).item()
+                cam_data = full_data["camera"]
+                seg_data = full_data["segmentations"]
             except Exception as e:
-                print(f"[Kubric] Skip scene {scene}, failed to load camera file: {e}")
+                print(f"[Kubric] Skip scene {scene}, failed to load camera/segmentation file: {e}")
                 continue
 
             rgb_ids = {
@@ -132,6 +136,7 @@ class KubricDataset(BaseDataset):
             scene_meta[scene] = {
                 "frame_ids": frame_ids,
                 "camera_data": cam_data,
+                "segmentations": seg_data,
             }
 
         self.all_sequences = sorted(all_sequences)
@@ -200,6 +205,17 @@ class KubricDataset(BaseDataset):
 
         return camera_pose
 
+    def _get_segmentation_mask(self, segmentations, idx):
+        """
+        segmentations[idx]: (H, W, 1) or (H, W)
+        foreground: seg > 0
+        """
+        seg = segmentations[idx]
+        if seg.ndim == 3 and seg.shape[-1] == 1:
+            seg = seg[..., 0]
+        fg_mask = (seg > 0)
+        return fg_mask
+    
     # =========================
     # sample
     # =========================
@@ -225,7 +241,7 @@ class KubricDataset(BaseDataset):
     # =========================
     # load one view
     # =========================
-    def _load_one_view(self, scene_path, scene_name, fid, camera_data, resolution, rng):
+    def _load_one_view(self, scene_path, scene_name, fid, camera_data, segmentations, resolution, rng):
         impath = osp.join(scene_path, "frames", f"{fid}.png")
         depthpath = osp.join(scene_path, "depths", f"{fid}.npy")
 
@@ -234,6 +250,14 @@ class KubricDataset(BaseDataset):
 
         # 清理 depth
         depthmap = np.nan_to_num(depthmap, nan=0.0, posinf=0.0, neginf=0.0)
+
+        idx = int(fid)
+
+        # 用 segmentation 构造前景 mask，只 mask depth，RGB 保持不变
+        if self.mask_background:
+            fg_mask = self._get_segmentation_mask(segmentations, idx)
+            depthmap *= fg_mask.astype(np.float32)
+
         depthmap = threshold_depth_map(depthmap, min_percentile=-1, max_percentile=98)
 
         W0, H0 = rgb_image.size
@@ -294,6 +318,7 @@ class KubricDataset(BaseDataset):
                     scene_name=scene,
                     fid=fid,
                     camera_data=meta["camera_data"],
+                    segmentations=meta["segmentations"],
                     resolution=resolution,
                     rng=rng,
                 )
@@ -305,9 +330,9 @@ class KubricDataset(BaseDataset):
 if __name__ == "__main__":
     from datasets.sample_utils.vis_util import visualize_gt
 
-    # data_root = "/mnt/nvme3/z00533370/dataset/sample_data/Kubric"
-    data_root = "/efs-m3ga/z00533370/reliev3r_data/Kubric/"
-    out_dir = "output_debug/Kubric/"
+    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/Kubric"
+    # data_root = "/efs-m3ga/z00533370/reliev3r_data/Kubric/"
+    out_dir = "output_debug/Kubric_seg/"
     os.makedirs(out_dir, exist_ok=True)
 
     dataset = KubricDataset(
@@ -320,6 +345,7 @@ if __name__ == "__main__":
         split_ratio=0.9,
         verbose=False,
         shuffle=False,
+        mask_background=True,
     )
 
     print(f"len(dataset) = {len(dataset)}")
