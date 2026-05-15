@@ -1,7 +1,7 @@
 iterations: 130000
 batch_size: 2
 ckpt_interval: 5000
-verbose_interval: 10
+verbose_interval: 1000
 warm_up_iterations: 5000
 eval_interval: 50
 learning_rate: 0.00001
