@@ -21,9 +21,9 @@ PROJECT_ROOT = os.path.dirname(FILE_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from .base.base_dataset import BaseDataset, CACHE_DIR
-from .base.transforms import *
-from .sample_utils.common import threshold_depth_map
+from datasets.base.base_dataset import BaseDataset, CACHE_DIR
+from datasets.base.transforms import *
+from datasets.sample_utils.common import threshold_depth_map
 
 
 class KubricDataset(BaseDataset):
@@ -35,6 +35,7 @@ class KubricDataset(BaseDataset):
         split_ratio=0.9,
         seq_num=-1,
         min_num_images=24,
+        mask_background=True,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -46,12 +47,17 @@ class KubricDataset(BaseDataset):
         self.max_distance = max_distance
         self.split_ratio = split_ratio
         self.min_num_images = min_num_images
+        self.mask_background = mask_background
 
         #
         self.all_sequences = []
         self.scene_to_path = {}
         self.scene_meta = {}
-        
+
+        # 新增：只缓存当前 scene 的 segmentation，避免重复读
+        self._cached_seg_scene = None
+        self._cached_segmentations = None
+
         os.makedirs(CACHE_DIR, exist_ok=True)
         root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(CACHE_DIR, f"{self.dataset_label}_{root_hash}_cache.pkl")
@@ -199,6 +205,30 @@ class KubricDataset(BaseDataset):
 
         return camera_pose
 
+    def _get_segmentation_mask(self, segmentations, idx):
+        """
+        segmentations[idx]: (H, W, 1) or (H, W)
+        foreground: seg > 0
+        """
+        seg = segmentations[idx]
+        if seg.ndim == 3 and seg.shape[-1] == 1:
+            seg = seg[..., 0]
+        fg_mask = (seg > 0)
+        return fg_mask
+
+    # 新增：按 scene 懒加载 segmentation
+    def _get_segmentations_for_scene(self, scene_name, scene_path):
+        if self._cached_seg_scene == scene_name and self._cached_segmentations is not None:
+            return self._cached_segmentations
+
+        scene_npy_path = osp.join(scene_path, f"{scene_name}.npy")
+        full_data = np.load(scene_npy_path, allow_pickle=True).item()
+        segmentations = full_data["segmentations"]
+
+        self._cached_seg_scene = scene_name
+        self._cached_segmentations = segmentations
+        return segmentations
+
     # =========================
     # sample
     # =========================
@@ -224,7 +254,7 @@ class KubricDataset(BaseDataset):
     # =========================
     # load one view
     # =========================
-    def _load_one_view(self, scene_path, scene_name, fid, camera_data, resolution, rng):
+    def _load_one_view(self, scene_path, scene_name, fid, camera_data, segmentations, resolution, rng):
         impath = osp.join(scene_path, "frames", f"{fid}.png")
         depthpath = osp.join(scene_path, "depths", f"{fid}.npy")
 
@@ -233,6 +263,14 @@ class KubricDataset(BaseDataset):
 
         # 清理 depth
         depthmap = np.nan_to_num(depthmap, nan=0.0, posinf=0.0, neginf=0.0)
+
+        idx = int(fid)
+
+        # 用 segmentation 构造前景 mask，只 mask depth，RGB 保持不变
+        if self.mask_background and segmentations is not None:
+            fg_mask = self._get_segmentation_mask(segmentations, idx)
+            depthmap *= fg_mask.astype(np.float32)
+
         depthmap = threshold_depth_map(depthmap, min_percentile=-1, max_percentile=98)
 
         W0, H0 = rgb_image.size
@@ -250,7 +288,6 @@ class KubricDataset(BaseDataset):
             info=impath,
         )
 
-        idx = int(fid)
         position = camera_data["positions"][idx]
         quaternion = camera_data["quaternions"][idx]  # [w, x, y, z]
         camera_pose = self._build_camera_pose_c2w_opencv(position, quaternion)
@@ -285,6 +322,11 @@ class KubricDataset(BaseDataset):
             "idxs": idxs,
         }
 
+        # 只在需要时加载当前 scene 的 segmentation
+        segmentations = None
+        if self.mask_background:
+            segmentations = self._get_segmentations_for_scene(scene, scene_path)
+
         views = []
         for fid in idxs:
             views.append(
@@ -293,6 +335,7 @@ class KubricDataset(BaseDataset):
                     scene_name=scene,
                     fid=fid,
                     camera_data=meta["camera_data"],
+                    segmentations=segmentations,
                     resolution=resolution,
                     rng=rng,
                 )
@@ -305,7 +348,8 @@ if __name__ == "__main__":
     from datasets.sample_utils.vis_util import visualize_gt
 
     data_root = "/mnt/nvme3/z00533370/dataset/sample_data/Kubric"
-    out_dir = "output_debug/Kubric/"
+    # data_root = "/efs-m3ga/z00533370/reliev3r_data/Kubric/"
+    out_dir = "output_debug/Kubric_seg2/"
     os.makedirs(out_dir, exist_ok=True)
 
     dataset = KubricDataset(
@@ -313,10 +357,12 @@ if __name__ == "__main__":
         mode="train",
         resolution=[[224, 224]],
         frame_num=8,
+        max_distance=8,
         min_num_images=24,
         split_ratio=0.9,
         verbose=False,
         shuffle=False,
+        mask_background=True,
     )
 
     print(f"len(dataset) = {len(dataset)}")
