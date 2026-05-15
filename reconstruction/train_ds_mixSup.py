@@ -157,7 +157,7 @@ def run(rank, cfg):
     with open(cfg.deepspeed_config, "r") as f:
         ds_config = json.load(f)
     ds_config["flops_profiler"]["output_file"] = f"{cfg.output_dir}/profile_{global_rank}.log"
-  
+
     """Create data loaders. """
     dataloader, dataloader_eval = create_dataloaders(rank, global_rank, cfg)
     
@@ -172,6 +172,7 @@ def run(rank, cfg):
     enable_camreg = (cfg.model.depth_aligner.pi3.enable_camera_register is True and cfg.model.depth_aligner.pi3.model_size == "dinov2_large_0.95B")
     if cfg.get("ckpt_path") is not None:
         print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
+
         if "ckpt/Pi3" in cfg.ckpt_path:
             safetensor_path = os.path.join(cfg.ckpt_path, "model.safetensors") if os.path.isdir(cfg.ckpt_path) else cfg.ckpt_path
 
@@ -207,8 +208,9 @@ def run(rank, cfg):
             # print(f"[ INFO ] original ckpt keys: {len(state_dict)},  remapped ckpt keys: {len(remapped_state_dict)},  target model keys : {len(target_module.state_dict())}")
             # print(f"[ INFO ] original ckpt keys: {len(state_dict)}, \n   remapped ckpt keys: {len(remapped_state_dict)}: {remapped_state_dict.keys()}, \n   target model keys : {len(target_module.state_dict())}: {target_module.state_dict().keys()}")
             # missing_keys, unexpected_keys = target_module.load_state_dict(remapped_state_dict, strict=False)            
-            print(f"[ INFO ] missing_keys: {missing_keys}")
-            print(f"[ INFO ] unexpected_keys: {unexpected_keys}")            
+            
+            # print(f"[ INFO ] missing_keys: {missing_keys}")
+            # print(f"[ INFO ] unexpected_keys: {unexpected_keys}")            
 
             if cfg.freeze_backbone:
                 freeze_selected_parts(
@@ -217,7 +219,7 @@ def run(rank, cfg):
                     freeze_param_names=["register_token"],
                     verbose=True,
                 )
-                print_trainable_summary(model.depth_aligner)
+                # print_trainable_summary(model.depth_aligner)
         
             model = model.to(device=DEVICE_NAME)
             del state_dict, target_state_dict
@@ -273,8 +275,8 @@ def run(rank, cfg):
                                                           title=f"{target_name} load coverage")
 
             msg = target_module.load_state_dict(state_dict, strict=False)
-            print(f"[ INFO ] missing_keys: {msg.missing_keys}")
-            print(f"[ INFO ] unexpected_keys: {msg.unexpected_keys}")
+            # print(f"[ INFO ] missing_keys: {msg.missing_keys}")
+            # print(f"[ INFO ] unexpected_keys: {msg.unexpected_keys}")
 
             model = model.to(device=DEVICE_NAME)    
             del ckpt_info
@@ -286,7 +288,7 @@ def run(rank, cfg):
                     freeze_param_names=["register_token"],
                     verbose=True,
                 )
-                print_trainable_summary(model.depth_aligner)
+                # print_trainable_summary(model.depth_aligner)
 
             """Create optimizers based on model parameters in checkpoint. """
             optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate)
@@ -304,6 +306,7 @@ def run(rank, cfg):
             print("[ INFO ] Checkpoint loaded successfully")
     else:
         """Create optimizers from scratch. """
+        optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.backbone_lr_ratio)
         optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.backbone_lr_ratio)
         lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations, 
                                            scheduler_type=cfg.training.get("lr_scheduler", "cosine"))
@@ -475,13 +478,13 @@ def run(rank, cfg):
             
             if global_rank == 0:
                 """Log training loss information"""
-                print("[ INFO ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]; Dataset: {}".format(
+                print("[ INFO ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]; Dataset: {:<22}; stage: {}".format(
                     step, loss_dict["total"].item(), 
                     pred["local_points"][..., :2, :, :].min().item(), pred["local_points"][..., :2, :, :].max().item(), 
                     pred["local_points"][..., -1:, :, :].min().item(), pred["local_points"][..., -1:, :, :].max().item(), 
                     pred["depths_conf"].min().item(), pred["depths_conf"].max().item(), 
                     pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item(), 
-                    data["dataset_names"][0], loss_dict["mode"]))
+                    data["dataset_names"][0][:22], loss_dict["mode"]))
                 for loss_name, loss_value in loss_dict.items():
                     if loss_name in ["matching_info", "mode"]:
                         continue
@@ -502,7 +505,7 @@ def run(rank, cfg):
                     with torch.no_grad():
                         pred = engine(data)
                         loss_dict = loss_func(pred, data, step)
-                    print("[ INFO - val ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]".format(
+                    print("[ INFO - val ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]; stage: {}".format(
                         step, loss_dict["total"].item(), 
                         pred["local_points"][..., :2, :, :].min().item(), pred["local_points"][..., :2, :, :].max().item(), 
                         pred["local_points"][..., -1:, :, :].min().item(), pred["local_points"][..., -1:, :, :].max().item(), 
@@ -581,6 +584,8 @@ if __name__ == '__main__':
     parser.add_argument("--no_load_optim", action="store_true", help="Set to disable loading optimizer when ckpt is given.")
     parser.add_argument("--learning_rate", type=float, default=None, help="Maximum learning rate.")
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
+    parser.add_argument("--freeze_backbone", action="store_true", help="default is NOT freezing backbone")
+    parser.add_argument("--backbone_lr_ratio", type=float, default=0., help="finetune backbone with lower training rate")
     parser.add_argument("--freeze_backbone", action="store_true", help="default is freezing backbone")
     parser.add_argument("--backbone_lr_ratio", type=float, default=0., help="finetune backbone with lower training rate")
     parser = deepspeed.add_config_arguments(parser)

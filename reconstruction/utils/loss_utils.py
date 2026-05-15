@@ -481,7 +481,8 @@ class LossFunction(torch.nn.Module):
         self.w_geometric_def = self.cfg.geometric.w if self.cfg.get("geometric", None) is not None else 0.0
         self.w_intr_def      = self.cfg.camera_intr.w if self.cfg.get("camera_intr", None) is not None else 0.0
         self.w_extr_def      = self.cfg.camera_extr.w if self.cfg.get("camera_extr", None) is not None else 0.0
-        self.w_point_def     = self.cfg.point.w if self.cfg.get("point", None) is not None else 0.0
+        self.w_glbpoint_def  = self.cfg.point_glb.w if self.cfg.get("point_glb", None) is not None else 0.0
+        self.w_locpoint_def  = self.cfg.point_loc.w if self.cfg.get("point_loc", None) is not None else 0.0
         self.w_normalize_def = self.cfg.normalize.w if self.cfg.get("normalize", None) is not None else 0.0
         self.w_normal_def    = self.cfg.normal.w if self.cfg.get("normal", None) is not None else 0.0
         self.w_dist_def      = self.cfg.dist.w if self.cfg.get("dist", None) is not None else 0.0
@@ -519,7 +520,7 @@ class LossFunction(torch.nn.Module):
         gt_local_pts = data['input_points_local'] # b v h w 3
         valid_masks = data['input_depth_masks'] > 1e-2 # b v 1 h w
         details = dict()
-        final_loss = 0.0
+        locpts_loss, glbpts_loss = 0.0, 0.0
 
         B, N, H, W, _ = pred_local_pts.shape
         valid_masks = valid_masks.reshape(B, N, H, W)
@@ -540,7 +541,7 @@ class LossFunction(torch.nn.Module):
         ## Local point loss
         aligned_local_pts = S_opt_local.view(B, 1, 1, 1, 1) * pred_local_pts
         local_pts_loss = self.point_criteria(aligned_local_pts[valid_masks].float(), gt_local_pts[valid_masks].float()) * weights_[valid_masks].float()[..., None]
-        final_loss += local_pts_loss.mean()
+        locpts_loss = local_pts_loss.mean()
         details['local_pts_loss'] = local_pts_loss.mean()
         
         ## Global Point Loss, compare the points globally in the coordinate of the first camera. 
@@ -551,10 +552,10 @@ class LossFunction(torch.nn.Module):
         pred_global_pts = pred_global_pts * S_opt_local.view(B, 1, 1, 1, 1)
         global_pts_loss = self.point_criteria(pred_global_pts[valid_masks].float(), 
                                               gt_pts[valid_masks].float()) * weights_[valid_masks].float()[..., None]
-        final_loss += global_pts_loss.mean()
+        glbpts_loss = global_pts_loss.mean()
         details['global_pts_loss'] = global_pts_loss.mean()
 
-        return final_loss, details, S_opt_local
+        return locpts_loss, glbpts_loss, details, S_opt_local
     
     def ds_loss(self, output_dict, data, enable_conf=False, lower=None):
         depths = output_dict["depths"]
@@ -866,32 +867,32 @@ class LossFunction(torch.nn.Module):
         if self.step_begin_stage1 <= step < self.step_begin_stage2:
             # 纯监督阶段：必须有监督数据
             assert has_sv_data, f"Supervised stage requires supervised data, but got none at step {step}"
-            w_extr, w_point = self.w_extr_def, self.w_point_def
+            w_extr, w_locpoint, w_glbpoint = self.w_extr_def, self.w_locpoint_def, self.w_glbpoint_def
             w_geometric, w_dist, w_normal, w_translate, w_flow = 0.0, 0.0, 0.0, 0.0, 0.0
 
             mode = "stage1-svData_svLoss"
-            point_loss, point_loss_details, S_opt_local = self.point_loss(output_dict, data)
+            locpts_loss, glbpts_loss, point_loss_details, S_opt_local = self.point_loss(output_dict, data)
 
         elif self.step_begin_stage2 <= step < self.step_begin_stage3:
             # 混合阶段：必须有监督数据
             assert has_sv_data, f"Combined stage requires supervised data, but got none at step {step}"
-            w_extr, w_point = self.w_extr_def, self.w_point_def
+            w_extr, w_locpoint, w_glbpoint = self.w_extr_def, self.w_locpoint_def, self.w_glbpoint_def
             w_geometric, w_dist, w_normal, w_translate, w_flow = self.w_geometric_def, self.w_dist_def, self.w_normal_def, self.w_translate_def, self.w_flow_def
             mode = "stage2-svData_svLoss_nvLoss"
-            point_loss, point_loss_details, S_opt_local = self.point_loss(output_dict, data)
+            locpts_loss, glbpts_loss, point_loss_details, S_opt_local = self.point_loss(output_dict, data)
 
         elif step >= self.step_begin_stage3:
             # 无监督阶段：允许两种数据来源
             if has_nv_data:
-                w_extr, w_point = 0.0, 0.0
+                w_extr, w_locpoint, w_glbpoint = 0.0, 0.0, 0.0
                 w_geometric, w_dist, w_normal, w_translate, w_flow = self.w_geometric_def, self.w_dist_def, self.w_normal_def, self.w_translate_def, self.w_flow_def
                 mode = "stage3-nvData_nvLoss"
-                point_loss, S_opt_local = torch.tensor(0.0), None
+                locpts_loss, glbpts_loss, S_opt_local = torch.tensor(0.0), torch.tensor(0.0), None
             else:
-                w_extr, w_point = self.w_extr_def, self.w_point_def
+                w_extr, w_locpoint, w_glbpoint = self.w_extr_def, self.w_locpoint_def, self.w_glbpoint_def
                 w_geometric, w_dist, w_normal, w_translate, w_flow = self.w_geometric_def, self.w_dist_def, self.w_normal_def, self.w_translate_def, self.w_flow_def
                 mode = "stage3-svData_svLoss_nvLoss"
-                point_loss, point_loss_details, S_opt_local = self.point_loss(output_dict, data)
+                locpts_loss, glbpts_loss, point_loss_details, S_opt_local = self.point_loss(output_dict, data)
 
         # if data.get("input_points_local", None) is not None:
         #     point_loss, point_loss_details, S_opt_local = self.point_loss(output_dict, data)
@@ -917,7 +918,8 @@ class LossFunction(torch.nn.Module):
                       w_normal * normal_loss_value + 
                       w_translate * translation_loss_value +
                       w_flow * flow_loss_value +
-                      w_point * point_loss + 
+                      w_locpoint * locpts_loss + 
+                      w_glbpoint * glbpts_loss + 
                       w_intr * intr_loss_value + 
                       w_extr * extr_loss_value + 
                       w_normalize * normalize_loss_value)

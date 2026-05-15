@@ -1,0 +1,5 @@
+name: DepthPro # optional from [UniDepth, DepthAnythingV2, DepthPro]
+ckpt_path:
+  DepthAnythingV2: ./ckpt/depth-anything-v2/depth_anything_v2_vitb.pth
+  UniDepth: ./ckpt/unidepth-v2-vitb14
+  DepthPro: ./ckpt/depth-pro/depth_pro.pt

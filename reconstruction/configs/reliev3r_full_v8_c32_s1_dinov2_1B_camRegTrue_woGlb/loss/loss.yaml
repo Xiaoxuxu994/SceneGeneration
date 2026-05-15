@@ -1,0 +1,35 @@
+name: ours
+
+depth_shape:
+  w: 1.0
+  norm_depth: true
+
+camera_extr:
+  w: 0.1 # 0.1 SUP # 0.0 unSUP
+camera_intr:
+  w: 1.0 
+point_glb:
+  w: 0.0 # 1.0 SUP # 0.0 unSUP
+point_loc:
+  w: 1.0 # 1.0 SUP # 0.0 unSUP
+normalize:
+  w: 1.0
+
+# UNSUP
+geometric:
+  w: 0.5 # 0.5
+dist:
+  w: 0.1
+normal:
+  w: 0.0
+translate:
+  w: 0.5
+flow:
+  w: 5
+
+enable_conf: true
+conf_alpha: 1.0 # 0.1
+
+enable_alternate_geometric_opt: false
+
+enable_slide: true

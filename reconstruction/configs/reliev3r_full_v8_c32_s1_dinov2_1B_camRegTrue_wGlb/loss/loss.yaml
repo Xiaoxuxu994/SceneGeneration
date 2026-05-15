@@ -8,7 +8,9 @@ camera_extr:
   w: 0.1 # 0.1 SUP # 0.0 unSUP
 camera_intr:
   w: 1.0 
-point:
+point_glb:
+  w: 1.0 # 1.0 SUP # 0.0 unSUP
+point_loc:
   w: 1.0 # 1.0 SUP # 0.0 unSUP
 normalize:
   w: 1.0

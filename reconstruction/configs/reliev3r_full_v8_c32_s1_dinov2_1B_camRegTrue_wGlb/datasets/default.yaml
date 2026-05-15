@@ -5,7 +5,7 @@ weights:
 # mix_start_step: 1e6
 
 dataloaders:
-  pi3: !include pi3/datamix_all_v5.yaml
+  pi3: !include pi3/datamix_all_v6.yaml
   reliev3r:
     default:    !include reliev3r/default.yaml
     spatialvid: !include reliev3r/spatialvid.yaml
