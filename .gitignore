@@ -20,6 +20,6 @@ data-dump
 
 datagen/data
 datagen/lib/AdaptiveSolvers*
-benchmark/
+benchmark*/
 train_code/colossalai/kernel/extensions
 outputs/
