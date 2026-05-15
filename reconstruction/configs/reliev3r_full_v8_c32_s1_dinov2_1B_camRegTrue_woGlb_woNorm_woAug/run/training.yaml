@@ -1,7 +1,7 @@
 iterations: 130000
 batch_size: 2
 ckpt_interval: 5000
-verbose_interval: 100
+verbose_interval: 10
 warm_up_iterations: 5000
 eval_interval: 50
 learning_rate: 0.00001
@@ -14,6 +14,6 @@ dataset_schedule:
   stage1: # full pi3 + svLoss
     step_begin: 0
   stage2: # full pi3 + svLoss + nvLoss
-    step_begin: 10000
+    step_begin: 20000
   stage3: # mix pi3 + svLoss + nvLoss / reliev3r + nvLoss
-    step_begin: 50000
+    step_begin: 100000

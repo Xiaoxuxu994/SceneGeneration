@@ -21,9 +21,9 @@ PROJECT_ROOT = os.path.dirname(FILE_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from datasets.base.base_dataset import BaseDataset, CACHE_DIR
-from datasets.base.transforms import *
-from datasets.sample_utils.common import threshold_depth_map
+from .base.base_dataset import BaseDataset, CACHE_DIR
+from .base.transforms import *
+from .sample_utils.common import threshold_depth_map
 
 
 class KubricDataset(BaseDataset):

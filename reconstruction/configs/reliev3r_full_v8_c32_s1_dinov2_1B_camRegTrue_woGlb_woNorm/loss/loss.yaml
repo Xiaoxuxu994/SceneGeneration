@@ -13,7 +13,7 @@ point_glb:
 point_loc:
   w: 1.0 # 1.0 SUP # 0.0 unSUP
 normalize:
-  w: 1.0
+  w: 0.0
 
 # UNSUP
 geometric:

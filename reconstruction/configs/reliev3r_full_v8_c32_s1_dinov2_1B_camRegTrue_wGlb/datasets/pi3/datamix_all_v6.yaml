@@ -30,7 +30,7 @@ train_dataset:
         Spring:            1600
         Unreal4k:           800
         Habitat:           2800
-        # MVSSynth:           300
+        MVSSynth:           300
         VirtualKitti:       600
         Replica:            200
         PointOdyssey:       500
@@ -126,20 +126,20 @@ train_dataset:
         aug_focal: 0.9
         mode: 'train'
 
-    # MVSSynth:
-    #     _target_: dataset.pi3_dataset.mvssynth_dataset.MVSSynthDataset
-    #     # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MVS-Synth/GTAV_540/
-    #     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
-    #     split_ratio: 0.99
-    #     max_distance: 16
-    #     z_far: 160
-    #     frame_num: 8
-    #     aug_crop: 16
-    #     transform:
-    #         _partial_: true
-    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
-    #     aug_focal: 0.9
-    #     mode: 'train'
+    MVSSynth:
+        _target_: dataset.pi3_dataset.mvssynth_dataset.MVSSynthDataset
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MVS-Synth/GTAV_540/
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
+        split_ratio: 0.99
+        max_distance: 16
+        z_far: 160
+        frame_num: 8
+        aug_crop: 16
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        aug_focal: 0.9
+        mode: 'train'
 
     BlendedMVS:
         _target_: dataset.pi3_dataset.blendedmvs_dataset.BlendedMVSDataset
@@ -498,7 +498,7 @@ test_dataset:
         PointOdyssey:  2000
         OmniObject3DNew:   2000
         # Matterport3D:   2000
-        # MVSSynth:     2000
+        MVSSynth:     2000
 
         CO3D:          2000        
         Taskonomy:     2000
@@ -555,7 +555,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
 
     VirtualKitti:
@@ -570,7 +570,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
 
     GTA-sfm:
@@ -585,7 +585,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
 
     MatrixCity:
@@ -600,7 +600,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
     
     Hypersim:
@@ -615,7 +615,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
     
     TarTanAir:
@@ -630,7 +630,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
     
     TartanGround:
@@ -644,7 +644,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
 
     ADT:
@@ -658,7 +658,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
     
     Objaverse:
@@ -672,7 +672,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
     
     Spring:
@@ -686,7 +686,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
     
     Unreal4k:
@@ -700,7 +700,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
 
     OmniObject3DNew:
@@ -714,7 +714,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
 
     
@@ -729,7 +729,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
     
     Replica:
@@ -743,7 +743,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
     
     # Matterport3D:
@@ -757,24 +757,24 @@ test_dataset:
     #       - [518, 308]
     #     transform:
     #         _partial_: true
-    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+    #         _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
     #     mode: 'test'
 
-    # MVSSynth:
-    #     _target_: dataset.pi3_dataset.mvssynth_dataset.MVSSynthDataset
-    #     # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MVS-Synth/GTAV_540/
-    #     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
-    #     split_ratio: 0.99
-    #     max_distance: 16
-    #     z_far: 160
-    #     resolution:
-    #     #   - [512, 336]
-    #       - [518, 308]
-    #     transform:
-    #         _partial_: true
-    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
-    #     aug_focal: 0.9
-    #     mode: 'test'
+    MVSSynth:
+        _target_: dataset.pi3_dataset.mvssynth_dataset.MVSSynthDataset
+        # data_root: /mnt/nvme3/z00533370/dataset/sample_data/MVS-Synth/GTAV_540/
+        data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
+        split_ratio: 0.99
+        max_distance: 16
+        z_far: 160
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
+        aug_focal: 0.9
+        mode: 'test'
 
     CO3D:
         _target_: dataset.pi3_dataset.co3d_dataset.CO3DDataset
@@ -897,7 +897,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
 
     Mapillary:
@@ -912,7 +912,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
     
     MegaDepth:
@@ -927,7 +927,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
     
     CO3DV2:
@@ -941,7 +941,7 @@ test_dataset:
           - [518, 308]
         transform:
             _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
 
 
