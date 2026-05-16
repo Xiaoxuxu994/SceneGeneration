@@ -31,29 +31,47 @@ def create_optimizer(model: nn.Module, weight_decay: float, learning_rate: float
     all_param_dict = {name: param for name, param in model.named_parameters()}
     optimized_param_dict = {name: param for name, param in all_param_dict.items() if param.requires_grad}
     
-    decay_params, decay_params_small_lr, camera_params, nodecay_params, backbone_params = [], [], [], [], []
+    nodecay_names = ['pos_embed', 'cls_token', 'register']
+    nodecay = lambda name: any(n in name for n in nodecay_names)
+
+    decay_params, decay_params_small_lr, nodecay_params, backbone_params, backbone_params_nodecay = [], [], [], [], []
+    decay_params_names, decay_params_small_lr_names, nodecay_params_names, backbone_params_names, backbone_params_nodecay_names = [], [], [], [], []
     for name, param in optimized_param_dict.items():
-        if param.dim() == 1 or getattr(param, '_no_weight_decay', False):
-            nodecay_params.append(param)
-        elif backbone_lr_ratio > 0 and not ('_decoder' in name or '_head' in name):
-            backbone_params.append(param)
-        else:
-            if name.startswith("depth_aligner.image_tokenizer") or name.startswith("depth_aligner.encoder"):
-                decay_params_small_lr.append(param)
-            # elif name.startswith("depth_aligner.camera_head") or name.startswith("depth_aligner.camera_decoder"):
-            #     camera_params.append(param)
+        if backbone_lr_ratio > 0 and not ('_decoder' in name or '_head' in name):
+            if param.dim() == 1 or nodecay(name) or getattr(param, '_no_weight_decay', False):
+                backbone_params_nodecay.append(param)
+                backbone_params_nodecay_names.append(name)
             else:
-                decay_params.append(param)
+                backbone_params.append(param)
+                backbone_params_names.append(name)
+        elif param.dim() == 1 or nodecay(name) or getattr(param, '_no_weight_decay', False):
+            nodecay_params.append(param)
+            nodecay_params_names.append(name)
+        elif name.startswith("depth_aligner.image_tokenizer") or name.startswith("depth_aligner.encoder"):
+            decay_params_small_lr.append(param)
+            decay_params_small_lr_names.append(name)
+        # elif name.startswith("depth_aligner.camera_head") or name.startswith("depth_aligner.camera_decoder"):
+        #     camera_params.append(param)
+        else:
+            decay_params.append(param)
+            decay_params_names.append(name)
     optim_groups = [
-        {'params': decay_params, 'weight_decay': weight_decay, 'lr': learning_rate},
-        {'params': decay_params_small_lr, 'weight_decay': weight_decay, 'lr': learning_rate * 1e-1}, 
+        {'params': decay_params, 'weight_decay': weight_decay, 'lr': learning_rate, 'names': decay_params_names},
+        {'params': decay_params_small_lr, 'weight_decay': weight_decay, 'lr': learning_rate * 1e-1, 'names': decay_params_small_lr_names}, 
         # {'params': camera_params, 'weight_decay': weight_decay, 'lr': learning_rate * 0.2}, 
-        {'params': nodecay_params, 'weight_decay': 0.0, 'lr': learning_rate}, 
+        {'params': nodecay_params, 'weight_decay': 0.0, 'lr': learning_rate, 'names': nodecay_params_names}, 
     ]
     if backbone_params: optim_groups.append(
-        {'params': backbone_params, 'weight_decay': weight_decay, 'lr': learning_rate * backbone_lr_ratio}
+        {'params': backbone_params, 'weight_decay': weight_decay * 0.2, 'lr': learning_rate * backbone_lr_ratio, 'names': backbone_params_names}
     )
-    
+    if backbone_params_nodecay: optim_groups.append(
+        {'params': backbone_params_nodecay, 'weight_decay': 0., 'lr': learning_rate * backbone_lr_ratio, 'names': backbone_params_nodecay_names}
+    )
+    print('[ INFO ] Optimizer info:', end='\n\n')
+    for group in optim_groups:
+        if group["params"]:
+            print(f'count = {len(group["params"])}, lr = {group["lr"]:.1}, decay = {group["weight_decay"]:.1}')
+            print(group['names'], end='\n\n')
     # specified_param_group_dicts = {
     #     learning_rate * 1e-2: ["depth_aligner.image_tokenizer", "depth_aligner.encoder"], 
     #     learning_rate * 5e-1: ["depth_aligner.decoder", ], 

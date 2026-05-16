@@ -14,6 +14,6 @@ dataset_schedule:
   stage1: # full pi3 + svLoss
     step_begin: 0
   stage2: # full pi3 + svLoss + nvLoss
-    step_begin: 20000
+    step_begin: 0
   stage3: # mix pi3 + svLoss + nvLoss / reliev3r + nvLoss
     step_begin: 100000

@@ -158,7 +158,7 @@ def run(rank, cfg):
     if cfg.get("ckpt_path") is not None:
         print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
 
-        if "ckpt/Pi3" in cfg.ckpt_path:
+        if "ckpt/Pi3" in cfg.ckpt_path or "checkpoints/Pi3" in cfg.ckpt_path:
             safetensor_path = os.path.join(cfg.ckpt_path, "model.safetensors") if os.path.isdir(cfg.ckpt_path) else cfg.ckpt_path
 
             if not os.path.exists(safetensor_path):
@@ -219,7 +219,7 @@ def run(rank, cfg):
             del state_dict, target_state_dict
 
             """Create optimizers after model weights are loaded."""
-            optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate)
+            optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.backbone_lr_ratio)
             lr_scheduler = create_lr_scheduler(
                 optimizer,
                 cfg.training.iterations,
@@ -286,7 +286,7 @@ def run(rank, cfg):
                 # print_trainable_summary(model.depth_aligner)
 
             """Create optimizers based on model parameters in checkpoint. """
-            optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate)
+            optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.backbone_lr_ratio)
             lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations, 
                                             scheduler_type=cfg.training.get("lr_scheduler", "cosine"))
             if not cfg.no_load_optim:
@@ -301,7 +301,6 @@ def run(rank, cfg):
             print("[ INFO ] Checkpoint loaded successfully")
     else:
         """Create optimizers from scratch. """
-        optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.backbone_lr_ratio)
         optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.backbone_lr_ratio)
         lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations, 
                                            scheduler_type=cfg.training.get("lr_scheduler", "cosine"))

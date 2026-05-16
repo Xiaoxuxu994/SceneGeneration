@@ -173,7 +173,7 @@ def run(rank, cfg):
     if cfg.get("ckpt_path") is not None:
         print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
 
-        if "ckpt/Pi3" in cfg.ckpt_path:
+        if "ckpt/Pi3" in cfg.ckpt_path or "checkpoints/Pi3" in cfg.ckpt_path:
             safetensor_path = os.path.join(cfg.ckpt_path, "model.safetensors") if os.path.isdir(cfg.ckpt_path) else cfg.ckpt_path
 
             if not os.path.exists(safetensor_path):
@@ -225,7 +225,7 @@ def run(rank, cfg):
             del state_dict, target_state_dict
 
             """Create optimizers after model weights are loaded."""
-            optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate)
+            optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.backbone_lr_ratio)
             lr_scheduler = create_lr_scheduler(
                 optimizer,
                 cfg.training.iterations,
@@ -291,7 +291,7 @@ def run(rank, cfg):
                 # print_trainable_summary(model.depth_aligner)
 
             """Create optimizers based on model parameters in checkpoint. """
-            optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate)
+            optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.backbone_lr_ratio)
             lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations, 
                                             scheduler_type=cfg.training.get("lr_scheduler", "cosine"))
             if not cfg.no_load_optim:
@@ -306,7 +306,6 @@ def run(rank, cfg):
             print("[ INFO ] Checkpoint loaded successfully")
     else:
         """Create optimizers from scratch. """
-        optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.backbone_lr_ratio)
         optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.backbone_lr_ratio)
         lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations, 
                                            scheduler_type=cfg.training.get("lr_scheduler", "cosine"))
@@ -331,7 +330,8 @@ def run(rank, cfg):
             load_optimizer_states=not cfg.no_load_optim,
             load_lr_scheduler_states=not cfg.no_load_optim
         )
-        step = client_state["step"]
+        if client_state is not None: step = client_state["step"]
+        else: step = 0
         print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
     
     step_begins = step
@@ -585,8 +585,6 @@ if __name__ == '__main__':
     parser.add_argument("--learning_rate", type=float, default=None, help="Maximum learning rate.")
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
     parser.add_argument("--freeze_backbone", action="store_true", help="default is NOT freezing backbone")
-    parser.add_argument("--backbone_lr_ratio", type=float, default=0., help="finetune backbone with lower training rate")
-    parser.add_argument("--freeze_backbone", action="store_true", help="default is freezing backbone")
     parser.add_argument("--backbone_lr_ratio", type=float, default=0., help="finetune backbone with lower training rate")
     parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
