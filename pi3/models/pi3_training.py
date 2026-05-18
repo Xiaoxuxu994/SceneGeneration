@@ -431,6 +431,13 @@ class Pi3(nn.Module):
                             dec_depth=36,
                             head_depth=5,
                         ),
+                        '5Bv3': dict(
+                            dec_embed_dim=3072,
+                            dec_num_heads=48,
+                            mlp_ratio=4,
+                            dec_depth=36,
+                            head_depth=6,
+                        ),
                         '5Bv2': dict(
                             dec_embed_dim=2560,
                             dec_num_heads=32,
