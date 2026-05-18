@@ -22,8 +22,8 @@ train_dataset:
         # PointOdyssey:       500
         OmniObject3DNew:    800
         Matterport3D:      2200
-        ADT:               3000
-        Objaverse:          800
+        ADT:               1000
+        Objaverse:         1000
 
         # real / scanned / internet / object
         ScanNet:           7000
@@ -34,7 +34,7 @@ train_dataset:
         CO3D:              2200
         MegaDepth:         2600
         Mapillary:         3000
-        DL3DV:             2200
+        DL3DV:             4500
         CO3DV2:            2500
 
 
