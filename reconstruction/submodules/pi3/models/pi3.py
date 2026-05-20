@@ -206,17 +206,17 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 depth=head_depth,
                 use_checkpoint=(USE_CHECKPOINT=='True')
             )
-            self.point_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="linear")
-            self.xy_decoder = TransformerDecoder(
-                in_dim=2*self.dec_embed_dim, 
-                dec_embed_dim=1024,
-                dec_num_heads=16,
-                out_dim=1024,
-                rope=self.rope,
-                depth=head_depth,
-                use_checkpoint=(USE_CHECKPOINT=='True')
-            )
-            self.xy_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=2, activation="linear")
+            self.point_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=3, activation="linear")
+            # self.xy_decoder = TransformerDecoder(
+            #     in_dim=2*self.dec_embed_dim, 
+            #     dec_embed_dim=1024,
+            #     dec_num_heads=16,
+            #     out_dim=1024,
+            #     rope=self.rope,
+            #     depth=head_depth,
+            #     use_checkpoint=(USE_CHECKPOINT=='True')
+            # )
+            # self.xy_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=2, activation="linear")
 
         # ----------------------
         #  Local Depths Decoder
@@ -341,7 +341,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
 
         if hasattr(self, "point_head"):
             point_hidden = self.point_decoder(hidden, xpos=pos, xpos_max=xpos_max)
-            xy_hidden = self.xy_decoder(hidden, xpos=pos, xpos_max=xpos_max)
+            # xy_hidden = self.xy_decoder(hidden, xpos=pos, xpos_max=xpos_max)
         else:
             point_hidden = self.depth_decoder(hidden, xpos=pos, xpos_max=xpos_max)
         conf_hidden = self.conf_decoder(hidden, xpos=pos, xpos_max=xpos_max)
@@ -365,10 +365,13 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             # local points
             point_hidden = point_hidden.float()
             if hasattr(self, "point_head"):
-                xy_hidden = xy_hidden.float()
-                xy = self.xy_head([xy_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
-                z = self.point_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
+                # xy_hidden = xy_hidden.float()
+                # xy = self.xy_head([xy_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
+                # z = self.point_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
+                ret = self.point_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
+                xy, z = ret.split([2, 1], dim=-1)
                 z = torch.exp(z)
+                xy = xy * z
             else:
                 z = self.depth_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
             local_points = torch.cat([xy, z], dim=-1)
@@ -381,7 +384,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             local_points=local_points,
             conf=conf,
             camera_poses=camera_poses,
-            camera_intrs=camera_intrs,
+            # camera_intrs=camera_intrs,
             enc_feat=enc_feat
         )
     

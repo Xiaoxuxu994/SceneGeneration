@@ -19,37 +19,37 @@ train_dataset:
 
     weights:
         # synthetic / clean geometry anchor
-        ASE:               8000
-        # Kubric:             400
-        GTA-sfm:           3200
-        MatrixCity:        2200
-        Hypersim:          1800
-        TarTanAir:         1800
-        TartanGround:      1800
-        BlendedMVS:        1200
-        Spring:            1600
-        Unreal4k:           800
-        Habitat:           2800
-        MVSSynth:           300
-        VirtualKitti:       600
-        Replica:            200
-        # PointOdyssey:       500
-        OmniObject3DNew:   2000
-        # Matterport3D:       400
-        ADT:               3000
-        Objaverse:         1000
+        ASE:              17500
+        # Kubric:              0
+        GTA-sfm:           4300
+        MatrixCity:        3800
+        Hypersim:          3800
+        TarTanAir:         2800
+        TartanGround:      2300
+        BlendedMVS:        2600
+        Spring:            2800
+        Unreal4k:          1000
+        Habitat:           3700
+        MVSSynth:           900
+        VirtualKitti:       300
+        Replica:            300
+        # PointOdyssey:        0
+        OmniObject3DNew:   1700
+        Matterport3D:      3600
+        ADT:               1400
+        Objaverse:         2400
 
         # real / scanned / internet / object
-        ScanNet:           2000
-        ARKitScenes:       8000
-        Scannetpp:         5000
-        Taskonomy:         5500
-        Wildrgbd:          3500
-        CO3D:              2200
-        MegaDepth:         2600
-        Mapillary:         3000
-        DL3DV:             3200
-        CO3DV2:            2500
+        ScanNet:           3200
+        ARKitScenes:       3500
+        Scannetpp:         2800
+        Taskonomy:          700
+        Wildrgbd:           700
+        CO3D:              1600
+        MegaDepth:          900
+        Mapillary:          900
+        DL3DV:             2600
+        CO3DV2:            1500
 
     Hypersim:
         _target_: dataset.pi3_dataset.hypersim_dataset.HypersimDataset
@@ -347,19 +347,19 @@ train_dataset:
         aug_focal: 0.9
         mode: 'train'
 
-    # Matterport3D:
-    #     _target_: dataset.pi3_dataset.matterport3d_dataset.Matterport3DDataset
-    #     data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
-    #     split_ratio: 0.99
-    #     max_distance: 8
-    #     z_far: 40
-    #     frame_num: 8
-    #     aug_crop: 16
-    #     transform:
-    #         _partial_: true
-    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
-    #     aug_focal: 0.9
-    #     mode: 'train'
+    Matterport3D:
+        _target_: dataset.pi3_dataset.matterport3d_dataset.Matterport3DDataset
+        data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
+        split_ratio: 0.99
+        max_distance: 8
+        z_far: 40
+        frame_num: 8
+        aug_crop: 16
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        aug_focal: 0.9
+        mode: 'train'
 
     Habitat:
         _target_: dataset.pi3_dataset.habitat_dataset.HabitatDataset
@@ -745,19 +745,19 @@ test_dataset:
             _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
     
-    # Matterport3D:
-    #     _target_: dataset.pi3_dataset.matterport3d_dataset.Matterport3DDataset
-    #     data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
-    #     split_ratio: 0.99
-    #     max_distance: 8
-    #     z_far: 40
-    #     resolution:
-    #     #   - [512, 336]
-    #       - [518, 308]
-    #     transform:
-    #         _partial_: true
-    #         _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
-    #     mode: 'test'
+    Matterport3D:
+        _target_: dataset.pi3_dataset.matterport3d_dataset.Matterport3DDataset
+        data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
+        split_ratio: 0.99
+        max_distance: 8
+        z_far: 40
+        resolution:
+        #   - [512, 336]
+          - [518, 308]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
+        mode: 'test'
 
     MVSSynth:
         _target_: dataset.pi3_dataset.mvssynth_dataset.MVSSynthDataset

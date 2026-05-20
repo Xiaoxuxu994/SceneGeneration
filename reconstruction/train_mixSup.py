@@ -384,8 +384,15 @@ def run(rank, cfg):
                 backward_start.record()
             
             loss_dict["total"].backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(recurse=True), 1.0)
-            optimizer.step()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            no_nan_inf = all(p.grad is None or p.grad.isfinite().all().item()
+                             for p in model.parameters())
+            if no_nan_inf: optimizer.step()
+            else:
+                print('======================================')
+                print('NAN OR INF GRADIENTS DETECTED! SKIPPING STEP', step)
+                print('LOSS DICT:', loss_dict)
+                print('======================================')
             lr_scheduler.step()
             optimizer.zero_grad()
             
@@ -532,7 +539,7 @@ if __name__ == '__main__':
     parser.add_argument("--no_load_optim", action="store_true", help="Set to disable loading optimizer when ckpt is given.")
     parser.add_argument("--learning_rate", type=float, default=None, help="Maximum learning rate.")
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
-    parser.add_argument("--freeze_backbone", action="store_true", help="default is freezing backbone")
+    parser.add_argument("--freeze_backbone", action="store_true", help="default is not freezing backbone")
     parser.add_argument("--backbone_lr_ratio", type=float, default=0., help="finetune backbone with lower training rate")
     args = parser.parse_args()
     

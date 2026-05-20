@@ -8,7 +8,9 @@ camera_extr:
   w: 0.1 # 0.1 SUP # 0.0 unSUP
 camera_intr:
   w: 1.0 
-point:
+point_glb:
+  w: 1.0 # 1.0 SUP # 0.0 unSUP
+point_loc:
   w: 1.0 # 1.0 SUP # 0.0 unSUP
 normalize:
   w: 1.0
@@ -21,9 +23,9 @@ dist:
 normal:
   w: 0.0
 translate:
-  w: 0.5
+  w: 0.
 flow:
-  w: 5
+  w: 0.
 
 enable_conf: true
 conf_alpha: 1.0 # 0.1

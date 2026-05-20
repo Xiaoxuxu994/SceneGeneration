@@ -433,7 +433,15 @@ def run(rank, cfg):
                 backward_start.record()
             
             engine.backward(loss_dict["total"])
-            engine.step()
+            no_nan_inf = all(p.grad is None or p.grad.isfinite().all().item()
+                             for p in engine.module.parameters())
+            if no_nan_inf: engine.step()
+            else:
+                engine.zero_grad()
+                print('======================================')
+                print('NAN OR INF GRADIENTS DETECTED! SKIPPING STEP', step)
+                print('LOSS DICT:', loss_dict)
+                print('======================================')
 
             if npu_profiling:
                 prof.step()

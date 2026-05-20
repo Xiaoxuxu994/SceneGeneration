@@ -338,7 +338,7 @@ def transform_data_to_reliev3r_format(views, grid_size=100):
                                                     for i, j in zip(matched_view_i, matched_view_j)]), # v-1 k
                         ))
         ### Transfer z-depth to r-depth
-        data.update(dict(input_depths=reliev3r_data_cm.zdepth_to_rdepth(data["input_depths"], data["input_intrs"])))
+        # data.update(dict(input_depths=reliev3r_data_cm.zdepth_to_rdepth(data["input_depths"], data["input_intrs"])))
         ### Normalize pointmaps, cameras, depths simultaneously
         data["input_points"], data["input_extrs"], data["input_depths"] = \
             cm.trans_geo_to_first_frame_and_norm(data["input_points"], data["input_extrs"], data["input_depths"])

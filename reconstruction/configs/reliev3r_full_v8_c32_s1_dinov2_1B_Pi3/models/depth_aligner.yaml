@@ -50,10 +50,10 @@ pi3:
   depth_scaler:
     enabled: false
   point_head:
-    enabled: false
-  depth_head:
     enabled: true
-  pred_z_depth: false
+  depth_head:
+    enabled: false
+  pred_z_depth: true
   enable_camera_register: false
 
 depth_scaler:

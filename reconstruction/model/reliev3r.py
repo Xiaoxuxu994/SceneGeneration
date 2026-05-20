@@ -90,7 +90,7 @@ class Reliev3R(nn.Module):
                 "aligner_output": rearrange(depth_aligner_outputs["local_points"], "b v h w c -> b v c h w"), # b v 3 h w
                 "confs":          rearrange(depth_aligner_outputs["conf"], "b v h w c -> b v c h w"), # b v 1 h w
                 "camera_poses":   depth_aligner_outputs["camera_poses"], # b v 4 4
-                "camera_intrs":   depth_aligner_outputs["camera_intrs"], # b n 3 3
+                # "camera_intrs":   depth_aligner_outputs["camera_intrs"], # b n 3 3
             })
             if self.pred_gs: output_dict.update(enc_feat=depth_aligner_outputs["enc_feat"])
         else:

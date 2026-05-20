@@ -417,7 +417,7 @@ def sparse_rigid_ray_flow_loss_from_pairs(
     # --- relative pose T10 = w2c1 @ inv(w2c0) ---
     T0 = paired_extrs[:, 0].float()
     T1 = paired_extrs[:, 1].float()
-    T10 = T1 @ T0.inverse()
+    T10 = T1 @ calc_extr_inv(T0)
     R10 = T10[:, :3, :3]  # (BP,3,3)
     t10 = T10[:, :3, 3]   # (BP,3)
 
@@ -611,7 +611,7 @@ class LossFunction(torch.nn.Module):
         
     #     return matching_error, matching_error_norm, matching_error_dist, [matching_info, ]
 
-    def geometric_loss(self, output_dict, data, detach_camera=False, detach_depth=False):
+    def geometric_loss(self, output_dict, data, detach_camera=False, detach_depth=False, w_translate=0., w_flow=0.):
         _, _, _, H, W = output_dict["depths"].shape
         points_src = output_dict["local_points_detach_xy"]
         extrs_src  = GradBalancerForCamera.apply(output_dict["camera_extrs"]) if output_dict.get("camera_extrs", None) is not None \
@@ -718,24 +718,28 @@ class LossFunction(torch.nn.Module):
         
 
         # ---------- 2) SE3 translation consistency (3D domain) ----------
-        translation_error = translation_error_se3(
-            local_points=paired_local.reshape(-1, H, W, 3),
-            extrs_w2c=paired_extrs.reshape(-1, 4, 4),
-            matching_info=matching_info,
-            view_per_batch=2,
-            conf_map=None,      # 这里先不加，跑稳后再加
-            clip_err=5.0,
-            robust_delta=1.0
-        )
+        if w_translate > 0:
+            translation_error = translation_error_se3(
+                local_points=paired_local.reshape(-1, H, W, 3),
+                extrs_w2c=paired_extrs.reshape(-1, 4, 4),
+                matching_info=matching_info,
+                view_per_batch=2,
+                conf_map=None,      # 这里先不加，跑稳后再加
+                clip_err=5.0,
+                robust_delta=1.0
+            )
+        else: translation_error = matching_error.new_zeros(())
 
         # ---------- 3) sparse rigid flow loss (image domain) ----------
-        ray_flow_loss = sparse_rigid_ray_flow_loss_from_pairs(
-            paired_local=paired_local,         # (BP,2,H,W,3)
-            paired_extrs=paired_extrs,         # (BP,2,4,4)
-            paired_rays=paired_rays,           # (BP,2,H,W,3)
-            matching_info=matching_info,       # (BP,2,K,2)/(BP,2,K)
-            paired_conf=paired_conf,           # (BP,2,H,W) 
-        )
+        if w_flow > 0:
+            ray_flow_loss = sparse_rigid_ray_flow_loss_from_pairs(
+                paired_local=paired_local,         # (BP,2,H,W,3)
+                paired_extrs=paired_extrs,         # (BP,2,4,4)
+                paired_rays=paired_rays,           # (BP,2,H,W,3)
+                matching_info=matching_info,       # (BP,2,K,2)/(BP,2,K)
+                paired_conf=paired_conf,           # (BP,2,H,W) 
+            )
+        else: ray_flow_loss = matching_error.new_zeros(())
 
         return matching_error, matching_error_norm, matching_error_dist, translation_error, ray_flow_loss, [matching_info] 
 
@@ -845,7 +849,8 @@ class LossFunction(torch.nn.Module):
         detach_depth  = self.enable_alternate_geometric_opt and self.opt_flag
         geometric_loss_value, normal_loss_value, dist_loss_value, translation_loss_value, flow_loss_value, matching_info = self.geometric_loss(output_dict, data, 
                                                                                                                             detach_camera=detach_camera, 
-                                                                                                                            detach_depth=detach_depth)
+                                                                                                                            detach_depth=detach_depth,
+                                                                                                                            w_translate=self.w_translate_def, w_flow=self.w_flow_def)
         
         # ---------------------------------------------------------------------------------------------------
         has_sv_data = (

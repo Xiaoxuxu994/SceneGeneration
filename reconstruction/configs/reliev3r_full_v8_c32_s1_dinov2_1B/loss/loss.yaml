@@ -23,9 +23,9 @@ dist:
 normal:
   w: 0.0
 translate:
-  w: 0.5
+  w: 0.
 flow:
-  w: 5
+  w: 0.
 
 enable_conf: true
 conf_alpha: 1.0 # 0.1
