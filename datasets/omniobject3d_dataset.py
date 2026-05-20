@@ -151,8 +151,7 @@ class OmniObject3DNewDataset(BaseDataset):
                     dtype=np.float32,
                 )
 
-                P = np.array(fr["transform_matrix"], dtype=np.float32)
-                pose = np.linalg.inv(P)
+                pose = np.array(fr["transform_matrix"], dtype=np.float32)
                 pose[:, 1:3] *= -1
 
                 frame_ids.append(fid)
@@ -324,7 +323,8 @@ if __name__ == "__main__":
     from datasets.sample_utils.vis_util import visualize_gt
 
     data_root = "/mnt/nvme3/z00533370/dataset/sample_data/Omniobject3d-New/blender_renders_decode"
-    out_dir = "output_debug/OmniObject3DNew/"
+    # data_root = "/efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New/blender_renders_decode"
+    out_dir = "output_debug/OmniObject3DNew1-3/"
     os.makedirs(out_dir, exist_ok=True)
 
     dataset = OmniObject3DNewDataset(
@@ -341,7 +341,7 @@ if __name__ == "__main__":
 
     print(f"len(dataset) = {len(dataset)}")
 
-    views = dataset[0]
+    views = dataset[6]
     print(f"[dataset] number of views = {len(views)}")
     for i, v in enumerate(views):
         print(
