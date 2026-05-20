@@ -9,15 +9,12 @@ VIS_SCRIPT="scripts/run_vis.py"
 # ----- model ------
 MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 MODEL_SIZE=""
-source ./scripts/config/nrgbd/518x392.sh
+source ./scripts/config/ase/518x518.sh
+# source ./scripts/config/ase/462x462.sh
 
-# CKPT="./ckpts/Pi3/model.safetensors"
-# CONFIG=""
-# PREFIX="Reliev3R-260415-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode_ckptpi3"
-
-CKPT="experiments/Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9/ckpt/70000.ckpt"
-CONFIG="experiments/Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9/config.json"
-PREFIX="Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9_ckpt70k"
+CKPT="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/ckpt/35000.ckpt"
+CONFIG="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/config.json"
+PREFIX="Reliev3R-260512-1B-CamRegFalse-lr1e-5_ckpt35k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 
@@ -31,7 +28,8 @@ PREFIX="Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9_ckpt70k"
 # CKPT="./ckpts/Pi3/model.safetensors"
 # PREFIX="pi3_official"
 # CONFIG=""
-# source ./scripts/config/ase_518x336.sh
+# # source ./scripts/config/ase_518x336.sh
+# source ./scripts/config/ase/518x518.sh
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 
@@ -39,7 +37,7 @@ PREFIX="Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9_ckpt70k"
 # CONFIG="./ckpts/VGGT-1B/config.json"
 # CKPT="./ckpts/VGGT-1B/model.pt"
 # PREFIX="vggt_official"
-# source ./scripts/config/ase/518x336.sh
+# source ./scripts/config/ase/518x518.sh
 
 # CONFIG=""
 
@@ -77,7 +75,7 @@ USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 SKIP_POINTMAP=0 # 1 if skip pointmap evaluation
 SKIP_NORMAL=1 # 1 if skip point normal evaluation
 
-NPU_ID="2"
+NPU_ID="7"
 DEVICE="npu:0"
 DTYPE="fp32"
 

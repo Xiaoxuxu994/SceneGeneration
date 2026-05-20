@@ -5,3 +5,4 @@ evo
 torchvision==0.21.0
 small_gicp
 omegaconf
+deepspeed

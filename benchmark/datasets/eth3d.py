@@ -171,7 +171,15 @@ class ETH3DDataset(BaseDataset):
                     _, qw, qx, qy, qz, tx, ty, tz, camera_id, name = line.rstrip().split(' ')
                     # e.g. name = "dslr_images_undistorted/DSC_0323.JPG"
                     view_meta[name] = {
-                        "trans": [qw, qx, qy, qz, tx, ty, tz], # world to camera
+                        "trans": [
+                            float(qw), 
+                            float(qx), 
+                            float(qy), 
+                            float(qz), 
+                            float(tx), 
+                            float(ty), 
+                            float(tz)
+                        ], # world to camera
                         "camera_id": camera_id
                     }
                     
@@ -184,7 +192,12 @@ class ETH3DDataset(BaseDataset):
                     cameras[camera_id] = {
                         "width": width,
                         "height": height,
-                        "params": np.array([fx, fy, cx, cy])
+                        "params": [
+                            float(fx), 
+                            float(fy), 
+                            float(cx), 
+                            float(cy)
+                        ]
                     }
                 
         return view_meta, cameras
@@ -212,7 +225,7 @@ class ETH3DDataset(BaseDataset):
         pix_K = []
         for image_name in image_names:
             camera_id = view_metas[image_name]["camera_id"]
-            fx, fy, cx, cy = np.array(cameras[camera_id]["params"])
+            fx, fy, cx, cy = cameras[camera_id]["params"]
             cur_W, cur_H = cx * 2, cy * 2
             cur_K = np.array([
                 [fx/cur_W, 0, cx/cur_W],

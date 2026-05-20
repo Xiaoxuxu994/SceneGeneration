@@ -1,11 +1,11 @@
 # run this script in the project root folder
 
-local_dir=/mnt/nvme1/share/chenzhenyu/
-BUCKET_PATH=y00855328/sr_datasets/processed/7scenes/data/chess/seq-01/
+local_dir=/mnt/nvme2/share/chenyouyu/codespace/vggt_sz/
+BUCKET_PATH=y00855328/output/251201/agi/train/runs/2025-12-01_08-57-58/checkpoints/epoch036-loss_valid0.1726-metric_valid0.1199.ckpt/
 APP_TOKEN=7e9dedd1-c231-cb5c-d86a-471869623324
 REGION=cn-east-4
 BUCKET_NAME=bucket-beijing-graphics
-BUCKET_ID=63d208b2-9ff7-45cf-a22f-6f0c32656425
+BUCKET_ID=38b6186c-32f0-445a-b2d2-7abb342ef9ff
 
 python ./roma/s3_downloader.py \
     --objects_storage_path=$local_dir \

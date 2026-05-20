@@ -9,20 +9,11 @@ VIS_SCRIPT="scripts/run_vis.py"
 # ----- model ------
 MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 MODEL_SIZE=""
-# source ./scripts/config/dl3dv/476x266.sh
-source ./scripts/config/dl3dv/518x294.sh
+source ./scripts/config/7scenes/518x392.sh
 
-# CKPT="./ckpts/Pi3/model.safetensors"
-# CONFIG=""
-# PREFIX="Reliev3R-260415-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode_ckptpi3"
-
-CKPT="experiments/Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9/ckpt/70000.ckpt"
-CONFIG="experiments/Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9/config.json"
-PREFIX="Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9_ckpt70k"
-
-# CKPT="experiments/Reliev3R_bs2v8_260421_SpvidDL3DV/ckpt/70000.ckpt"
-# CONFIG="experiments/Reliev3R_bs2v8_260421_SpvidDL3DV/config.json"
-# PREFIX="Reliev3R_bs2v8_260421_SpvidDL3DV_ckpt70k"
+CKPT="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/ckpt/35000.ckpt"
+CONFIG="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/config.json"
+PREFIX="Reliev3R-260512-1B-CamRegFalse-lr1e-5_ckpt35k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 
@@ -36,7 +27,7 @@ PREFIX="Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9_ckpt70k"
 # CKPT="./ckpts/Pi3/model.safetensors"
 # PREFIX="pi3_official"
 # CONFIG=""
-# source ./scripts/config/ase_518x336.sh
+# source ./scripts/config/7scenes/518x392.sh
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 
@@ -44,7 +35,7 @@ PREFIX="Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9_ckpt70k"
 # CONFIG="./ckpts/VGGT-1B/config.json"
 # CKPT="./ckpts/VGGT-1B/model.pt"
 # PREFIX="vggt_official"
-# source ./scripts/config/ase/518x336.sh
+# source ./scripts/config/7scenes/518x392.sh
 
 # CONFIG=""
 
@@ -82,7 +73,7 @@ USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 SKIP_POINTMAP=0 # 1 if skip pointmap evaluation
 SKIP_NORMAL=1 # 1 if skip point normal evaluation
 
-NPU_ID="3"
+NPU_ID="4"
 DEVICE="npu:0"
 DTYPE="fp32"
 
@@ -328,7 +319,7 @@ for DATASET in "${DATASETS[@]}"; do
   # run_vis_if_needed "${PRED_DIR}"
 
   # t1=$(date +%s)
-  echo "[TIME] VIS seconds=$((t1-t0))"
+  # echo "[TIME] VIS seconds=$((t1-t0))"
 
-  banner_done "${IDX}" "${TOTAL}" "${DATASET}"
+  # banner_done "${IDX}" "${TOTAL}" "${DATASET}"
 done

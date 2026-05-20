@@ -7,18 +7,14 @@ EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
-MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-MODEL_SIZE=""
-source ./scripts/config/ase/518x518.sh
+# MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE=""
+# source ./scripts/config/ase/518x518.sh
 # source ./scripts/config/ase/462x462.sh
 
-# CKPT="./ckpts/Pi3/model.safetensors"
-# CONFIG=""
-# PREFIX="Reliev3R-260415-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode_ckptpi3"
-
-CKPT="experiments/Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9/ckpt/70000.ckpt"
-CONFIG="experiments/Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9/config.json"
-PREFIX="Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9_ckpt70k"
+CKPT="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/ckpt/35000.ckpt"
+CONFIG="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/config.json"
+PREFIX="Reliev3R-260512-1B-CamRegFalse-lr1e-5_ckpt35k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 
@@ -43,35 +39,12 @@ PREFIX="Reliev3R-260424-mixSupervise-lr1e-5-SV-SS-Pi3-freeze-resume-9_ckpt70k"
 # PREFIX="vggt_official"
 # source ./scripts/config/ase/518x518.sh
 
-# CONFIG=""
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch023-loss_valid0.2258-metric_valid0.1446.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep23"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch015-loss_valid0.2459-metric_valid0.1737.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep15"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch013-loss_valid0.2557-metric_valid0.1859.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep13"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch011-loss_valid0.2917-metric_valid0.2021.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep11"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch009-loss_valid0.2741-metric_valid0.2231.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep9"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch007-loss_valid0.3137-metric_valid0.2497.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep7"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch005-loss_valid0.3839-metric_valid0.2823.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep5"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch003-loss_valid0.4962-metric_valid0.3424.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep3"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch001-loss_valid0.5604-metric_valid0.4377.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep1"
-
+MODEL="vggt" # ['vggt','pi3','reliev3r']
+CONFIG=""
+MODEL_SIZE=""
+CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
+PREFIX="vggt_sz_final"
+source ./scripts/config/ase/518x518.sh
 
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted

@@ -7,31 +7,26 @@ EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
-MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-MODEL_SIZE=""
-source ./scripts/config/dtu/518x392.sh
+# MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE=""
+# source ./scripts/config/re10k/512x288.sh
 
-# CKPT="./ckpts/Pi3/model.safetensors"
-# CONFIG=""
-# PREFIX="Reliev3R-260415-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode_ckptpi3"
-
-CKPT="experiments/Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit/ckpt/60000.ckpt"
-CONFIG="experiments/Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit/config.json"
-PREFIX="Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcode-addArkit_ckpt60k"
+# CKPT="experiments/Reliev3R_3B_260512_merged_stage1_dhead_sub15k_ReL/ckpt/100000"
+# CONFIG="experiments/Reliev3R_3B_260512_merged_stage1_dhead_sub15k_ReL/config.json"
+# PREFIX="Reliev3R_3B_260512_merged_stage1_dhead_sub15k_ReL_ckpt100k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
-
 # MODEL_SIZE="dinov3_huge+_3Bv2"
-# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4/ckpts/model_ckpt19"
-# PREFIX="exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4_ckpt19"
+# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt39" 
+# PREFIX="exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
 # CONFIG=""
-# source ./scripts/config/ase_512x336.sh
+# source ./scripts/config/re10k/512x288.sh
 
 # MODEL_SIZE="dinov2_large_0.95B"
 # CKPT="./ckpts/Pi3/model.safetensors"
 # PREFIX="pi3_official"
 # CONFIG=""
-# source ./scripts/config/dtu/518x392.sh
+# source ./scripts/config/ase_518x336.sh
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 
@@ -39,37 +34,14 @@ PREFIX="Reliev3R-260421-mixSupervise-lr1e-5-All-SVallSynthReal-Pi3-freeze-newcod
 # CONFIG="./ckpts/VGGT-1B/config.json"
 # CKPT="./ckpts/VGGT-1B/model.pt"
 # PREFIX="vggt_official"
-# source ./scripts/config/dtu/518x392.sh
+# source ./scripts/config/ase/518x336.sh
 
-# CONFIG=""
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch023-loss_valid0.2258-metric_valid0.1446.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep23"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch015-loss_valid0.2459-metric_valid0.1737.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep15"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch013-loss_valid0.2557-metric_valid0.1859.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep13"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch011-loss_valid0.2917-metric_valid0.2021.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep11"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch009-loss_valid0.2741-metric_valid0.2231.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep9"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch007-loss_valid0.3137-metric_valid0.2497.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep7"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch005-loss_valid0.3839-metric_valid0.2823.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep5"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch003-loss_valid0.4962-metric_valid0.3424.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep3"
-
-# CKPT="/mnt/nvme1/share/chenyouyu/codespace/vggt_sz/epoch001-loss_valid0.5604-metric_valid0.4377.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_ep1"
-
+MODEL="vggt" # ['vggt','pi3','reliev3r']
+CONFIG=""
+MODEL_SIZE=""
+CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz/epoch036-loss_valid0.1726-metric_valid0.1199.ckpt/checkpoint/mp_rank_00_model_states.pt"
+PREFIX="vggt_sz_ep36"
+source ./scripts/config/re10k/512x288.sh
 
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
@@ -77,7 +49,7 @@ USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 SKIP_POINTMAP=0 # 1 if skip pointmap evaluation
 SKIP_NORMAL=1 # 1 if skip point normal evaluation
 
-NPU_ID="4"
+NPU_ID="0"
 DEVICE="npu:0"
 DTYPE="fp32"
 

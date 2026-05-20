@@ -254,8 +254,11 @@ def main() -> None:
             if pts is None:
                 skip += 1
                 continue
-
-            maskf = seq_dir.parent.parent / "gt" / seq_dir.stem / "gt_depth_masks.npy"
+            
+            if (seq_dir.parent.parent / "gt").exists():
+                maskf = seq_dir.parent.parent / "gt" / seq_dir.stem / "gt_depth_masks.npy"
+            else:
+                maskf = seq_dir.parent.parent.parent / "gt" / seq_dir.parent.stem / seq_dir.stem / "gt_depth_masks.npy"
             mask = np.load(maskf).astype(bool)
 
             ## add image

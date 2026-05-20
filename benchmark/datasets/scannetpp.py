@@ -40,7 +40,8 @@ class ScanNetPPDataset(BaseDataset):
     def __init__(self, config: DatasetConfig):
         super().__init__(config)
         
-        self.sequence_list = sorted([d for d in os.listdir(self.config.data_root) if osp.isdir(osp.join(self.config.data_root, d))])[-self.config.num_seq:]
+        # self.sequence_list = sorted([d for d in os.listdir(self.config.data_root) if osp.isdir(osp.join(self.config.data_root, d))])[-self.config.num_seq:]
+        self.sequence_list = [l.rstrip() for l in open(f"{self.config.data_root}/test.txt").readlines()]
         
         # build lookup dict for frame IDs -> image names
         self.frame_id2name = {}

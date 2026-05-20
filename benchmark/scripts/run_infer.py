@@ -8,6 +8,8 @@ import torch_npu
 from tqdm import tqdm
 from omegaconf import OmegaConf
 from safetensors.torch import load_file
+import subprocess
+import deepspeed
 
 from _bootstrap import BENCH_ROOT 
 
@@ -100,9 +102,24 @@ GT_FILES = [
 def load_model_vggt(ckpt: str):
     ckpt_p = Path(ckpt)
     if ("/" in ckpt and not ckpt_p.exists()) or ckpt_p.is_dir():
-        model = VGGT.from_pretrained(ckpt) 
+        if (ckpt_p / "model.safetensors").exists():
+            model = VGGT.from_pretrained(ckpt)
+        else:
+            model = VGGT()
+            actual_ckpt_p = ckpt_p / "mp_rank_00_model_states.pt"
+            if actual_ckpt_p.exists():
+                checkpoint = torch.load(actual_ckpt_p, map_location="cpu")
+                if 'module' in checkpoint:
+                    state_dict = checkpoint['module']
+                elif 'model' in checkpoint:
+                    state_dict = checkpoint['model']
+                else:
+                    state_dict = checkpoint
+                model.load_state_dict(state_dict)
+            else:
+                raise NotImplementedError
     else:
-        model = VGGT()  
+        model = VGGT()
         obj = torch.load(str(ckpt_p), map_location="cpu")
         state_dict = obj.get("state_dict", obj) if isinstance(obj, dict) else obj
 
@@ -113,8 +130,8 @@ def load_model_vggt(ckpt: str):
             fixed[k] = v
 
         missing, unexpected = model.load_state_dict(fixed, strict=False)
-        print("missing:", missing)
-        print("unexpected:", unexpected)
+        # print("missing:", missing)
+        # print("unexpected:", unexpected)
 
     model.eval()
     num_params = sum(p.numel() for p in model.parameters())
@@ -224,6 +241,33 @@ def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, 
     if "safetensors" in str(ckpt_path):
         state = load_file(ckpt_path)
         model.load_state_dict(state, strict=strict)
+    elif Path(ckpt_path).is_dir():
+        ckpt_dir = Path(ckpt_path)
+        ckpt_path = ckpt_dir / "mp_rank_00_model_states.pt"
+        if ckpt_path.exists():
+            checkpoint = torch.load(ckpt_path, map_location="cpu")
+            if 'module' in checkpoint:
+                state_dict = checkpoint['module']
+            elif 'model' in checkpoint:
+                state_dict = checkpoint['model']
+            else:
+                state_dict = checkpoint
+            model.load_state_dict(state_dict)
+        else:
+            raise NotImplementedError
+            
+        # ckpt_path = Path(ckpt_path)
+        # ckpt_dir, ckpt_tag = ckpt_path.parent, ckpt_path.name
+        # actual_ckpt_path = ckpt_dir / f"{ckpt_tag}.pt"
+        # # state_dict = deepspeed.utils.zero_to_fp32.get_fp32_state_dict_from_zero_checkpoint(ckpt_dir, ckpt_tag)
+        # exitcode = subprocess.call(["python", str(ckpt_dir/"zero_to_fp32.py"), 
+        #     str(ckpt_dir), str(ckpt_dir), 
+        #     "--tag", ckpt_tag])
+        # if exitcode == 0 and actual_ckpt_path.exists():
+        #     state_dict = load_file(actual_ckpt_path)
+        #     model.load_state_dict(state_dict, strict=False)
+        # else:
+        #     raise ImportError
     else:
         ckpt = torch.load(ckpt_path, map_location="cpu")
         state = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
