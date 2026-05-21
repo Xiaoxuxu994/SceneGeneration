@@ -32,6 +32,7 @@ from transformers.modeling_utils import load_sharded_checkpoint
 # -----------------------------------------------
 from models.reliev3r.utils.config_loader import LoadConfig
 from models.reliev3r.model.reliev3r import Reliev3R
+# from models.reliev3r.submodules.pi3.models.pi3 import Pi3 as Reliev3R_Pi3
 
 # -----------------------------------------------
 # dataset related
@@ -189,7 +190,7 @@ def load_model_pi3(
                 state_dict = checkpoint['model']
             else:
                 state_dict = checkpoint
-            model.load_state_dict(state_dict)
+            model.load_state_dict(state_dict, strict=False)
         else:
             print('================ Pi3 Model ================================')
             print(model)
@@ -263,7 +264,7 @@ def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, 
                 state_dict = checkpoint['model']
             else:
                 state_dict = checkpoint
-            model.load_state_dict(state_dict)
+            model.load_state_dict(state_dict, strict=False)
         else:
             raise NotImplementedError
             

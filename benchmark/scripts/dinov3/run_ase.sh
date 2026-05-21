@@ -7,10 +7,10 @@ EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
+source ./scripts/config/ase/512x512.sh
+
 # MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE=""
-# source ./scripts/config/ase/512x512.sh
-# # source ./scripts/config/ase/462x462.sh
 
 # CKPT="experiments/Reliev3R_3B_260512_merged_stage1_dhead_sub15k_ReL/ckpt/100000"
 # CONFIG="experiments/Reliev3R_3B_260512_merged_stage1_dhead_sub15k_ReL/config.json"
@@ -21,14 +21,17 @@ VIS_SCRIPT="scripts/run_vis.py"
 # CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt39" 
 # PREFIX="exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
 # CONFIG=""
-# source ./scripts/config/ase/512x512.sh
+
+MODEL="pi3" # ['vggt','pi3','reliev3r']
+MODEL_SIZE="dinov3_huge+_3Bv2"
+CKPT="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/ckpt/5000"
+CONFIG="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/config.json"
+PREFIX="Reliev3R-3B_260519_subPi3-3B_v6ckpt63_ckpt5000"
 
 # MODEL_SIZE="dinov2_large_0.95B"
 # CKPT="./ckpts/Pi3/model.safetensors"
 # PREFIX="pi3_official"
 # CONFIG=""
-# # source ./scripts/config/ase_518x336.sh
-# source ./scripts/config/ase/518x518.sh
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 
@@ -36,14 +39,12 @@ VIS_SCRIPT="scripts/run_vis.py"
 # CONFIG="./ckpts/VGGT-1B/config.json"
 # CKPT="./ckpts/VGGT-1B/model.pt"
 # PREFIX="vggt_official"
-# source ./scripts/config/ase/518x518.sh
 
-MODEL="vggt" # ['vggt','pi3','reliev3r']
-CONFIG=""
-MODEL_SIZE=""
-CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz/epoch036-loss_valid0.1726-metric_valid0.1199.ckpt/checkpoint/mp_rank_00_model_states.pt"
-PREFIX="vggt_sz_ep36"
-source ./scripts/config/ase/462x462.sh
+# MODEL="vggt" # ['vggt','pi3','reliev3r']
+# CONFIG=""
+# MODEL_SIZE=""
+# CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz/epoch036-loss_valid0.1726-metric_valid0.1199.ckpt/checkpoint/mp_rank_00_model_states.pt"
+# PREFIX="vggt_sz_ep36"
 
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
@@ -51,7 +52,7 @@ USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 SKIP_POINTMAP=0 # 1 if skip pointmap evaluation
 SKIP_NORMAL=1 # 1 if skip point normal evaluation
 
-NPU_ID="7"
+NPU_ID="1"
 DEVICE="npu:0"
 DTYPE="fp32"
 

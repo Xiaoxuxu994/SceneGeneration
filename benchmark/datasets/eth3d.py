@@ -25,15 +25,15 @@ class ETH3DDataset(BaseDataset):
     """
     ETH3D:
       ETH3D/multi_view_training_dslr/xxx/
-        dslr_calibration_undistorted/
+        dslr_calibration_undistorted_600x400/
           cameras.txt
           images.txt
           points3D.txt
         gt_depth/
-          undistorted/
+          undistorted_600x400/
             DSC_xxxx.JPG
         images/
-          dslr_images_undistorted/
+          dslr_images_undistorted_600x400/
             DSC_xxxx.JPG
     """
     
@@ -46,7 +46,7 @@ class ETH3DDataset(BaseDataset):
         self.frame_id2name = {}
         for seq in self.sequence_list:
             seq_path = osp.join(self.config.data_root, seq)
-            rgbs = self._list_suffix(seq_path, prefix="images/dslr_images_undistorted", suffix=".JPG")
+            rgbs = self._list_suffix(seq_path, prefix="images/dslr_images_undistorted_600x400", suffix=".JPG")
             names = [s.split('/')[-1].split('.')[0] for s in rgbs]
             self.frame_id2name[seq] = {id_: name for id_, name in enumerate(names)}
 
@@ -59,8 +59,8 @@ class ETH3DDataset(BaseDataset):
     def count_seq_len(self, seq: str) -> int:
         seq_path = osp.join(self.config.data_root, seq)
 
-        rgbs = self._list_suffix(seq_path, prefix="images/dslr_images_undistorted", suffix=".JPG")
-        depths = self._list_suffix(seq_path, prefix="gt_depth/undistorted", suffix=".png")
+        rgbs = self._list_suffix(seq_path, prefix="images/dslr_images_undistorted_600x400", suffix=".JPG")
+        depths = self._list_suffix(seq_path, prefix="gt_depth/undistorted_600x400", suffix=".png")
 
         if not (len(rgbs) == len(depths)):
             print(f"{seq} mismatched: rgb={len(rgbs)} depth={len(depths)}")
@@ -68,9 +68,9 @@ class ETH3DDataset(BaseDataset):
 
     def make_paths(self, seq: str, frame_ids: List[int]) -> Tuple[List[str], List[str], List[str], str, str]:
         seq_dir = osp.join(self.config.data_root, seq)
-        names = [f"dslr_images_undistorted/{self.frame_id2name[seq][i]}.JPG" for i in frame_ids]
-        images = [osp.join(seq_dir, "images/dslr_images_undistorted" ,f"{self.frame_id2name[seq][i]}.JPG") for i in frame_ids]
-        depths = [osp.join(seq_dir, "gt_depth/undistorted", f"{self.frame_id2name[seq][i]}.png") for i in frame_ids]
+        names = [f"{self.frame_id2name[seq][i]}" for i in frame_ids]
+        images = [osp.join(seq_dir, "images/dslr_images_undistorted_600x400" ,f"{self.frame_id2name[seq][i]}.JPG") for i in frame_ids]
+        depths = [osp.join(seq_dir, "gt_depth/undistorted_600x400", f"{self.frame_id2name[seq][i]}.png") for i in frame_ids]
         metas = osp.join(seq_dir, "dslr_calibration_undistorted", "images.txt")
         cameras = osp.join(seq_dir, "dslr_calibration_undistorted", "cameras.txt")
         return names, images, depths, metas, cameras
@@ -170,6 +170,7 @@ class ETH3DDataset(BaseDataset):
                 if i > 3 and i % 2 == 0 and len(line) > 0:
                     _, qw, qx, qy, qz, tx, ty, tz, camera_id, name = line.rstrip().split(' ')
                     # e.g. name = "dslr_images_undistorted/DSC_0323.JPG"
+                    name = name.split('/')[1].split('.')[0]
                     view_meta[name] = {
                         "trans": [
                             float(qw), 

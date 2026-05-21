@@ -7,20 +7,26 @@ EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
+source ./scripts/config/nrgbd/512x384.sh
+
 # MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE=""
-# source ./scripts/config/nrgbd/512x384.sh
 
 # CKPT="experiments/Reliev3R_3B_260512_merged_stage1_dhead_sub15k_ReL/ckpt/100000"
 # CONFIG="experiments/Reliev3R_3B_260512_merged_stage1_dhead_sub15k_ReL/config.json"
 # PREFIX="Reliev3R_3B_260512_merged_stage1_dhead_sub15k_ReL_ckpt100k"
 
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov3_huge+_3Bv2"
+# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt39" 
+# PREFIX="exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
+# CONFIG=""
+
 MODEL="pi3" # ['vggt','pi3','reliev3r']
 MODEL_SIZE="dinov3_huge+_3Bv2"
-CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt39" 
-PREFIX="exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
-CONFIG=""
-source ./scripts/config/nrgbd/512x384.sh
+CKPT="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/ckpt/5000"
+CONFIG="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/config.json"
+PREFIX="Reliev3R-3B_260519_subPi3-3B_v6ckpt63_ckpt5000"
 
 # MODEL_SIZE="dinov2_large_0.95B"
 # CKPT="./ckpts/Pi3/model.safetensors"
@@ -41,7 +47,6 @@ source ./scripts/config/nrgbd/512x384.sh
 # MODEL_SIZE=""
 # CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz/epoch036-loss_valid0.1726-metric_valid0.1199.ckpt/checkpoint/mp_rank_00_model_states.pt"
 # PREFIX="vggt_sz_ep36"
-# source ./scripts/config/nrgbd/512x384.sh
 
 
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
