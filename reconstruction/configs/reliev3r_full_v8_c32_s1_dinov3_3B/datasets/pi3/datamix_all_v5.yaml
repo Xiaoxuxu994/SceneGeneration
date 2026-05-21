@@ -217,7 +217,7 @@ train_dataset:
         _target_: dataset.pi3_dataset.scannet_dataset.ScanNetDataset
         # data_root: /mnt/nvme3/z00533370/dataset/sample_data/ScanNet
         data_root: /efs-m3ga/z00533370/dataset/scannet_v2_decode/
-        split_ratio: 1.0
+        split_ratio: 0.99
         max_distance: 8
         z_far: 40
         frame_num: 8
@@ -399,6 +399,7 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
+    
     # DL3DV:
     #     _target_: datasets.dl3dv_dataset.DL3DVDataset
     #     data_root: /efs-mi-east4-2/datasets/DL3DV_WAI/
@@ -419,12 +420,13 @@ train_dataloader:
 
 test_dataset:
     weights:
-        ASE:           2000
+        # ASE:           2000
         Kubric:        2000
         Habitat:       2000
 
         CO3D:          2000
         Taskonomy:     2000
+        ScanNet:       2000
 
     Kubric:
         _target_: dataset.pi3_dataset.kubric_dataset.KubricDataset
@@ -519,6 +521,22 @@ test_dataset:
             _partial_: true
             _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
+
+    ScanNet:
+        _target_: dataset.pi3_dataset.scannet_dataset.ScanNetDataset
+        data_root: /efs-m3ga/z00533370/dataset/scannet_v2_decode/
+        split_ratio: 0.99
+        max_distance: 8
+        z_far: 40
+        resolution:
+          - [512, 336]
+        #   - [518, 308]
+        frame_num: 8
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
+        mode: 'test'
+
 
 test_dataloader:
     drop_last: False

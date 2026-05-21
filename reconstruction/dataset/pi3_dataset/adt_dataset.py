@@ -22,7 +22,6 @@ if PROJECT_ROOT not in sys.path:
 
 from .base.base_dataset import BaseDataset, CACHE_DIR
 from .base.transforms import *
-from .sample_utils.common import rdepth_to_zdepth
 
 
 class ADTWAIDataset(BaseDataset):
@@ -33,7 +32,7 @@ class ADTWAIDataset(BaseDataset):
         max_distance=24,
         split_ratio=0.9,
         seq_num=-1,
-        min_num_images=2,
+        min_num_images=2, 
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -52,10 +51,10 @@ class ADTWAIDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        # 1) load/save cache
         os.makedirs(CACHE_DIR, exist_ok=True)
         root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(CACHE_DIR, f"{self.dataset_label}_{root_hash}_cache.pkl")
+
         if not os.path.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
@@ -71,7 +70,6 @@ class ADTWAIDataset(BaseDataset):
                 self.cache_loaded = True
                 print(f"[Dataset] Cache is loaded.")
 
-        # 2) train/val split
         self.sequences = self._split_sequences(self.all_sequences)
 
         if seq_num > 0:

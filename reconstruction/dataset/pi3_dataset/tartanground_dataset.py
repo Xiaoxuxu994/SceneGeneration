@@ -50,10 +50,10 @@ class TartanGroundDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        # 1) load/save cache
         os.makedirs(CACHE_DIR, exist_ok=True)
         root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(CACHE_DIR, f"{self.dataset_label}_{root_hash}_cache.pkl")
+
         if not os.path.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()

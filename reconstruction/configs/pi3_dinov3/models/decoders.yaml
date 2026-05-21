@@ -1,3 +1,4 @@
 camera_decoder:
   enabled: true
   normalize_trans: false
+  sigmoid_trans: false

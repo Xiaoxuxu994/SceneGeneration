@@ -29,7 +29,7 @@ from utils.loss_utils import compute_render_metrics
 from dataset.dataloaders import create_mixed_dataloader, load_data_to_device
 from dataset import Reliev3R_MixDataLoader
 
-from model.reliev3r import Reliev3R
+from model import Reliev3R, Reliev3R_Pi3
 
 
 ENABLE_TIME_PROFILING = False
@@ -157,7 +157,10 @@ def run(rank, cfg):
     dataloader, dataloader_eval = create_dataloaders(rank, global_rank, cfg)
     
     """Load models. """
-    model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
+    if cfg.get("train_pi3", False):
+        model = Reliev3R_Pi3(cfg.model).to(device=DEVICE_NAME)
+    else:
+        model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
     
     """Create loss functions. """
     loss_func = make_loss_func(cfg.loss)

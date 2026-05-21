@@ -28,13 +28,15 @@ from utils import make_loss_func
 from utils.common import normalize_trans, calc_extr_inv, localpoint2global
 from dataset import Reliev3R_MixDataLoader
 
-from model import Reliev3R
+from model import Reliev3R, Reliev3R_Pi3
 import numpy as np
 import deepspeed
 import random
 
 NPU_PROFILING = False
 ENABLE_TIME_PROFILING = True
+TRAIN_PCD_VISUALIZE_THRE = 0.5
+EVAL_PCD_VISUALIZE_THRE  = 0.5
 
 def clean_up():
     dist.destroy_process_group()
@@ -159,7 +161,10 @@ def run(rank, cfg):
     dataloader, dataloader_eval = create_dataloaders(rank, global_rank, cfg)
     
     """Load models. """
-    model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
+    if cfg.get("train_pi3", False):
+        model = Reliev3R_Pi3(cfg.model).to(device=DEVICE_NAME)
+    else:
+        model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
     
     """Create loss functions. """
     loss_func = make_loss_func(cfg.loss)
@@ -186,9 +191,10 @@ def run(rank, cfg):
             tag=cfg.get("ckpt_id"),
             load_module_only=True, 
             load_optimizer_states=not cfg.no_load_optim,
-            load_lr_scheduler_states=not cfg.no_load_optim
+            load_lr_scheduler_states=not cfg.no_load_optim, 
+            load_module_strict=False, 
         )
-        step = client_state["step"]
+        step = client_state.get("step", 0)
         print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
 
     step_begins = step
@@ -233,9 +239,6 @@ def run(rank, cfg):
             schedule=torch_npu.profiler.schedule(wait=20, warmup=5, active=1, repeat=0, skip_first=0),
             experimental_config=experimental_config,
             on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(cfg.output_dir))
-        
-    TRAIN_PCD_VISUALIZE_THRE = 0.5
-    EVAL_PCD_VISUALIZE_THRE  = 0.5
     
     if not cfg.eval:
         """Perform training. """
@@ -431,11 +434,12 @@ if __name__ == '__main__':
     parser.add_argument("--ckpt_interval", type=int, default=None, help="Checkpoint save interval, overwriting the configuration file.")
     parser.add_argument("--verbose_interval", type=int, default=None, help="Prediction verbose interval, overwriting the configuration file.")
     parser.add_argument("--ckpt_path", type=str, default=None, help="Path to checkpoint.")
-    parser.add_argument("--ckpt_id", type=int, default=None, help="Id of checkpoint.")
+    parser.add_argument("--ckpt_id", type=str, default=None, help="Id of checkpoint.")
     parser.add_argument("--no_load_optim", action="store_true", help="Set to disable loading optimizer when ckpt is given.")
     parser.add_argument("--learning_rate", type=float, default=None, help="Maximum learning rate.")
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
     parser.add_argument("--freeze_backbone", action="store_true", help="default is freezing backbone")
+    parser.add_argument("--lr_scheduler", type=str, default=None, help="Set scheduler type if set.")
     parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
     
@@ -458,11 +462,15 @@ if __name__ == '__main__':
         cfg.training.learning_rate = args.learning_rate
     if args.ckpt_path is not None:
         cfg.ckpt_path = args.ckpt_path
+    if args.ckpt_id is not None:
+        cfg.ckpt_id = int(args.ckpt_id) if args.ckpt_id != "pytorch_model" else args.ckpt_id
     if args.deepspeed is not None:
         cfg.deepspeed = args.deepspeed
     if args.deepspeed_config is not None:
         cfg.deepspeed_config = args.deepspeed_config
     cfg.freeze_backbone = args.freeze_backbone        
+    if args.lr_scheduler is not None:
+        cfg.training.lr_scheduler = args.lr_scheduler
     cfg.eval = args.eval
     cfg.no_load_optim = args.no_load_optim
     

@@ -1,4 +1,5 @@
 import numpy as np
+import torch.distributed as dist
 
 from .reliev3r_dataset.dataloaders import create_mixed_dataloader as weaksup_dataloader, load_data_to_device
 from .pi3_dataset import create_dataloader as fullsup_dataloader

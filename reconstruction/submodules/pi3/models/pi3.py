@@ -148,6 +148,12 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 mlp_ratio = 4
                 dec_depth = 36
                 head_depth = 5
+            elif model_size == "3.00Bv2":
+                dec_embed_dim=2048
+                dec_num_heads=32
+                mlp_ratio=4
+                dec_depth=36
+                head_depth=5
             elif model_size == '5.17B':
                 dec_embed_dim = 3072
                 dec_num_heads = 16
@@ -189,6 +195,8 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         self.patch_start_idx = num_register_tokens
         self.register_token = nn.Parameter(torch.randn(1, 1, num_register_tokens, self.dec_embed_dim))
         nn.init.normal_(self.register_token, std=1e-6)
+        pos_special = torch.zeros(1, self.patch_start_idx, 2, dtype=torch.int64)
+        self.register_buffer('pos_special', pos_special)
 
         assert not (cfg.point_head.enabled and cfg.depth_head.enabled), "Only one of point head and depth head can be enabled, not both."
         assert cfg.point_head.enabled or cfg.depth_head.enabled, "Must enabled one of point head and depth head."
@@ -293,7 +301,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             # do not use position embedding for special tokens (camera and register tokens)
             # so set pos to 0 for the special tokens
             pos = pos + 1
-            pos_special = torch.zeros(B * N, self.patch_start_idx, 2, device=hidden.device, dtype=pos.dtype)
+            pos_special = self.pos_special.repeat(B * N, 1, 1)
             pos = torch.cat([pos_special, pos], dim=1)
        
         for i in range(len(self.decoder)):
@@ -367,9 +375,8 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             if hasattr(self, "point_head"):
                 # xy_hidden = xy_hidden.float()
                 # xy = self.xy_head([xy_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
-                # z = self.point_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
-                ret = self.point_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
-                xy, z = ret.split([2, 1], dim=-1)
+                xyz = self.point_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
+                xy, z = xyz.split([2, 1], dim=-1)
                 z = torch.exp(z)
                 xy = xy * z
             else:

@@ -1,5 +1,6 @@
 # adapted from https://github.com/YufeiWang777/LRRU/blob/main/dataloaders/NNfill.py
 
+import os
 import cv2
 import numpy as np
 from scipy.ndimage.measurements import label
@@ -301,6 +302,7 @@ def transform_data_to_reliev3r_format(views, grid_size=100):
     batch_size = views[0]["img"].shape[0]
     for b in range(batch_size):
         data = dict()
+        match_eps = views[0]['match_eps'][b]
         for view in views:
             ### Mapping dictinary names
             for k, v in name_mapping.items():
@@ -325,7 +327,7 @@ def transform_data_to_reliev3r_format(views, grid_size=100):
         tracks0, tracks1, visibs = reliev3r_data_cm.exhaustive_geo2match(
             data["input_depths"], data["input_depth_masks"], 
             cm.calc_extr_inv(data["input_extrs"]), data["input_intrs"], 
-            eps=1e-2, samples_to_keep=10000, grid_size=grid_size)
+            eps=match_eps, samples_to_keep=10000, grid_size=grid_size)
         data.update(dict(input_tracks_view_id0=torch.from_numpy(matched_view_i), # v-1
                         input_tracks_view_id1=torch.from_numpy(matched_view_j), # v-1
                         input_tracks0=torch.stack([tracks0[reliev3r_data_cm.get_tracking_idx_by_pair(i, j, len(views), True)] \
@@ -338,7 +340,8 @@ def transform_data_to_reliev3r_format(views, grid_size=100):
                                                     for i, j in zip(matched_view_i, matched_view_j)]), # v-1 k
                         ))
         ### Transfer z-depth to r-depth
-        # data.update(dict(input_depths=reliev3r_data_cm.zdepth_to_rdepth(data["input_depths"], data["input_intrs"])))
+        if os.getenv("pred_z_depth", "False") != "True":
+            data.update(dict(input_depths=reliev3r_data_cm.zdepth_to_rdepth(data["input_depths"], data["input_intrs"])))
         ### Normalize pointmaps, cameras, depths simultaneously
         data["input_points"], data["input_extrs"], data["input_depths"] = \
             cm.trans_geo_to_first_frame_and_norm(data["input_points"], data["input_extrs"], data["input_depths"])
