@@ -83,6 +83,7 @@ train_ds.py \
 
 ## Training Options **(Important)**
 * Environment variable `pred_z_depth`: If you want to train Pi3, set `pred_z_depth` as **string** `'True'`, otherwise you can leave this empty. 
+* Switch between Reliev3R and Pi3: Add `train_pi3=true` in `main.yaml` to train Pi3, otherwise the codebase runs Reliev3R.
 
 ## Reliev3R Configuration
 Currently we have 6 different experiment setups, each collected under a directory in `configs`. 
