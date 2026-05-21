@@ -222,7 +222,7 @@ class ETH3DDataset(BaseDataset):
         return w2c
     
     def _load_K(self, image_names: List[str], view_metas: dict, cameras: dict) -> torch.Tensor:
-        pix_K = []
+        norm_K = []
         for image_name in image_names:
             camera_id = view_metas[image_name]["camera_id"]
             fx, fy, cx, cy = cameras[camera_id]["params"]
@@ -233,8 +233,8 @@ class ETH3DDataset(BaseDataset):
                 [0, 0, 1]
             ]).astype(np.float32)
             cur_K = torch.from_numpy(cur_K)
-            pix_K.append(cur_K)
-        pix_K = torch.stack(pix_K)
+            norm_K.append(cur_K)
+        norm_K = torch.stack(norm_K)
         pix_K = self._denormalize_K(norm_K, self.config.rgb_origin_W, self.config.rgb_origin_H)
         
         # normalize again

@@ -180,11 +180,22 @@ def load_model_pi3(
     )
     
     if ckpt.is_dir():
-        print('================ Pi3 Model ================================')
-        print(model)
-        load_result = load_sharded_checkpoint(model, ckpt, strict=False)
-        print(load_result)
-        print('===========================================================')
+        ckpt_path = ckpt / "mp_rank_00_model_states.pt"
+        if ckpt_path.exists():
+            checkpoint = torch.load(ckpt_path, map_location="cpu")
+            if 'module' in checkpoint:
+                state_dict = checkpoint['module']
+            elif 'model' in checkpoint:
+                state_dict = checkpoint['model']
+            else:
+                state_dict = checkpoint
+            model.load_state_dict(state_dict)
+        else:
+            print('================ Pi3 Model ================================')
+            print(model)
+            load_result = load_sharded_checkpoint(model, ckpt, strict=False)
+            print(load_result)
+            print('===========================================================')
     else:
         if "safetensors" in str(ckpt):
             state_dict = load_file(ckpt)
