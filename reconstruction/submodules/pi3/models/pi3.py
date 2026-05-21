@@ -143,11 +143,12 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 dec_depth = 48
                 head_depth = 6
             elif model_size == '3.00B':
-                # dec_embed_dim = 2048
-                # dec_num_heads = 16
-                # mlp_ratio = 4
-                # dec_depth = 36
-                # head_depth = 5
+                dec_embed_dim = 2048
+                dec_num_heads = 16
+                mlp_ratio = 4
+                dec_depth = 36
+                head_depth = 5
+            elif model_size == "3.00Bv2":
                 dec_embed_dim=2048
                 dec_num_heads=32
                 mlp_ratio=4
