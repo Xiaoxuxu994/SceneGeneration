@@ -28,6 +28,7 @@ class BaseDataset(EasyDataset):
         random_sample_thres=0.1,
         shuffle=True,
         use_sparse_depth=False,
+        match_eps=0.01,
     ):
         super().__init__()
         self.frame_num = frame_num
@@ -52,6 +53,8 @@ class BaseDataset(EasyDataset):
         self.max_refetch = max_refetch
 
         self.random_sample_thres = random_sample_thres  # default not to do that
+        
+        self.match_eps = match_eps
 
     def convert_attributes(self):
         """
@@ -221,6 +224,7 @@ class BaseDataset(EasyDataset):
                     if 'normal' not in view:
                         view['normal'] = None
 
+                    view['match_eps'] = self.match_eps
                     # # check all datatypes
                     # for key, val in view.items():
                     #     res, err_msg = is_good_type(key, val)
