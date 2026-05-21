@@ -161,7 +161,7 @@ def samp_points_by_pixel(points: torch.Tensor, pixels: torch.Tensor, mode="bilin
     pixels[..., 0] = pixels[..., 0] / W
     pixels[..., 1] = pixels[..., 1] / H
     pixels = pixels * 2 - 1
-    samped_points = torch.nn.functional.grid_sample(points, pixels, mode=mode, padding_mode=padding_mode) # b c 1 k
+    samped_points = torch.nn.functional.grid_sample(points, pixels, mode=mode, padding_mode=padding_mode, align_corners=False) # b c 1 k
     samped_points = samped_points.squeeze(dim=2).permute(0, 2, 1) # b k c
     return samped_points
 

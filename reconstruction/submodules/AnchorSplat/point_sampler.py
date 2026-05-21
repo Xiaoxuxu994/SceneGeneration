@@ -60,12 +60,12 @@ def aggregate_feature(anchors: Tensor, feature: Tensor, depth: Tensor, intrinsic
     coords = coords[..., :2] / (depth_proj := coords[..., 2:]).clamp(1e-3)
     coords_samp = (2 * coords - 1).float().view(-1, 1, coords.shape[2], 2)
     depth_samp = depth.flatten(0, 1)[:, None].float()
-    depth_samp = F.grid_sample(depth_samp, coords_samp, 'nearest').to(depth.dtype)
+    depth_samp = F.grid_sample(depth_samp, coords_samp, 'nearest', align_corners=False).to(depth.dtype)
     depth_diff = depth_samp.view_as(depth_proj) - depth_proj
     valid = depth_proj.gt(0) & depth_diff.abs().lt(depth_tol)
     valid = ((coords.ge(0) & coords.le(1)).all(3, True) & valid).to(feature.dtype)
     feature_samp = feature.flatten(0, 1).movedim(3, 1).float()
-    feature = F.grid_sample(feature_samp, coords_samp).to(feature.dtype)
+    feature = F.grid_sample(feature_samp, coords_samp, align_corners=False).to(feature.dtype)
     feature = feature.permute(2, 0, 3, 1).reshape(*valid.shape[:3], -1)
     feature = (feature * valid).sum(1) / valid.sum(1).clamp(1)
     # TODO: KNN feature interpolate

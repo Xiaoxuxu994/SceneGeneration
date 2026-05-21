@@ -385,13 +385,18 @@ def run(rank, cfg):
             
             loss_dict["total"].backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            no_nan_inf = all(p.grad is None or p.grad.isfinite().all().item()
-                             for p in model.parameters())
+            params_with_grad = [p for p in model.parameters() if p.grad is not None]
+            no_nan_inf = torch.stack([p.grad.isfinite().all() for p in params_with_grad])
+            no_nan_inf = no_nan_inf.all().item()
+            # no_nan_inf = all(p.grad is None or p.grad.isfinite().all().item()
+            #                  for p in model.parameters())
             if no_nan_inf: optimizer.step()
-            else:
+            elif global_rank == 0:
                 print('======================================')
                 print('NAN OR INF GRADIENTS DETECTED! SKIPPING STEP', step)
-                print('LOSS DICT:', loss_dict)
+                log_dict = {k: v.item() for k, v in loss_dict.items()
+                            if isinstance(v, torch.Tensor) and v.ndim == 0}
+                print('LOSS:', log_dict)
                 print('======================================')
             lr_scheduler.step()
             optimizer.zero_grad()
@@ -541,6 +546,7 @@ if __name__ == '__main__':
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
     parser.add_argument("--freeze_backbone", action="store_true", help="default is not freezing backbone")
     parser.add_argument("--backbone_lr_ratio", type=float, default=0., help="finetune backbone with lower training rate")
+    parser.add_argument("--debug_nan", action="store_true", help="Show where nan happens")
     args = parser.parse_args()
     
     cfg = LoadConfig(args.config)
@@ -566,5 +572,6 @@ if __name__ == '__main__':
     cfg.backbone_lr_ratio = args.backbone_lr_ratio
     cfg.eval = args.eval
     cfg.no_load_optim = args.no_load_optim
+    if args.debug_nan: torch.autograd.set_detect_anomaly(True)
     
     main(cfg)

@@ -433,14 +433,17 @@ def run(rank, cfg):
                 backward_start.record()
             
             engine.backward(loss_dict["total"])
-            no_nan_inf = all(p.grad is None or p.grad.isfinite().all().item()
-                             for p in engine.module.parameters())
+            no_nan_inf = True
+            # no_nan_inf = all(p.grad is None or p.grad.isfinite().all().item()
+            #                  for p in engine.module.parameters())
             if no_nan_inf: engine.step()
             else:
                 engine.zero_grad()
+                log_dict = {k: v.item() for k, v in loss_dict.items()
+                            if isinstance(v, torch.Tensor) and v.ndim == 0}
                 print('======================================')
                 print('NAN OR INF GRADIENTS DETECTED! SKIPPING STEP', step)
-                print('LOSS DICT:', loss_dict)
+                print('LOSS:', log_dict)
                 print('======================================')
 
             if npu_profiling:
@@ -594,6 +597,7 @@ if __name__ == '__main__':
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
     parser.add_argument("--freeze_backbone", action="store_true", help="default is NOT freezing backbone")
     parser.add_argument("--backbone_lr_ratio", type=float, default=0., help="finetune backbone with lower training rate")
+    parser.add_argument("--debug_nan", action="store_true", help="Show where nan happens")
     parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
     
@@ -624,5 +628,6 @@ if __name__ == '__main__':
     cfg.backbone_lr_ratio = args.backbone_lr_ratio
     cfg.eval = args.eval
     cfg.no_load_optim = args.no_load_optim
+    if args.debug_nan: torch.autograd.set_detect_anomaly(True)
     
     main(cfg)
