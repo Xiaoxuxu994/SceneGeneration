@@ -11,10 +11,15 @@ source ./scripts/config/re10k/512x288.sh
 
 # MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE=""
+# CKPT="experiments/Reliev3R-3B_260522_subPi3-3B_v6ckpt79/ckpt/15000"
+# CONFIG="experiments/Reliev3R-3B_260522_subPi3-3B_v6ckpt79/config.json"
+# PREFIX="Reliev3R-3B_260522_subPi3-3B_v6ckpt79_ckpt15000"
 
-# CKPT="experiments/Reliev3R_3B_260512_merged_stage1_dhead_sub15k_ReL/ckpt/100000"
-# CONFIG="experiments/Reliev3R_3B_260512_merged_stage1_dhead_sub15k_ReL/config.json"
-# PREFIX="Reliev3R_3B_260512_merged_stage1_dhead_sub15k_ReL_ckpt100k"
+MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+MODEL_SIZE=""
+CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt79"
+CONFIG="experiments/Reliev3R-3B_260522_subPi3-3B_v6ckpt79/config.json"
+PREFIX="Reliev3R-3B_260522_subPi3-3B_v6ckpt79_ckpt0"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE="dinov3_huge+_3Bv2"
@@ -22,11 +27,11 @@ source ./scripts/config/re10k/512x288.sh
 # PREFIX="exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
 # CONFIG=""
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov3_huge+_3Bv2"
-CKPT="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/ckpt/5000"
-CONFIG="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/config.json"
-PREFIX="Reliev3R-3B_260519_subPi3-3B_v6ckpt63_ckpt5000"
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov3_huge+_3Bv2"
+# CKPT="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/ckpt/5000"
+# CONFIG="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/config.json"
+# PREFIX="Reliev3R-3B_260519_subPi3-3B_v6ckpt63_ckpt5000"
 
 # MODEL_SIZE="dinov2_large_0.95B"
 # CKPT="./ckpts/Pi3/model.safetensors"

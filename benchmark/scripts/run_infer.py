@@ -31,7 +31,7 @@ from transformers.modeling_utils import load_sharded_checkpoint
 # Reliev3R imports 
 # -----------------------------------------------
 from models.reliev3r.utils.config_loader import LoadConfig
-from models.reliev3r.model.reliev3r import Reliev3R
+from models.reliev3r.model.reliev3r import Reliev3R, Reliev3R_Pi3
 # from models.reliev3r.submodules.pi3.models.pi3 import Pi3 as Reliev3R_Pi3
 
 # -----------------------------------------------
@@ -248,7 +248,12 @@ def run_pi3_infer(model, images_cpu, depth_masks, device: torch.device, autocast
 def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, strict: bool = True):
     cfg = LoadConfig(config_path)
     cfg.eval = True
-    model = Reliev3R(cfg.model).to(device).eval()
+    
+    if cfg.get("train_pi3", False):
+        os.environ['pred_z_depth'] = "True"
+        model = Reliev3R_Pi3(cfg.model).to(device).eval()
+    else:
+        model = Reliev3R(cfg.model).to(device).eval()
 
     if "safetensors" in str(ckpt_path):
         state = load_file(ckpt_path)
@@ -264,9 +269,15 @@ def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, 
                 state_dict = checkpoint['model']
             else:
                 state_dict = checkpoint
-            model.load_state_dict(state_dict, strict=False)
+            # model.load_state_dict(state_dict, strict=False)
+            model.load_state_dict(state_dict)
         else:
-            raise NotImplementedError
+            # print('================ Pi3 Model ================================')
+            # print(model)
+            ckpt_path = ckpt_dir
+            load_result = load_sharded_checkpoint(model, ckpt_path, strict=False)
+            print(load_result)
+            print('===========================================================')
             
         # ckpt_path = Path(ckpt_path)
         # ckpt_dir, ckpt_tag = ckpt_path.parent, ckpt_path.name

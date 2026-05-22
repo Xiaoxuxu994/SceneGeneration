@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
-from submodules.pi3.models.pi3 import Pi3
+from ..submodules.pi3.models.pi3 import Pi3
 from utils.common import normalize_trans, pad_one, calc_extr_inv
 
 
