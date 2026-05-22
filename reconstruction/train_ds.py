@@ -27,6 +27,7 @@ from utils.log_utils import export_pcds_and_cam_as_ply
 from utils import make_loss_func
 from utils.common import normalize_trans, calc_extr_inv, localpoint2global
 from dataset import Reliev3R_MixDataLoader, load_data_to_device
+from safetensors.torch import load_file
 
 from model import Reliev3R, Reliev3R_Pi3
 import numpy as np
@@ -158,7 +159,7 @@ def run(rank, cfg):
     ds_config["flops_profiler"]["output_file"] = f"{cfg.output_dir}/profile_{global_rank}.log"
   
     """Create data loaders. """
-    # dataloader, dataloader_eval = create_dataloaders(rank, global_rank, cfg)
+    dataloader, dataloader_eval = create_dataloaders(rank, global_rank, cfg)
     
     """Load models. """
     if cfg.get("train_pi3", False):
@@ -186,16 +187,22 @@ def run(rank, cfg):
     )
 
     if cfg.get("ckpt_path") is not None:
-        _, client_state = engine.load_checkpoint(
-            load_dir=cfg.get("ckpt_path"), 
-            tag=cfg.get("ckpt_id"),
-            load_module_only=True, 
-            load_optimizer_states=not cfg.no_load_optim,
-            load_lr_scheduler_states=not cfg.no_load_optim, 
-            load_module_strict=False, 
-        )
-        step = client_state.get("step", 0) if client_state is not None else 0
-        print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
+        filename = os.path.join(cfg.get("ckpt_path"), "model.safetensors")
+        if os.path.isfile(filename):
+            engine.module.load_state_dict(load_file(filename))
+            print(f"[ INFO ] Loaded checkpoint from {filename}")
+            step = 0
+        else:
+            _, client_state = engine.load_checkpoint(
+                load_dir=cfg.get("ckpt_path"), 
+                tag=cfg.get("ckpt_id"),
+                load_module_only=True, 
+                load_optimizer_states=not cfg.no_load_optim,
+                load_lr_scheduler_states=not cfg.no_load_optim, 
+                load_module_strict=True, 
+            )
+            step = client_state.get("step", 0) if client_state is not None else 0
+            print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
 
     step_begins = step
     # print(f'[DEBUG] step_begin_stage1={cfg.training.dataset_schedule.stage1.step_begin}, ',
@@ -247,8 +254,8 @@ def run(rank, cfg):
             """Save configuration file for reproduction. """
             with open(os.path.join(cfg.output_dir, "config.json"), "w+") as f:
                 json.dump(cfg, f, indent='\t')
-            engine.save_checkpoint(os.path.join(cfg.output_dir, "ckpt"), step, client_state = {'step': step})
-            exit()
+            # engine.save_checkpoint(os.path.join(cfg.output_dir, "ckpt"), step, client_state = {'step': step})
+            # exit()
 
         if npu_profiling:
             prof.start()

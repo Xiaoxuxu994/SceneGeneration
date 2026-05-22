@@ -195,8 +195,6 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         self.patch_start_idx = num_register_tokens
         self.register_token = nn.Parameter(torch.randn(1, 1, num_register_tokens, self.dec_embed_dim))
         nn.init.normal_(self.register_token, std=1e-6)
-        pos_special = torch.zeros(1, self.patch_start_idx, 2, dtype=torch.int64)
-        self.register_buffer('pos_special', pos_special)
 
         assert not (cfg.point_head.enabled and cfg.depth_head.enabled), "Only one of point head and depth head can be enabled, not both."
         assert cfg.point_head.enabled or cfg.depth_head.enabled, "Must enabled one of point head and depth head."
@@ -301,7 +299,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             # do not use position embedding for special tokens (camera and register tokens)
             # so set pos to 0 for the special tokens
             pos = pos + 1
-            pos_special = self.pos_special.repeat(B * N, 1, 1)
+            pos_special = pos.new_zeros(B * N, self.patch_start_idx, 2)
             pos = torch.cat([pos_special, pos], dim=1)
        
         for i in range(len(self.decoder)):

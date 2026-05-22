@@ -7,6 +7,7 @@ export TASK_QUEUE_ENABLE=2
 export USE_CHECKPOINT=True
 export ASCEND_RT_VISIBLE_DEVICES=1
 export ASCEND_LAUNCH_BLOCKING=1
+export pred_z_depth=True
 torchrun \
     --standalone \
     --nproc_per_node npu \
