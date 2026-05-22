@@ -81,19 +81,22 @@ def l1_loss(x: torch.Tensor, y: torch.Tensor, revert_input=False) -> torch.Tenso
     return (x - y).abs().mean()
 
 
-def calc_pixel_grad_map(x: torch.Tensor, eps=1e-6) -> torch.Tensor:
+def calc_pixel_grad_map(x: torch.Tensor, w: torch.Tensor, eps=1e-6) -> torch.Tensor:
     assert x.shape[-3] == 1, "The input of pixel gradient calculation should be a depth map."
     H, W = x.shape[-2:]
     step = 1
-    maps = []
+    maps, weights = [], []
     while step < H and step < W:
         _x = x[..., ::step, ::step]
         hori_grad = _x[..., :-1, :-1] - _x[..., :-1, 1:] # ..., 1, H-1, W-1
         vert_grad = _x[..., :-1, :-1] - _x[..., 1:, :-1] # ..., 1, H-1, W-1
         norm_grad = (hori_grad.square() + vert_grad.square() + eps).sqrt() + eps # ..., 1, H-1, W-1
         maps.append(torch.cat([hori_grad / norm_grad, vert_grad / norm_grad], dim=-3)) # Concatinate by channel.
+        _w = w[..., ::step, ::step]
+        total_grad_w = _w[..., :-1, :-1] * _w[..., :-1, 1:] * _w[..., 1:, :-1]
+        weights.append(total_grad_w)
         step *= 2
-    return maps
+    return maps, weights
 
 
 def depth_shape_loss(x: torch.Tensor, y: torch.Tensor, 
@@ -129,14 +132,11 @@ def depth_shape_loss(x: torch.Tensor, y: torch.Tensor,
         scale_invariant_loss_value = (conf_map * scale_invariant_loss_map - alpha * torch.log(conf_map)).mean()
     
     if calc_grad_loss:
-        x_grad_maps = calc_pixel_grad_map(x)
-        y_grad_maps = calc_pixel_grad_map(y)
-        depth_grad_loss_maps = [(x_grad_map - y_grad_map).abs() for x_grad_map, y_grad_map in zip(x_grad_maps, y_grad_maps)]
-        # if conf_map is None:
-        #     depth_grad_loss_value = depth_grad_loss_maps[0].mean()
-        # else:
-        #     depth_grad_loss_value = ((conf_map[..., :-1, :-1] * depth_grad_loss_maps[0]).mean() - alpha * torch.log(conf_map[..., :-1, :-1])).mean()
-        depth_grad_loss_value = torch.cat([loss_map.mean()[None] for loss_map in depth_grad_loss_maps]).mean()
+        x_grad_maps, grad_weights = calc_pixel_grad_map(x, conf_map)
+        y_grad_maps, grad_weights = calc_pixel_grad_map(y, conf_map)
+        depth_grad_loss_maps = [(x_grad_map - y_grad_map).abs().mean(dim=-3, keepdim=True) * weight / (weight.sum() + 1e-8)
+                                for x_grad_map, y_grad_map, weight in zip(x_grad_maps, y_grad_maps, grad_weights)]
+        depth_grad_loss_value = torch.cat([loss_map.sum()[None] for loss_map in depth_grad_loss_maps]).mean()
         depth_shape_loss_value = (scale_invariant_loss_value + depth_grad_loss_value) / 2
     else:
         depth_shape_loss_value = scale_invariant_loss_value
@@ -161,7 +161,7 @@ def samp_points_by_pixel(points: torch.Tensor, pixels: torch.Tensor, mode="bilin
     pixels[..., 0] = pixels[..., 0] / W
     pixels[..., 1] = pixels[..., 1] / H
     pixels = pixels * 2 - 1
-    samped_points = torch.nn.functional.grid_sample(points, pixels, mode=mode, padding_mode=padding_mode) # b c 1 k
+    samped_points = torch.nn.functional.grid_sample(points, pixels, mode=mode, padding_mode=padding_mode, align_corners=False) # b c 1 k
     samped_points = samped_points.squeeze(dim=2).permute(0, 2, 1) # b k c
     return samped_points
 
@@ -288,6 +288,7 @@ class LossFunction(torch.nn.Module):
         self.enable_alternate_geometric_opt = cfg.enable_alternate_geometric_opt
         self.opt_flag       = False
         self.norm_depth     = cfg.depth_shape.get("norm_depth", True)
+        self.dl_detach_depth = cfg.depth_shape.get("detach_depth", False)
         self.local_align_res = 4096
         self.point_criteria  = torch.nn.L1Loss(reduction='none')
     
@@ -342,7 +343,8 @@ class LossFunction(torch.nn.Module):
 
         ## Local point loss
         aligned_local_pts = S_opt_local.view(B, 1, 1, 1, 1) * pred_local_pts
-        local_pts_loss = self.point_criteria(aligned_local_pts[valid_masks].float(), gt_local_pts[valid_masks].float()) * weights_[valid_masks].float()[..., None]
+        local_pts_loss = self.point_criteria(aligned_local_pts[valid_masks].float(), 
+                                             gt_local_pts[valid_masks].float()) * weights_[valid_masks].float()[..., None]
         final_loss += local_pts_loss.mean()
         details['local_pts_loss'] = local_pts_loss.mean()
         
@@ -354,13 +356,15 @@ class LossFunction(torch.nn.Module):
         pred_global_pts = pred_global_pts * S_opt_local.view(B, 1, 1, 1, 1)
         global_pts_loss = self.point_criteria(pred_global_pts[valid_masks].float(), 
                                               gt_pts[valid_masks].float()) * weights_[valid_masks].float()[..., None]
-        final_loss += global_pts_loss.mean()
+        # final_loss += global_pts_loss.mean()
         details['global_pts_loss'] = global_pts_loss.mean()
 
         return final_loss, details, S_opt_local
     
     def ds_loss(self, output_dict, data, enable_conf=False, lower=None):
         depths = output_dict["depths"]
+        if self.dl_detach_depth:
+            depths = depths.detach()
         input_depths = data["input_depths"].detach()
         input_masks  = torch.ones_like(output_dict["depths_conf"]) if data["input_depth_masks"] is None else data["input_depth_masks"]
         output_dict["depths_conf"] = output_dict["depths_conf"] * input_masks.clamp(min=lower)
@@ -446,7 +450,8 @@ class LossFunction(torch.nn.Module):
         rel_rot_inv_mul = (r_rel_pr.transpose(-1, -2) @ r_rel_gt) # b (v-1)v 3 3
         trace = rel_rot_inv_mul[..., 0, 0] + rel_rot_inv_mul[..., 1, 1] + rel_rot_inv_mul[..., 2, 2] # b (v-1)v
         L_r = torch.acos(BoundForArcCos.apply((trace - 1) / 2)).mean()
-        L_t = huber_loss(t_rel_pr, t_rel_gt, delta=0.1)
+        # L_t = huber_loss(t_rel_pr, t_rel_gt, delta=0.1)
+        L_t = (t_rel_pr - t_rel_gt).abs().mean()
         
         return L_r + 100 * L_t, L_r, L_t
         

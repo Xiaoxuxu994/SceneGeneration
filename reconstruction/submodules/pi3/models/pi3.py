@@ -148,6 +148,12 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 mlp_ratio = 4
                 dec_depth = 36
                 head_depth = 5
+            elif model_size == "3.00Bv2":
+                dec_embed_dim=2048
+                dec_num_heads=32
+                mlp_ratio=4
+                dec_depth=36
+                head_depth=5
             elif model_size == '5.17B':
                 dec_embed_dim = 3072
                 dec_num_heads = 16
@@ -208,17 +214,17 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 depth=head_depth,
                 use_checkpoint=(USE_CHECKPOINT=='True')
             )
-            self.point_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="linear")
-            self.xy_decoder = TransformerDecoder(
-                in_dim=2*self.dec_embed_dim, 
-                dec_embed_dim=1024,
-                dec_num_heads=16,
-                out_dim=1024,
-                rope=self.rope,
-                depth=head_depth,
-                use_checkpoint=(USE_CHECKPOINT=='True')
-            )
-            self.xy_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=2, activation="linear")
+            self.point_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=3, activation="linear")
+            # self.xy_decoder = TransformerDecoder(
+            #     in_dim=2*self.dec_embed_dim, 
+            #     dec_embed_dim=1024,
+            #     dec_num_heads=16,
+            #     out_dim=1024,
+            #     rope=self.rope,
+            #     depth=head_depth,
+            #     use_checkpoint=(USE_CHECKPOINT=='True')
+            # )
+            # self.xy_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=2, activation="linear")
 
         # ----------------------
         #  Local Depths Decoder
@@ -295,8 +301,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             # do not use position embedding for special tokens (camera and register tokens)
             # so set pos to 0 for the special tokens
             pos = pos + 1
-            # pos_special = torch.zeros(B * N, self.patch_start_idx, 2).to(hidden.device).to(pos.dtype)
-            pos_special = self.pos_special.repeat(B*N, 1, 1) #.to(pos.dtype)
+            pos_special = self.pos_special.repeat(B * N, 1, 1)
             pos = torch.cat([pos_special, pos], dim=1)
        
         for i in range(len(self.decoder)):
@@ -341,7 +346,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
 
         if hasattr(self, "point_head"):
             point_hidden = self.point_decoder(hidden, xpos=pos, xpos_max=xpos_max)
-            xy_hidden = self.xy_decoder(hidden, xpos=pos, xpos_max=xpos_max)
+            # xy_hidden = self.xy_decoder(hidden, xpos=pos, xpos_max=xpos_max)
         else:
             point_hidden = self.depth_decoder(hidden, xpos=pos, xpos_max=xpos_max)
         conf_hidden = self.conf_decoder(hidden, xpos=pos, xpos_max=xpos_max)
@@ -365,9 +370,10 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             # local points
             point_hidden = point_hidden.float()
             if hasattr(self, "point_head"):
-                xy_hidden = xy_hidden.float()
-                xy = self.xy_head([xy_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
-                z = self.point_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
+                # xy_hidden = xy_hidden.float()
+                # xy = self.xy_head([xy_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
+                xyz = self.point_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
+                xy, z = xyz.split([2, 1], dim=-1)
                 z = torch.exp(z)
             else:
                 z = self.depth_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)

@@ -194,10 +194,16 @@ class DynamicBatchSampler(Sampler):
             except StopIteration:
                 break  # End of sampler's iterator
 
+    # def __len__(self):
+    #     # Return a large dummy length
+    #     # return 1000000
+    #     return len(self.sampler) // self.image_num_range[0]            # dummy value because of dynamic batchsize
+
     def __len__(self):
-        # Return a large dummy length
-        # return 1000000
-        return len(self.sampler) // self.image_num_range[0]            # dummy value because of dynamic batchsize
+        n = len(self.sampler)
+        if n == 0:
+            return 0
+        return (n + self.image_num_range[0] - 1) // self.image_num_range[0]
 
 class DynamicDistributedSampler(DistributedSampler):
     """

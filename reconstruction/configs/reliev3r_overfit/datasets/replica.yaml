@@ -1,8 +1,0 @@
-## Root folder of the dataset
-data_root: /mnt/diskb/chenyouyu/workspace/code/Reliev3R-251125/Reliev3R_data_sample/Replica_Sample
-
-## Scale of depth maps
-depth_scale: 1.5259021896e-4
-
-## EPS for pixel matching reprojection
-match_eps: 0.001

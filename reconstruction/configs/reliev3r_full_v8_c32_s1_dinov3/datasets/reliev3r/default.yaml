@@ -15,8 +15,6 @@ sample_max: 8
 
 depth_is_z: true
 
-pred_z_depth: false
-
 overlap_thre_synth: 0.08
 overlap_thre_real: 0.20
 
