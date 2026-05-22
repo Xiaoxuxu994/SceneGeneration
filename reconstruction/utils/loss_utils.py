@@ -756,7 +756,7 @@ class LossFunction(torch.nn.Module):
         if S_opt_local is not None:
             extrs_gt = data["input_viewmats"]      # b v 4 4
             extrs_pr = output_dict["camera_extrs"].clone() # b v 4 4
-            extrs_pr[..., :3, 3] = output_dict["camera_extrs"][..., :3, 3] / S_opt_local[..., None, None]
+            extrs_pr[..., :3, 3] = output_dict["camera_extrs"][..., :3, 3] * S_opt_local[..., None, None]
         else:
             extrs_gt = normalize_trans(data["input_viewmats"], detach_norm_factor=True)      # b v 4 4
             extrs_pr = normalize_trans(output_dict["camera_extrs"], detach_norm_factor=False) # b v 4 4
