@@ -141,7 +141,7 @@ def run(rank, cfg):
     dataloader, dataloader_eval = create_dataloaders(rank, global_rank, cfg)
     
     """Load models. """
-    if cfg.get("train_pi3", False):
+    if cfg.get("train_pi3", True):
         model = Reliev3R_Pi3(cfg.model).to(device=DEVICE_NAME)
     else:
         model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
