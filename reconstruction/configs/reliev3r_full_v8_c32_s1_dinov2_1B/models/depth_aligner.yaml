@@ -45,26 +45,16 @@ ours:
 
 pi3:
   pos_type: rope100
-<<<<<<< HEAD:reconstruction/configs/reliev3r_full_v8_c32_s1_dinov2_1B/models/depth_aligner.yaml
   # model_size: dinov3_huge+_3.00B
   model_size: dinov2_large_0.95B
-=======
-  model_size: dinov3_huge+_3.00Bv2
-  # model_size: dinov2_large_0.95B
->>>>>>> origin/cyy/3drecon:reconstruction/configs/pi3_dinov3/models/depth_aligner.yaml
   depth_scaler:
     enabled: false
   point_head:
     enabled: true
-<<<<<<< HEAD:reconstruction/configs/reliev3r_full_v8_c32_s1_dinov2_1B/models/depth_aligner.yaml
-  pred_z_depth: false
-  enable_camera_register: true
-=======
   depth_head:
     enabled: false
   enable_camera_register: false
   camera_conversion: c2w
->>>>>>> origin/cyy/3drecon:reconstruction/configs/pi3_dinov3/models/depth_aligner.yaml
 
 depth_scaler:
   enabled: false

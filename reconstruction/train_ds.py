@@ -26,7 +26,7 @@ from utils.optim_utils import create_optimizer, create_lr_scheduler
 from utils.log_utils import export_pcds_and_cam_as_ply
 from utils import make_loss_func
 from utils.common import normalize_trans, calc_extr_inv, localpoint2global
-from dataset import Reliev3R_MixDataLoader
+from dataset import Reliev3R_MixDataLoader, load_data_to_device
 
 from model import Reliev3R, Reliev3R_Pi3
 import numpy as np
@@ -158,7 +158,7 @@ def run(rank, cfg):
     ds_config["flops_profiler"]["output_file"] = f"{cfg.output_dir}/profile_{global_rank}.log"
   
     """Create data loaders. """
-    dataloader, dataloader_eval = create_dataloaders(rank, global_rank, cfg)
+    # dataloader, dataloader_eval = create_dataloaders(rank, global_rank, cfg)
     
     """Load models. """
     if cfg.get("train_pi3", False):
@@ -194,21 +194,19 @@ def run(rank, cfg):
             load_lr_scheduler_states=not cfg.no_load_optim, 
             load_module_strict=False, 
         )
-        step = client_state.get("step", 0)
+        step = client_state.get("step", 0) if client_state is not None else 0
         print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
 
     step_begins = step
-    
-    step_begins = step
-    print(f'[DEBUG] step_begin_stage1={cfg.training.dataset_schedule.stage1.step_begin}, ',
-                  f'step_begin_stage2={cfg.training.dataset_schedule.stage2.step_begin}, ',
-                  f'step_begin_stage3={cfg.training.dataset_schedule.stage3.step_begin}=step_unsupervise_in')
-    loss_func._set_stage_steps(step_begins, 
-                               step_begin_stage1=cfg.training.dataset_schedule.stage1.step_begin,
-                               step_begin_stage2=cfg.training.dataset_schedule.stage2.step_begin,
-                               step_begin_stage3=cfg.training.dataset_schedule.stage3.step_begin,
-                               )
-    step_unsupervise_in = loss_func.step_begin_stage3
+    # print(f'[DEBUG] step_begin_stage1={cfg.training.dataset_schedule.stage1.step_begin}, ',
+    #               f'step_begin_stage2={cfg.training.dataset_schedule.stage2.step_begin}, ',
+    #               f'step_begin_stage3={cfg.training.dataset_schedule.stage3.step_begin}=step_unsupervise_in')
+    # loss_func._set_stage_steps(step_begins, 
+    #                            step_begin_stage1=cfg.training.dataset_schedule.stage1.step_begin,
+    #                            step_begin_stage2=cfg.training.dataset_schedule.stage2.step_begin,
+    #                            step_begin_stage3=cfg.training.dataset_schedule.stage3.step_begin,
+    #                            )
+    # step_unsupervise_in = loss_func.step_begin_stage3
 
     engine.train()
     torch_device_lib.empty_cache()
@@ -249,6 +247,8 @@ def run(rank, cfg):
             """Save configuration file for reproduction. """
             with open(os.path.join(cfg.output_dir, "config.json"), "w+") as f:
                 json.dump(cfg, f, indent='\t')
+            engine.save_checkpoint(os.path.join(cfg.output_dir, "ckpt"), step, client_state = {'step': step})
+            exit()
 
         if npu_profiling:
             prof.start()
@@ -438,13 +438,13 @@ if __name__ == '__main__':
     parser.add_argument("--no_load_optim", action="store_true", help="Set to disable loading optimizer when ckpt is given.")
     parser.add_argument("--learning_rate", type=float, default=None, help="Maximum learning rate.")
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
-    parser.add_argument("--freeze_backbone", action="store_true", help="default is freezing backbone")
+    parser.add_argument("--freeze_backbone", action="store_true", help="default is not freezing backbone")
     parser.add_argument("--lr_scheduler", type=str, default=None, help="Set scheduler type if set.")
     parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
     
     cfg = LoadConfig(args.config)
-    cfg.datasets.mix_start_step = cfg.training.dataset_schedule.stage3.step_begin
+    # cfg.datasets.mix_start_step = cfg.training.dataset_schedule.stage3.step_begin
     
     if args.data_url is not None:
         cfg.datasets.dl3dv.data_root = args.data_url
