@@ -73,11 +73,11 @@ class ScanNetDataset(BaseDataset):
         image_pils, images_cpu = [], []
         for image_path in image_paths:
             img = Image.open(image_path).convert("RGB")
-            
-            # crop borders 15px
-            width, height = img.size
-            left, top, right, bottom = int(border), int(border), int(width-border), int(height-border)
-            img = img.crop((left, top, right, bottom))
+            img = img.resize((640, 480), Image.Resampling.BILINEAR)
+            # # crop borders 15px
+            # width, height = img.size
+            # left, top, right, bottom = int(border), int(border), int(width-border), int(height-border)
+            # img = img.crop((left, top, right, bottom))
             
             # resize to origin size
             img = img.resize((self.config.rgb_origin_W, self.config.rgb_origin_H), Image.Resampling.BILINEAR)
