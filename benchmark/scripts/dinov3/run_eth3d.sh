@@ -29,9 +29,9 @@ PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt5000"
 
 source ./scripts/config/eth3d/224x224.sh
 MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov3_huge+_3Bv2"
-CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0428_pi3_3B_datamix_all_v5_lowres_v8-m8_224x224_lr1e4_scratch/ckpts/model_ckpt79" 
-PREFIX="exp0428_pi3_3B_datamix_all_v5_lowres_v8-m8_224x224_lr1e4_scratch_ckpt79"
+MODEL_SIZE="dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
+CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0429_pi3_5B_datamix_all_v5_lowres_v8-m8_224x224_lr1e4_scratch/ckpts/model_ckpt79" 
+PREFIX="exp0429_pi3_5B_datamix_all_v5_lowres_v8-m8_224x224_lr1e4_scratch_ckpt79"
 CONFIG=""
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
