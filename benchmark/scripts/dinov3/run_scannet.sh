@@ -22,11 +22,17 @@ source ./scripts/config/scannet/512x384.sh
 # PREFIX="exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
 # CONFIG=""
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov3_huge+_3Bv2"
-CKPT="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/ckpt/5000"
-CONFIG="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/config.json"
-PREFIX="Reliev3R-3B_260519_subPi3-3B_v6ckpt63_ckpt5000"
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov3_huge+_3Bv2"
+# CKPT="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/ckpt/5000"
+# CONFIG="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/config.json"
+# PREFIX="Reliev3R-3B_260519_subPi3-3B_v6ckpt63_ckpt5000"
+
+MODEL="vggt_omega"
+CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
+PREFIX="vggt_omega_1B_official"
+CONFIG=""
+MODEL_SIZE=""
 
 # MODEL_SIZE="dinov2_large_0.95B"
 # CKPT="./ckpts/Pi3/model.safetensors"
@@ -289,18 +295,18 @@ for DATASET in "${DATASETS[@]}"; do
   # # -------------------------
   # # 2) VIS
   # # -------------------------
-  # banner_stage "VIS"
-  # t0=$(date +%s)
+  banner_stage "VIS"
+  t0=$(date +%s)
 
-  # echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
-  # echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
+  echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
+  echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
 
-  # # requirement: if gt has no gt_vis -> run; if exists -> skip
-  # run_vis_if_needed "${GT_DIR}"
-  # run_vis_if_needed "${PRED_DIR}"
+  # requirement: if gt has no gt_vis -> run; if exists -> skip
+  run_vis_if_needed "${GT_DIR}"
+  run_vis_if_needed "${PRED_DIR}"
 
-  # t1=$(date +%s)
-  # echo "[TIME] VIS seconds=$((t1-t0))"
+  t1=$(date +%s)
+  echo "[TIME] VIS seconds=$((t1-t0))"
 
   banner_done "${IDX}" "${TOTAL}" "${DATASET}"
 done

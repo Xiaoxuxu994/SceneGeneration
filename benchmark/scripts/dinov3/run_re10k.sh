@@ -22,11 +22,17 @@ source ./scripts/config/re10k/512x288.sh
 # PREFIX="exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
 # CONFIG=""
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov3_huge+_3Bv2"
-CKPT="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/ckpt/5000"
-CONFIG="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/config.json"
-PREFIX="Reliev3R-3B_260519_subPi3-3B_v6ckpt63_ckpt5000"
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov3_huge+_3Bv2"
+# CKPT="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/ckpt/5000"
+# CONFIG="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/config.json"
+# PREFIX="Reliev3R-3B_260519_subPi3-3B_v6ckpt63_ckpt5000"
+
+MODEL="vggt_omega"
+CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
+PREFIX="vggt_omega_1B_official"
+CONFIG=""
+MODEL_SIZE=""
 
 # MODEL_SIZE="dinov2_large_0.95B"
 # CKPT="./ckpts/Pi3/model.safetensors"

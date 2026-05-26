@@ -37,12 +37,12 @@ VIS_SCRIPT="scripts/run_vis.py"
 # PREFIX="vggt_official"
 # source ./scripts/config/ase/518x336.sh
 
-MODEL="vggt" # ['vggt','pi3','reliev3r']
-CONFIG=""
-MODEL_SIZE=""
-CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
-PREFIX="vggt_sz_final"
-source ./scripts/config/scannet/518x392.sh
+# MODEL="vggt" # ['vggt','pi3','reliev3r']
+# CONFIG=""
+# MODEL_SIZE=""
+# CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
+# PREFIX="vggt_sz_final"
+# source ./scripts/config/scannet/518x392.sh
 
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted

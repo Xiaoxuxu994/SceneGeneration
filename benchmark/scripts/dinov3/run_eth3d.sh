@@ -15,12 +15,18 @@ VIS_SCRIPT="scripts/run_vis.py"
 # CONFIG="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/config.json"
 # PREFIX="Reliev3R-260512-1B-CamRegFalse-lr1e-5_ckpt35k"
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov3_huge+_3Bv2"
-CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt39" 
-PREFIX="exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov3_huge+_3Bv2"
+# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt39" 
+# PREFIX="exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
+# CONFIG=""
+# source ./scripts/config/eth3d/512x336.sh
+
+MODEL="vggt_omega"
+CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
+PREFIX="vggt_omega_1B_official"
 CONFIG=""
-source ./scripts/config/eth3d/512x336.sh
+MODEL_SIZE=""
 
 # MODEL_SIZE="dinov2_large_0.95B"
 # CKPT="./ckpts/Pi3/model.safetensors"

@@ -23,19 +23,19 @@ MODEL="pi3" # ['vggt','pi3','reliev3r']
 # CONFIG=""
 # source ./scripts/config/7scenes/518x392.sh
 
-MODEL_SIZE="dinov2_large_0.95B"
-CKPT="./ckpts/Pi3/model.safetensors"
-PREFIX="pi3_official"
-CONFIG=""
-source ./scripts/config/7scenes/518x392.sh
-
-# MODEL="vggt" # ['vggt','pi3','reliev3r']
-
-# MODEL_SIZE=""
-# CONFIG="./ckpts/VGGT-1B/config.json"
-# CKPT="./ckpts/VGGT-1B/model.pt"
-# PREFIX="vggt_official"
+# MODEL_SIZE="dinov2_large_0.95B"
+# CKPT="./ckpts/Pi3/model.safetensors"
+# PREFIX="pi3_official"
+# CONFIG=""
 # source ./scripts/config/7scenes/518x392.sh
+
+MODEL="vggt" # ['vggt','pi3','reliev3r']
+
+MODEL_SIZE=""
+CONFIG="./ckpts/VGGT-1B/config.json"
+CKPT="./ckpts/VGGT-1B/model.pt"
+PREFIX="vggt_official"
+source ./scripts/config/7scenes/518x392.sh
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 # CONFIG=""
