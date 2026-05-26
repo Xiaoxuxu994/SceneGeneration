@@ -1,4 +1,5 @@
 # benchmark/datasets/__init__.py
+from .base import DatasetConfig
 from .sevenscenes import SevenScenesDataset
 from .dtu import DTUDataset
 from .nrgbd import NRGBDDataset
@@ -10,7 +11,7 @@ from .dl3dv import NewDL3DVDataset
 from .re10k import RE10KDataset
 from .dtu import DTUDataset
 from .eth3d import ETH3DDataset
-from .base import DatasetConfig
+from .kitti import KITTIDataset
 
 from pathlib import Path
 
@@ -24,7 +25,8 @@ DATASET_REGISTRY = {
     # "dl3dv": DL3DVDataset, # no depth gt
     "dl3dv": NewDL3DVDataset, # no depth gt
     "ase": ASEDataset, # currently only support sampled sequences as a .npz file
-    "re10k": RE10KDataset # currently only support sampled sequences as a .npz file
+    "re10k": RE10KDataset, # currently only support sampled sequences as a .npz file
+    "kitti": KITTIDataset
 }
 
 def get_dataset(name: str, config: DatasetConfig):

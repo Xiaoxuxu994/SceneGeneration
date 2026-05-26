@@ -358,6 +358,9 @@ def main():
     
     ap.add_argument("--predicted_pointmap", type=int, default=0)
     ap.add_argument("--save_pointmap", type=int, default=1)
+    
+    ap.add_argument("--skip_pose", type=int, default=0)
+    ap.add_argument("--skip_depthmap", type=int, default=0)
     ap.add_argument("--skip_pointmap", type=int, default=0)
     ap.add_argument("--skip_normal", type=int, default=0)
     
@@ -403,24 +406,28 @@ def main():
         }
 
         # try:
-        # ---------- load pose ----------
-        gt_extr_p = gt_seq / "gt_extrinsics.npy"
-        pred_extr_p = pred_seq / "pred_extrinsics.npy"
-        if not gt_extr_p.exists() or not pred_extr_p.exists():
-            row["status"] = "missing_extrinsics"
-            per_seq_rows.append(row)
-            continue
+        if args.skip_pose == 1:
+            rra_acc, rta_acc, auc = 0, 0, 0
+            ate, rpe_trans, rpe_rot = 0, 0, 0
+        else:
+            # ---------- load pose ----------
+            gt_extr_p = gt_seq / "gt_extrinsics.npy"
+            pred_extr_p = pred_seq / "pred_extrinsics.npy"
+            if not gt_extr_p.exists() or not pred_extr_p.exists():
+                row["status"] = "missing_extrinsics"
+                per_seq_rows.append(row)
+                continue
 
-        pred_extr = torch_f32(np_load(pred_extr_p))
-        gt_extr = torch_f32(np_load(gt_extr_p))
-        
-        if args.normalize_trans == 1:
-            pred_extr = normalize_trans(pred_extr)
-            gt_extr = normalize_trans(gt_extr)
+            pred_extr = torch_f32(np_load(pred_extr_p))
+            gt_extr = torch_f32(np_load(gt_extr_p))
+            
+            if args.normalize_trans == 1:
+                pred_extr = normalize_trans(pred_extr)
+                gt_extr = normalize_trans(gt_extr)
 
-        # ---------- pose metrics ----------
-        rra_acc, rta_acc, auc = eval_angle(pred_extr, gt_extr, threshold=args.pose_threshold)
-        ate, rpe_trans, rpe_rot = eval_trajectory(pred_extr, gt_extr)
+            # ---------- pose metrics ----------
+            rra_acc, rta_acc, auc = eval_angle(pred_extr, gt_extr, threshold=args.pose_threshold)
+            ate, rpe_trans, rpe_rot = eval_trajectory(pred_extr, gt_extr)
 
         row["pose_rra_acc"] = float(rra_acc)
         row["pose_rta_acc"] = float(rta_acc)
@@ -444,7 +451,7 @@ def main():
             gt_d = np_load(gt_depth_p).astype(np.float32)
             mask = np_load(gt_mask_p).astype(bool)
 
-            if gt_d.sum() == 0:
+            if args.skip_depthmap==1:
                 # gt_depth and gt_mask are all zeros
                 depth_res = {
                     "Abs Rel": 0,
