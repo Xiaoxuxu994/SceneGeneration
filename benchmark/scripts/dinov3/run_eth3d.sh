@@ -7,13 +7,13 @@ EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
-source ./scripts/config/eth3d/512x336.sh
+# source ./scripts/config/eth3d/512x336.sh
 
-MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-MODEL_SIZE=""
-CKPT="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/ckpt/15000"
-CONFIG="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/config.json"
-PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt15000"
+# MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE=""
+# CKPT="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/ckpt/15000"
+# CONFIG="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/config.json"
+# PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt15000"
 
 # MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE=""
@@ -25,6 +25,19 @@ PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt15000"
 # MODEL_SIZE="dinov3_huge+_3Bv2"
 # CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02/ckpts/model_ckpt3" 
 # PREFIX="exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02_ckpt3"
+# CONFIG=""
+
+source ./scripts/config/eth3d/224x224.sh
+MODEL="pi3" # ['vggt','pi3','reliev3r']
+MODEL_SIZE="dinov3_huge+_3Bv2"
+CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0428_pi3_3B_datamix_all_v5_lowres_v8-m8_224x224_lr1e4_scratch/ckpts/model_ckpt79" 
+PREFIX="exp0428_pi3_3B_datamix_all_v5_lowres_v8-m8_224x224_lr1e4_scratch_ckpt79"
+CONFIG=""
+
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov2_large_0.95B"
+# CKPT="./ckpts/Pi3/model.safetensors"
+# PREFIX="pi3_official"
 # CONFIG=""
 
 NPU_ID="4"
