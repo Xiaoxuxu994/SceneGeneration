@@ -86,6 +86,13 @@ class BaseDataset(ABC):
     def load_sequence(self, seq: str, frame_ids: List[int]) -> SequenceBatch:
         ...
     
+    def _build_K(self):
+        return torch.tensor([
+            [self.config.fx, 0,              self.config.cx],
+            [0,              self.config.fy, self.config.cx],
+            [0,              0,                           1]
+        ])
+    
     def _normalize_K(self, pix_K, H, W):
         norm_K = pix_K.clone()
         norm_K[..., 0, 0] = pix_K[..., 0, 0] / W

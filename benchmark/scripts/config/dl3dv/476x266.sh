@@ -6,11 +6,16 @@ SPLIT="test"
 SEQ=""   # e.g. chess/seq-01 ; empty means all
 
 MODE="random"   # stride | random
-STRIDE=5        # default stride
+STRIDE=4        # default stride
 SEQ_LEN=8       # use N frames in sequence
 MAX_SEQ_LEN=-1  # default max seq len, default -1 to use all
 SEED=42             # used when MODE=random
 NUM_SEQ=100
+
+SKIP_POSE=0 # 1 if skip pose evaluation
+SKIP_DEPTHMAP=1 # 1 if skip depthmap evaluation
+SKIP_POINTMAP=1 # 1 if skip pointmap evaluation
+SKIP_NORMAL=1 # 1 if skip point normal evaluation
 
 # DINOv2
 RGB_ORIGIN_W=476

@@ -69,7 +69,10 @@ class RE10KDataset(BaseDataset):
         rgbs = list(sorted((seq_root / "rgb").iterdir()))
         images = [rgbs[i] for i in frame_ids]
         cameras = str(seq_root / "{}.npy".format(str(seq_root.name)))
-        tracks = glob(str(seq_root / "romav2" / "*.npz"))[0]
+        try:
+            tracks = glob(str(seq_root / "romav2" / "*.npz"))[0]
+        except IndexError:
+            tracks = None
         
         return images, cameras, tracks
     
@@ -168,18 +171,21 @@ class RE10KDataset(BaseDataset):
         return poses, pix_K, norm_K
     
     def _load_track(self, track_paths, device="cpu", dtype=torch.float32, dtype_visib=torch.bool):
-        track_info = np.load(track_paths, allow_pickle=True)["data"]
-        track0 = torch.from_numpy(np.concatenate([matching_info["tracks"][0] for matching_info in track_info], axis=0)) # n k 2
-        track1 = torch.from_numpy(np.concatenate([matching_info["tracks"][1] for matching_info in track_info], axis=0)) # n k 2
-        visib0 = torch.from_numpy(np.concatenate([matching_info["visibility"][0] for matching_info in track_info], axis=0)) # n k
-        visib1 = torch.from_numpy(np.concatenate([matching_info["visibility"][1] for matching_info in track_info], axis=0)) # n k
-        
-        return dict(
-            track0=track0.to(device=device, dtype=dtype), 
-            track1=track1.to(device=device, dtype=dtype), 
-            visib0=visib0.to(device=device, dtype=dtype_visib),
-            visib1=visib1.to(device=device, dtype=dtype_visib), 
-        )
+        if track_paths is not None:
+            track_info = np.load(track_paths, allow_pickle=True)["data"]
+            track0 = torch.from_numpy(np.concatenate([matching_info["tracks"][0] for matching_info in track_info], axis=0)) # n k 2
+            track1 = torch.from_numpy(np.concatenate([matching_info["tracks"][1] for matching_info in track_info], axis=0)) # n k 2
+            visib0 = torch.from_numpy(np.concatenate([matching_info["visibility"][0] for matching_info in track_info], axis=0)) # n k
+            visib1 = torch.from_numpy(np.concatenate([matching_info["visibility"][1] for matching_info in track_info], axis=0)) # n k
+            
+            return dict(
+                track0=track0.to(device=device, dtype=dtype), 
+                track1=track1.to(device=device, dtype=dtype), 
+                visib0=visib0.to(device=device, dtype=dtype_visib),
+                visib1=visib1.to(device=device, dtype=dtype_visib), 
+            )
+        else:
+            return None
     
     def load_sequence(self, seq, frame_ids) -> SequenceBatch:
         image_paths, camera_paths, track_paths = self.make_paths(seq, frame_ids)

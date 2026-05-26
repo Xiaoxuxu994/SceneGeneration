@@ -12,6 +12,11 @@ MAX_SEQ_LEN=-1  # default max seq len, default -1 to use all
 SEED=42             # used when MODE=random
 NUM_SEQ=10
 
+SKIP_POSE=0 # 1 if skip pose evaluation
+SKIP_DEPTHMAP=0 # 1 if skip depthmap evaluation
+SKIP_POINTMAP=0 # 1 if skip pointmap evaluation
+SKIP_NORMAL=1 # 1 if skip point normal evaluation
+
 # DINOv2
 RGB_ORIGIN_W=518
 RGB_ORIGIN_H=518

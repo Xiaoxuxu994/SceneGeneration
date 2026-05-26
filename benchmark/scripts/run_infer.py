@@ -44,7 +44,7 @@ from transformers.modeling_utils import load_sharded_checkpoint
 # Reliev3R imports 
 # -----------------------------------------------
 from models.reliev3r.utils.config_loader import LoadConfig
-from models.reliev3r.model.reliev3r import Reliev3R
+from models.reliev3r.model.reliev3r import Reliev3R, Reliev3R_Pi3
 # from models.reliev3r.submodules.pi3.models.pi3 import Pi3 as Reliev3R_Pi3
 
 # -----------------------------------------------
@@ -74,7 +74,8 @@ DATA_ROOT_DEFAULTS = {
     # "dl3dv":   "/mnt/nvme1/share/chenyouyu/dataset/DL3DV/data/1K/",
     "dl3dv":   "/efs-m3ga/z00818731/dl3dv-new/reliev3r_sample_list_c32.npz",
     "ase":     BENCH_ROOT / "data" / "ASE" /"reliev3r_sample_list_c32_s1.npz.update.npz",
-    "re10k":   "/efs-m3ga/h00548084/relive3r_dataset/re10k_12.19/reliev3r_sample_list_c32.npz"
+    "re10k":   "/efs-m3ga/h00548084/relive3r_dataset/re10k_12.19/reliev3r_sample_list_c32.npz",
+    "kitti":   BENCH_ROOT / "data" / "KITTI",
 }
 MODEL_DEFAULTS = {
     "vggt": {
@@ -319,7 +320,12 @@ def run_pi3_infer(model, images_cpu, depth_masks, device: torch.device, autocast
 def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, strict: bool = True):
     cfg = LoadConfig(config_path)
     cfg.eval = True
-    model = Reliev3R(cfg.model).to(device).eval()
+    
+    if cfg.get("train_pi3", False):
+        os.environ['pred_z_depth'] = "True"
+        model = Reliev3R_Pi3(cfg.model).to(device).eval()
+    else:
+        model = Reliev3R(cfg.model).to(device).eval()
 
     if "safetensors" in str(ckpt_path):
         state = load_file(ckpt_path)
@@ -335,9 +341,15 @@ def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, 
                 state_dict = checkpoint['model']
             else:
                 state_dict = checkpoint
-            model.load_state_dict(state_dict, strict=False)
+            # model.load_state_dict(state_dict, strict=False)
+            model.load_state_dict(state_dict)
         else:
-            raise NotImplementedError
+            # print('================ Pi3 Model ================================')
+            # print(model)
+            ckpt_path = ckpt_dir
+            load_result = load_sharded_checkpoint(model, ckpt_path, strict=False)
+            print(load_result)
+            print('===========================================================')
             
         # ckpt_path = Path(ckpt_path)
         # ckpt_dir, ckpt_tag = ckpt_path.parent, ckpt_path.name

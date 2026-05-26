@@ -171,11 +171,11 @@ def pair_geo2match(depth0, depth1, depth_mask0, depth_mask1, extr0, extr1, intr0
         depth0_grid = torch.nn.functional.grid_sample(
             depth0[:, None], 
             (img_coord[..., :2] * 2 - 1), 
-            mode="nearest", padding_mode="zeros")[:, 0] # B gs gs
+            mode="nearest", padding_mode="zeros", align_corners=False)[:, 0] # B gs gs
         depth_mask0_grid = torch.nn.functional.grid_sample(
             depth_mask0[:, None], 
             (img_coord[..., :2] * 2 - 1), 
-            mode="nearest", padding_mode="zeros")[:, 0] # B gs gs
+            mode="nearest", padding_mode="zeros", align_corners=False)[:, 0] # B gs gs
     
     img_coord0 = (img_coord * depth0_grid[..., None]).unsqueeze(-1) # b, gs, gs, 3, 1
     cam_coord0 = calc_intr_inv(intr0) @ img_coord0 # b, gs, gs, 3, 1
@@ -206,12 +206,12 @@ def pair_geo2match(depth0, depth1, depth_mask0, depth_mask1, extr0, extr1, intr0
     reproj_depth_samp01 = torch.nn.functional.grid_sample(
         depth1[:, None],                             # b, 1(c), h, w
         (img_coord0_1 * 2 - 1),                      # b, gs, gs, 2
-        mode="nearest", padding_mode="zeros") # b, 1(c), gs, gs
+        mode="nearest", padding_mode="zeros", align_corners=False) # b, 1(c), gs, gs
     reproj_depth_samp01 = reproj_depth_samp01.reshape(*depth0_1.shape) # b, gs, gs
     reproj_depth_samp01_mask = torch.nn.functional.grid_sample(
         depth_mask1[:, None],                        # b, 1(c), h, w
         (img_coord0_1 * 2 - 1),                      # b, gs, gs, 2
-        mode="nearest", padding_mode="zeros") # b, 1(c), gs, gs
+        mode="nearest", padding_mode="zeros", align_corners=False) # b, 1(c), gs, gs
     reproj_depth_samp01_mask = reproj_depth_samp01_mask.reshape(*depth0_1.shape) # b, gs, gs
     
     timer.record_end("geo2match_3_ReProj_gridsamp")

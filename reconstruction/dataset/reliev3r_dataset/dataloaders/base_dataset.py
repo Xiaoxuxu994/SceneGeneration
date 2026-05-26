@@ -13,7 +13,8 @@ from utils.common import calc_extr_inv, calc_intr_inv, normalize_trans, depth2po
 from utils.loss_utils import samp_points_by_pixel
 
 VAL_RATIO = 0.02
-MAX_IMAGE_SIZES = [518, 504, 490, 476, 462, 448, 434, 420]
+# MAX_IMAGE_SIZES = [518, 504, 490, 476, 462, 448, 434, 420]
+MAX_IMAGE_SIZES = [512]
 # MAX_IMAGE_SIZES = [252, 238, 224, 210, 196]
 
 
@@ -29,9 +30,9 @@ class Base_Dataset(Dataset):
                  is_train=None, 
                  batch_size=1, 
                  depth_is_z=True, 
-                 pred_z_depth=True, 
                  crop_lowerbound=0.0, 
                  crop_upperbound=0.2, 
+                 patch_size=16, 
                  **kwargs, 
                  ):
         """_summary_
@@ -45,7 +46,7 @@ class Base_Dataset(Dataset):
         self.depth_lowerbound = depth_lowerbound
         self.depth_upperbound = depth_upperbound
         self.depth_is_z = depth_is_z
-        self.pred_z_depth = pred_z_depth
+        self.pred_z_depth = (os.getenv("pred_z_depth", "False") == "True")
         self.train_proc = train_proc
         self.sample_min = sample_min
         self.sample_max = sample_max
@@ -54,6 +55,7 @@ class Base_Dataset(Dataset):
         self.batch_size = batch_size # Ensure each batch is sampled from the same dataset to keep image shape consistency.
         self.crop_lowerbound = crop_lowerbound
         self.crop_upperbound = crop_upperbound
+        self.patch_size = patch_size
     
     def __len__(self):
         raise NotImplementedError()
@@ -106,12 +108,12 @@ class Base_Dataset(Dataset):
                 return np.array(view_ids)
         return None
     
-    def prepare_data_for_dino_encode(self, data, max_size=518):
+    def prepare_data_for_dino_encode(self, data, max_size=512, patch_size=16):
         data["input_images"], data["input_intrs"], cbox, scale_factor = preprocess_images_for_encode(
-            data["input_images"], intrs=data["input_intrs"], interp_method="bilinear", max_size=max_size)
-        data["input_depths"], _, _, _ = preprocess_images_for_encode(data["input_depths"], cbox=cbox, max_size=max_size)
+            data["input_images"], intrs=data["input_intrs"], interp_method="bilinear", max_size=max_size, patch_size=patch_size)
+        data["input_depths"], _, _, _ = preprocess_images_for_encode(data["input_depths"], cbox=cbox, max_size=max_size, patch_size=patch_size)
         if data["input_depth_masks"] is not None:
-            data["input_depth_masks"], _, _, _ = preprocess_images_for_encode(data["input_depth_masks"], cbox=cbox, max_size=max_size)
+            data["input_depth_masks"], _, _, _ = preprocess_images_for_encode(data["input_depth_masks"], cbox=cbox, max_size=max_size, patch_size=patch_size)
         if data.get("input_tracks0", None) is not None:
             ## Crop processed tracking information for realistic dataset. 
             ## For synthetic dataset, we resize images first and then calculate matching. 
@@ -379,7 +381,7 @@ class Realistic_Dataset(Base_Dataset):
             if crop_ratio is not None:
                 all_data = self.aug_by_crop(all_data, crop_ratio=crop_ratio)
             max_image_size = MAX_IMAGE_SIZES[np.random.randint(0, len(MAX_IMAGE_SIZES))]
-            all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size)
+            all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size, patch_size=self.patch_size)
             all_images = all_data["input_images"]
             all_depths = all_data["input_depths"]
             all_depth_masks = all_data["input_depth_masks"]
@@ -594,7 +596,7 @@ class Synthetic_Dataset(Base_Dataset):
             if crop_ratio is not None:
                 all_data = self.aug_by_crop(all_data, crop_ratio=crop_ratio)
             max_image_size = MAX_IMAGE_SIZES[np.random.randint(0, len(MAX_IMAGE_SIZES))]
-            all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size)
+            all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size, patch_size=self.patch_size)
             all_data = self.filter_top_depth(all_data, p=0.003)
             all_images = all_data["input_images"]
             all_depths = all_data["input_depths"]
