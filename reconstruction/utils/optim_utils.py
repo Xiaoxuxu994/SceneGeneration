@@ -36,7 +36,7 @@ def create_optimizer(model: nn.Module, weight_decay, learning_rate) -> torch.opt
         if param.dim() == 1 or getattr(param, '_no_weight_decay', False):
             nodecay_params.append(param)
         else:
-            if name.startswith("depth_aligner.image_tokenizer") or name.startswith("depth_aligner.encoder"):
+            if name.startswith("image_tokenizer") or name.startswith("encoder") or name.startswith("depth_aligner.image_tokenizer") or name.startswith("depth_aligner.encoder"):
                 decay_params_small_lr.append(param)
             # elif name.startswith("depth_aligner.camera_head") or name.startswith("depth_aligner.camera_decoder"):
             #     camera_params.append(param)
