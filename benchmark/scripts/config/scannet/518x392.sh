@@ -6,7 +6,7 @@ SPLIT="test"
 SEQ=""   # e.g. chess/seq-01 ; empty means all
 
 MODE="stride"   # stride | random
-STRIDE=20       # default stride
+STRIDE=25       # default stride
 SEQ_LEN=8       # use N frames in sequence
 MAX_SEQ_LEN=-1  # default max seq len, default -1 to use all
 SEED=42             # used when MODE=random

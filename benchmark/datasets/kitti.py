@@ -12,6 +12,8 @@ import imageio
 from PIL import Image
 from torchvision import transforms as TF
 import cv2
+import json
+import pickle
 
 from .base import BaseDataset, SequenceBatch, DatasetConfig
 
@@ -27,50 +29,53 @@ class KITTIDataset(BaseDataset):
             0000000000.png
     """
     
-    # DEPTH_SCALE = 1000.0  # mm -> m
-    # NUM_TEST = 50
-    # RGB_WIDTH = 518
-    # RGB_HEIGHT = 518
-    # CROP_BORDER = 28
-    
-    # def __init__(self, root: str | Path, num_seq: int = NUM_TEST, depth_scale: float = DEPTH_SCALE):
-    #     super().__init__(root, num_seq)
-        
-    #     self.depth_scale = depth_scale
-        
-    #     if root.endswith(".npz"):
-    #         self.sample_sequences = np.load(root, allow_pickle=True)
-    #     else:
-    #         raise NotImplementedError
-    
     def __init__(self, config: DatasetConfig):
         super().__init__(config)
         
-        self.sample_sequences = self.list_sequences("test")
+        with open(f"{self.config.data_root}/sequence_list.pkl", "rb") as f:
+            self.sample_sequences = pickle.load(f)
+        
+        self.seq2data = self._build_seq2data()
+        
+    def _build_seq2data(self):
+        seq2data = {}
+        for d in self.sample_sequences:
+            seq_id = d["_name"]
+            for image_path, extrs, intrs in zip(d["images"], d["poses"], d["intrinsics"]):
+                *_, seq_dir, seq_name, _, image_name = image_path.split('/')
+                image_name = image_name.split('.')[0]
+                
+                if seq_id not in seq2data: seq2data[seq_id] = []
+                
+                color_path = f"{self.config.data_root}/{seq_dir}/color/{seq_name}/data/{image_name}.png"
+                depth_path = f"{self.config.data_root}/{seq_dir}/depth/{seq_name}/{image_name}.png"
+                if not os.path.exists(color_path) or not os.path.exists(depth_path): continue
+                item = {
+                    "color": color_path,
+                    "depth": depth_path,
+                    "extr": extrs,
+                    "intr": intrs
+                }
+                seq2data[seq_id].append(item)
+                
+        return seq2data
         
     def list_sequences(self, split):
-        """hardcoded list for sequences: <seq_dir>/<sub_seq_name>
-        """
-        sequences = []
-        for seq_dir in sorted([d for d in os.listdir(self.config.data_root) if osp.isdir(osp.join(self.config.data_root, d))]):
-            for sub_seq_name in ["image_02", "image_03"]:
-                sequences.append(f"{seq_dir}/{sub_seq_name}")
-            
-        return sequences
+        return [k for k in self.seq2data.keys()][:self.config.num_seq]
     
     def count_seq_len(self, seq):
-        seq_dir, sub_seq_name = seq.split('/')
-        rgbs = os.listdir(f"{self.config.data_root}/{seq_dir}/color/{sub_seq_name}/data")
-        depths = os.listdir(f"{self.config.data_root}/{seq_dir}/depth/{sub_seq_name}")
+        rgbs = [d["color"] for d in self.seq2data[seq]]
+        depths = [d["depth"] for d in self.seq2data[seq]]
+        extrs = [d["extr"] for d in self.seq2data[seq]]
+        intrs = [d["intr"] for d in self.seq2data[seq]]
         
-        if not (len(rgbs) == len(depths)):
-            print(f"{seq} mismatched: rgb={len(rgbs)} depth={len(depths)}")
+        if not (len(rgbs) == len(depths) == len(extrs) == len(intrs)):
+            print(f"{seq} mismatched: rgb={len(rgbs)} depth={len(depths)} extrinsics={len(extrs)} intrinsics={len(intrs)}")
         return len(rgbs)
     
-    def make_paths(self, seq, frame_ids, offset=5):
-        seq_dir, sub_seq_name = seq.split('/')
-        images = [f"{self.config.data_root}/{seq_dir}/color/{sub_seq_name}/data/{str(i+offset).zfill(10)}.png" for i in frame_ids]
-        depths = [f"{self.config.data_root}/{seq_dir}/depth/{sub_seq_name}/{str(i+offset).zfill(10)}.png" for i in frame_ids]
+    def make_paths(self, seq, frame_ids):
+        images = [self.seq2data[seq][f]["color"] for f in frame_ids]
+        depths = [self.seq2data[seq][f]["depth"] for f in frame_ids]
         
         return images, depths
     
@@ -162,10 +167,20 @@ class KITTIDataset(BaseDataset):
         return depths # (V,518,518) meters
     
     def _load_w2c(self, seq: str, frame_ids: List[int]) -> torch.Tensor:
-        return torch.eye(4, dtype=torch.double).unsqueeze(0).repeat(len(frame_ids), 1, 1)
+        w2c = [self.seq2data[seq][f]["extr"] for f in frame_ids]
+        w2c = np.stack(w2c)
+        w2c = torch.from_numpy(w2c).double()
+        
+        return w2c
     
     def _load_K(self, seq: str, frame_ids: List[int]) -> torch.Tensor:    
-        pix_K = self._build_K().unsqueeze(0).repeat(len(frame_ids), 1, 1)
+        pix_K = [self.seq2data[seq][f]["intr"] for f in frame_ids]
+        pix_K = np.stack(pix_K)
+        pix_K = torch.from_numpy(pix_K).double()
+        
+        pix_W, pix_H = pix_K[0, 0, 2] * 2, pix_K[0, 1, 2] * 2
+        norm_K = self._normalize_K(pix_K, pix_H, pix_W)
+        pix_K = self._denormalize_K(norm_K, self.config.rgb_origin_W, self.config.rgb_origin_H)
 
         if self.config.crop_left + self.config.crop_top > 0:
             pix_K[..., 0, 2] -= self.config.crop_left
@@ -177,7 +192,9 @@ class KITTIDataset(BaseDataset):
             self.config.rgb_origin_W - self.config.crop_left - self.config.crop_right,
         )
         norm_K = self._normalize_K(pix_K, actual_H, actual_W)    
-        pix_K = self._denormalize_K(norm_K, self.config.rgb_resize_W, self.config.rgb_resize_H)
+        
+        if self.config.rgb_resize_W != actual_W or self.config.rgb_resize_H != actual_H:
+            pix_K = self._denormalize_K(norm_K, self.config.rgb_resize_W, self.config.rgb_resize_H)
                 
         return norm_K, pix_K
     
