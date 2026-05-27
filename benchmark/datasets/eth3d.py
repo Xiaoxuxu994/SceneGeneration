@@ -237,7 +237,11 @@ class ETH3DDataset(BaseDataset):
             norm_K.append(cur_K)
         norm_K = torch.stack(norm_K)
         pix_K = self._denormalize_K(norm_K, self.config.rgb_origin_W, self.config.rgb_origin_H)
-        
+
+        if self.config.crop_left + self.config.crop_top > 0:
+            pix_K[..., 0, 2] -= self.config.crop_left
+            pix_K[..., 1, 2] -= self.config.crop_top
+            
         # normalize again
         (actual_H, actual_W) = (
             self.config.rgb_origin_H - self.config.crop_top - self.config.crop_bottom,

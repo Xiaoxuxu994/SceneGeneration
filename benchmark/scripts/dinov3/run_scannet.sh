@@ -7,14 +7,14 @@ EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
-# source ./scripts/config/scannet/512x384.sh
+source ./scripts/config/scannet/512x384.sh
 # source ./scripts/config/scannet/518x392.sh
 
-MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-MODEL_SIZE=""
-CKPT="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/ckpt/5000"
-CONFIG="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/config.json"
-PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt5000"
+# MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE=""
+# CKPT="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/ckpt/5000"
+# CONFIG="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/config.json"
+# PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt5000"
 
 # MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE=""

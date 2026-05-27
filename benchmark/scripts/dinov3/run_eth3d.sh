@@ -7,33 +7,13 @@ EVAL_SCRIPT="scripts/run_eval.py"
 VIS_SCRIPT="scripts/run_vis.py"
 
 # ----- model ------
+# source ./scripts/config/eth3d/512x336.sh
+
 # MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE=""
-# source ./scripts/config/eth3d/512x336.sh
-
-# CKPT="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/ckpt/35000.ckpt"
-# CONFIG="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/config.json"
-# PREFIX="Reliev3R-260512-1B-CamRegFalse-lr1e-5_ckpt35k"
-
-# MODEL="pi3" # ['vggt','pi3','reliev3r']
-# MODEL_SIZE="dinov3_huge+_3Bv2"
-# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt39" 
-# PREFIX="exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
-# CONFIG=""
-# source ./scripts/config/eth3d/512x336.sh
-
-MODEL="vggt_omega"
-CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
-PREFIX="vggt_omega_1B_official"
-CONFIG=""
-MODEL_SIZE=""
-# source ./scripts/config/eth3d/512x336.sh
-
-MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-MODEL_SIZE=""
-CKPT="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/ckpt/5000"
-CONFIG="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/config.json"
-PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt5000"
+# CKPT="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/ckpt/5000"
+# CONFIG="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/config.json"
+# PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt5000"
 
 # MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE=""
@@ -47,11 +27,11 @@ PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt5000"
 # PREFIX="exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02_ckpt3"
 # CONFIG=""
 
-source ./scripts/config/eth3d/224x224.sh
+# source ./scripts/config/eth3d/224x224.sh
 MODEL="pi3" # ['vggt','pi3','reliev3r']
 MODEL_SIZE="dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
-CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0429_pi3_5B_datamix_all_v5_lowres_v8-m8_224x224_lr1e4_scratch/ckpts/model_ckpt79" 
-PREFIX="exp0429_pi3_5B_datamix_all_v5_lowres_v8-m8_224x224_lr1e4_scratch_ckpt79"
+CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0505_pi3_5B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt39/" 
+PREFIX="exp0505_pi3_5B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
 CONFIG=""
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
