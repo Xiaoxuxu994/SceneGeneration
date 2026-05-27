@@ -76,6 +76,7 @@ DATA_ROOT_DEFAULTS = {
     "ase":     BENCH_ROOT / "data" / "ASE" /"reliev3r_sample_list_c32_s1.npz.update.npz",
     "re10k":   "/efs-m3ga/h00548084/relive3r_dataset/re10k_12.19/reliev3r_sample_list_c32.npz",
     "kitti":   BENCH_ROOT / "data" / "KITTI",
+    "sintel": BENCH_ROOT / "data" / "MPI-Sintel",
 }
 MODEL_DEFAULTS = {
     "vggt": {

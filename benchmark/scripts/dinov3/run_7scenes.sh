@@ -9,11 +9,11 @@ VIS_SCRIPT="scripts/run_vis.py"
 # ----- model ------
 # source ./scripts/config/7scenes/512x384.sh
 
-MODEL="reliev3r" # ['vggt','pi3','reliev3r']
-MODEL_SIZE=""
-CKPT="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/ckpt/5000"
-CONFIG="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/config.json"
-PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt5000"
+# MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE=""
+# CKPT="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/ckpt/5000"
+# CONFIG="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/config.json"
+# PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt5000"
 
 # MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE=""
@@ -26,6 +26,12 @@ PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt5000"
 # CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02/ckpts/model_ckpt3" 
 # PREFIX="exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02_ckpt3"
 # CONFIG=""
+
+MODEL="vggt_omega"
+CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
+PREFIX="vggt_omega_1B_official"
+CONFIG=""
+MODEL_SIZE=""
 
 ## ------ 224x224 --------
 source ./scripts/config/7scenes/224x224.sh

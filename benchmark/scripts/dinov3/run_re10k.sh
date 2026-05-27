@@ -41,6 +41,12 @@ CONFIG=""
 # PREFIX="pi3_official"
 # CONFIG=""
 
+# MODEL="vggt_omega"
+# CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
+# PREFIX="vggt_omega_1B_official"
+# CONFIG=""
+# MODEL_SIZE=""
+
 NPU_ID="0"
 DEVICE="npu:0"
 DTYPE="fp32"

@@ -27,6 +27,12 @@ CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0521_pi3_3B_datamix_all_v9-1_low
 PREFIX="exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02_ckpt3"
 CONFIG=""
 
+# MODEL="vggt_omega"
+# CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
+# PREFIX="vggt_omega_1B_official"
+# CONFIG=""
+# MODEL_SIZE=""
+
 NPU_ID="4"
 DEVICE="npu:0"
 DTYPE="fp32"
