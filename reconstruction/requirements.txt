@@ -22,3 +22,5 @@ torchvision==0.24.0
 # torchvision==0.21.0
 deepspeed==0.17.6
 triton_ascend==3.2.0
+small_gicp
+omegaconf

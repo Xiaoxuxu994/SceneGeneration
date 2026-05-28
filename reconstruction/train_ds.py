@@ -19,6 +19,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from torch.utils.tensorboard import SummaryWriter
 from einops import rearrange
+from safetensors.torch import load_model
 
 from utils.config_loader import LoadConfig
 from utils.image_utils import visualize_prediction
@@ -142,18 +143,24 @@ def run(rank, cfg):
     
     """Load models. """
     if cfg.get("train_pi3", False):
-        model = Reliev3R_Pi3(cfg.model).to(device=DEVICE_NAME)
+        model = Reliev3R_Pi3(cfg.model)
     else:
-        model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
+        model = Reliev3R(cfg.model)
     
     """Create loss functions. """
     loss_func = make_loss_func(cfg.loss)
     
     """Load model checkpoint. """
     step = 0
+    safetensors_loaded = False
+    if cfg.get("ckpt_path") is not None and cfg.ckpt_path.endswith("safetensors"):
+        load_model(model, cfg.ckpt_path)
+        safetensors_loaded = True
+        print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
+    model = model.to(device=DEVICE_NAME)
 
     """Create optimizers from scratch. """
-    optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate)
+    optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.training.encoder_lr_ratio, cfg.training.decoder_lr_ratio)
     lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations, 
                                         scheduler_type=cfg.training.get("lr_scheduler", "cosine"))
     
@@ -165,7 +172,7 @@ def run(rank, cfg):
         config = ds_config,
     )
 
-    if cfg.get("ckpt_path") is not None:
+    if not safetensors_loaded and cfg.get("ckpt_path") is not None:
         _, client_state = engine.load_checkpoint(
             load_dir=cfg.get("ckpt_path"), 
             tag=cfg.get("ckpt_id"),
@@ -407,6 +414,8 @@ if __name__ == '__main__':
     parser.add_argument("--ckpt_id", type=str, default=None, help="Id of checkpoint.")
     parser.add_argument("--no_load_optim", action="store_true", help="Set to disable loading optimizer when ckpt is given.")
     parser.add_argument("--learning_rate", type=float, default=None, help="Maximum learning rate.")
+    parser.add_argument("--encoder_lr_ratio", type=float, default=None, help="Backbone encoder lr ratio (0~1).")
+    parser.add_argument("--decoder_lr_ratio", type=float, default=None, help="Backbone decoder lr ratio (0~1).")
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
     parser.add_argument("--lr_scheduler", type=str, default=None, help="Set scheduler type if set.")
     parser = deepspeed.add_config_arguments(parser)
@@ -428,6 +437,10 @@ if __name__ == '__main__':
         cfg.training.verbose_interval = args.verbose_interval
     if args.learning_rate is not None:
         cfg.training.learning_rate = args.learning_rate
+    if args.encoder_lr_ratio is not None:
+        cfg.training.encoder_lr_ratio = args.encoder_lr_ratio
+    if args.decoder_lr_ratio is not None:
+        cfg.training.decoder_lr_ratio = args.decoder_lr_ratio
     if args.ckpt_path is not None:
         cfg.ckpt_path = args.ckpt_path
     if args.ckpt_id is not None:

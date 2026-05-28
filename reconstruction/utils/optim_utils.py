@@ -18,7 +18,7 @@ def format_number(num):
     return str(num)
 
 
-def create_optimizer(model: nn.Module, weight_decay, learning_rate) -> torch.optim.Optimizer:
+def create_optimizer(model: nn.Module, weight_decay, learning_rate, encoder_lr_ratio=None, decoder_lr_ratio=None) -> torch.optim.Optimizer:
     """Create optimizer. 
     
     Reference to https://github.com/Haian-Jin/LVSM/blob/main/utils/training_utils.py#L33.
@@ -28,54 +28,47 @@ def create_optimizer(model: nn.Module, weight_decay, learning_rate) -> torch.opt
         weight_decay (_type_): _description_
         learning_rate (_type_): _description_
     """
-    all_param_dict = {name: param for name, param in model.named_parameters()}
-    optimized_param_dict = {name: param for name, param in all_param_dict.items() if param.requires_grad}
-    
-    decay_params, decay_params_small_lr, camera_params, nodecay_params = [], [], [], []
-    for name, param in optimized_param_dict.items():
-        if param.dim() == 1 or getattr(param, '_no_weight_decay', False):
-            nodecay_params.append(param)
-        else:
-            if name.startswith("image_tokenizer") or name.startswith("encoder") or name.startswith("depth_aligner.image_tokenizer") or name.startswith("depth_aligner.encoder"):
-                decay_params_small_lr.append(param)
-            # elif name.startswith("depth_aligner.camera_head") or name.startswith("depth_aligner.camera_decoder"):
-            #     camera_params.append(param)
+    if encoder_lr_ratio == 0:
+        model.encoder.eval().requires_grad_(False)
+    if decoder_lr_ratio == 0:
+        model.register_token.requires_grad_(False)
+        model.decoder.eval().requires_grad_(False)
+    model.conf_decoder.eval().requires_grad_(False)
+    model.conf_head.eval().requires_grad_(False)
+
+    def nodecay(name, param) -> bool:
+        return param.dim() == 1 or getattr(param, '_no_weight_decay', False) \
+            or any(n in name for n in ('pos_embed', 'cls_token', 'register'))
+
+    encoder_params, encoder_nodecay_params = [], []
+    decoder_params, decoder_nodecay_params = [], []
+    downstream_params, downstream_nodecay_params = [], []
+
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            if name.startswith('encoder.'):
+                if nodecay(name, param): encoder_nodecay_params.append(param)
+                else: encoder_params.append(param)
+            elif name == 'register_token' or name.startswith('decoder.'):
+                if nodecay(name, param): decoder_nodecay_params.append(param)
+                else: decoder_params.append(param)
             else:
-                decay_params.append(param)
+                if nodecay(name, param): downstream_nodecay_params.append(param)
+                else: downstream_params.append(param)
+
+    if encoder_lr_ratio is None: encoder_lr_ratio = 1.
+    if decoder_lr_ratio is None: decoder_lr_ratio = 1.
+
     optim_groups = [
-        {'params': decay_params, 'weight_decay': weight_decay, 'lr': learning_rate},
-        {'params': decay_params_small_lr, 'weight_decay': weight_decay, 'lr': learning_rate * 1e-2}, 
-        # {'params': camera_params, 'weight_decay': weight_decay, 'lr': learning_rate * 0.2}, 
-        {'params': nodecay_params, 'weight_decay': 0.0, 'lr': learning_rate}, 
+        {'params': encoder_params, 'weight_decay': weight_decay, 'lr': learning_rate * encoder_lr_ratio},
+        {'params': encoder_nodecay_params, 'weight_decay': 0., 'lr': learning_rate * encoder_lr_ratio},
+        {'params': decoder_params, 'weight_decay': weight_decay, 'lr': learning_rate * decoder_lr_ratio},
+        {'params': decoder_nodecay_params, 'weight_decay': 0., 'lr': learning_rate * decoder_lr_ratio},
+        {'params': downstream_params, 'weight_decay': weight_decay, 'lr': learning_rate},
+        {'params': downstream_nodecay_params, 'weight_decay': 0., 'lr': learning_rate},
     ]
-    
-    # specified_param_group_dicts = {
-    #     learning_rate * 1e-2: ["depth_aligner.image_tokenizer", "depth_aligner.encoder"], 
-    #     learning_rate * 5e-1: ["depth_aligner.decoder", ], 
-    # }
-    # params_collected = {}
-    # for name, param in optimized_param_dict.items():
-    #     registered = False
-    #     for lr, name_list in specified_param_group_dicts.items():
-    #         for module_name in name_list:
-    #             if name.startswith(module_name):
-    #                 if params_collected.get(lr, None) is None:
-    #                     params_collected[lr] = []
-    #                 params_collected[lr].append(param)
-    #                 registered = True
-    #                 break
-    #         if registered:
-    #             break
-    #     if not registered:
-    #         if params_collected.get(learning_rate, None) is None:
-    #             params_collected[learning_rate] = []
-    #         params_collected[learning_rate].append(param)
-    # optim_groups = []
-    # for lr, params in params_collected.items():
-    #     optim_groups.append({'params': params, 'weight_decay': weight_decay, 'lr': lr})
-    
-    # use fused AdamW optimizer by default. 
-    # optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate)
+    optim_groups = [group for group in optim_groups if group['params']]
+
     optimizer = torch.optim.AdamW(optim_groups)
     
     def get_module_name(name):
@@ -85,6 +78,8 @@ def create_optimizer(model: nn.Module, weight_decay, learning_rate) -> torch.opt
         return parts[0]  # Fallback to first part if no 'module.' prefix
     print(f'Optimizer: AdamW, learning rate: {learning_rate}, weight decay: {weight_decay}')
     # Number of parameters
+    all_param_dict = {name: param for name, param in model.named_parameters()}
+    optimized_param_dict = {name: param for name, param in model.named_parameters() if param.requires_grad}
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in optimized_param_dict.values())
     optim_module_names = sorted(set(get_module_name(name) for name in optimized_param_dict.keys()))
@@ -93,7 +88,9 @@ def create_optimizer(model: nn.Module, weight_decay, learning_rate) -> torch.opt
     print(f'Total parameters: {format_number(total_params)}, Trainable parameters: {format_number(trainable_params)}')        
     print(f'Optimized parameters: {optim_module_names}')
     print(f'Frozen parameters: {frozen_module_names}')
-    
+    for group in optim_groups:
+        print(f'Optimizer group: {len(group["params"])} tensors with lr={group["lr"]:.2} and decay={group["weight_decay"]}')
+
     return optimizer
 
 

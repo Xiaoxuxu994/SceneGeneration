@@ -1,21 +1,23 @@
-### DDP Configs
-export MASTER_ADDR=127.0.0.1
-export MASTER_PORT=12356
-export WORLD_SIZE=1
-export NODE_RANK=0
-
-### Exp Configs
-## Experiment Name
-EXPNAME=debug
-## CUDA Visible Devices
-export CUDA_VISIBLE_DEVICES="0"
-## NPU Visible Devices
-# export NPU_VISIBLE_DEVICES="0,1"
-# export ASCEND_RT_VISIBLE_DEVICES="0,1"
-
-### Command
-torchrun --nnodes=1 --nproc_per_node=$WORLD_SIZE --node_rank=$NODE_RANK --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT \
-train.py \
-  --config configs/reliev3r_overfit/main.yaml # \
-  # --ckpt_path exp/new_pointsup/ckpt/10000.ckpt \
-  # --iterations 20000
+export HCCL_BUFFSIZE=120
+export HCCL_CONNECT_TIMEOUT=7200
+export HCCL_EXEC_TIMEOUT=7200
+export HCCL_OP_STATS=1
+export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+export TASK_QUEUE_ENABLE=2
+export USE_CHECKPOINT=True
+export ASCEND_RT_VISIBLE_DEVICES=7
+# export ASCEND_LAUNCH_BLOCKING=1
+# export HYDRA_FULL_ERROR=1
+export pred_z_depth=True
+torchrun \
+    --standalone \
+    --nproc_per_node npu \
+    train_ds.py \
+    --train_url outputs/pi3 \
+    --config configs/pi3_dinov2/main_v9.yaml \
+    --ckpt_path /efs-mi-east4-2/checkpoints/Pi3/model.safetensors \
+    --no_load_optim \
+    --encoder_lr_ratio 0.01 \
+    --decoder_lr_ratio 0.1 \
+    --deepspeed \
+    --deepspeed_config ./ds_config/ds_config_z2_ot.json
