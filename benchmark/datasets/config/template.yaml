@@ -1,0 +1,13 @@
+sampling:
+  split: "test"   # train | val | test
+  mode: ""        # str, stride or random
+  stride: ""      # frame interval, only for stride mode
+  seed: 42        # random seed, only for random mode
+  seq_len: 0      # number of views in sampled sequence
+  max_seq_len: 0  # total maximum length of the original clip, -1 to use all
+  num_seq: 0      # number of sequences to be evaluated
+  seq: ""         # e.g. chess/seq-01 ; empty means all
+  
+depth:
+  vmin: 0.1
+  vmax: 10.0

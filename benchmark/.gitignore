@@ -1,0 +1,15 @@
+# data
+data/
+samples/
+
+.vscode/
+checkpoints/
+debug/
+outputs/
+
+# NPU-related
+extra-info/
+kernel_meta/
+
+# debug
+temp*

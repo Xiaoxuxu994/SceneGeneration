@@ -1,0 +1,4 @@
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_precompile-prefix/src/ascendc_kernels_npu_pcd_dist_precompile-build/CMakeFiles/rebuild_cache.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_precompile-prefix/src/ascendc_kernels_npu_pcd_dist_precompile-build/CMakeFiles/edit_cache.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_precompile-prefix/src/ascendc_kernels_npu_pcd_dist_precompile-build/CMakeFiles/check_src_template.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_precompile-prefix/src/ascendc_kernels_npu_pcd_dist_precompile-build/CMakeFiles/precompile_obj.dir

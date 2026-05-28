@@ -1,0 +1,7 @@
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-build/CMakeFiles/install/strip.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-build/CMakeFiles/install/local.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-build/CMakeFiles/rebuild_cache.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-build/CMakeFiles/edit_cache.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-build/CMakeFiles/host_bisheng_obj.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-build/CMakeFiles/install.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-build/CMakeFiles/list_install_components.dir
