@@ -221,21 +221,21 @@ for DATASET in "${DATASETS[@]}"; do
   t1=$(date +%s)
   echo "[TIME] EVAL seconds=$((t1-t0))"
 
-#   # -------------------------
-#   # 2) VIS
-#   # -------------------------
-#   banner_stage "VIS"
-#   t0=$(date +%s)
+  # -------------------------
+  # 2) VIS
+  # -------------------------
+  banner_stage "VIS"
+  t0=$(date +%s)
 
-#   echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
-#   echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
+  echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
+  echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
 
-#   # requirement: if gt has no gt_vis -> run; if exists -> skip
-#   run_vis_if_needed "${GT_DIR}"
-#   run_vis_if_needed "${PRED_DIR}"
+  # requirement: if gt has no gt_vis -> run; if exists -> skip
+  run_vis_if_needed "${GT_DIR}"
+  run_vis_if_needed "${PRED_DIR}"
 
-#   t1=$(date +%s)
-#   echo "[TIME] VIS seconds=$((t1-t0))"
+  t1=$(date +%s)
+  echo "[TIME] VIS seconds=$((t1-t0))"
 
   banner_done "${IDX}" "${TOTAL}" "${DATASET}"
 done

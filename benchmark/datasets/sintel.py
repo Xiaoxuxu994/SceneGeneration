@@ -45,7 +45,7 @@ class SintelDataset(BaseDataset):
         # return sorted([d for d in os.listdir(self.rgb_root) if osp.isdir(osp.join(self.rgb_root, d))])[-self.config.num_seq:]
         
         target_seqs = [
-        "alley_2", "cave_2", "cave_4", "market_5",
+        "alley_2", "market_5",
         "market_6", "shaman_3", "sleeping_1", "sleeping_2", "temple_2",
         ]
         
