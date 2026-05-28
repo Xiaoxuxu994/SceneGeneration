@@ -12,6 +12,7 @@ from .re10k import RE10KDataset
 from .dtu import DTUDataset
 from .eth3d import ETH3DDataset
 from .kitti import KITTIDataset
+from .sintel import SintelDataset
 
 from pathlib import Path
 
@@ -26,7 +27,8 @@ DATASET_REGISTRY = {
     "dl3dv": NewDL3DVDataset, # no depth gt
     "ase": ASEDataset, # currently only support sampled sequences as a .npz file
     "re10k": RE10KDataset, # currently only support sampled sequences as a .npz file
-    "kitti": KITTIDataset
+    "kitti": KITTIDataset,
+    "sintel": SintelDataset,
 }
 
 def get_dataset(name: str, config: DatasetConfig):

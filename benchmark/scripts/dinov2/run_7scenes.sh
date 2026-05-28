@@ -21,17 +21,19 @@ source ./scripts/config/7scenes/518x392.sh
 # PREFIX="exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
 # CONFIG=""
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov2_large_0.95B"
-CKPT="./ckpts/Pi3/model.safetensors"
-PREFIX="pi3_official"
-CONFIG=""
+# MODEL_SIZE="dinov2_large_0.95B"
+# CKPT="./ckpts/Pi3/model.safetensors"
+# PREFIX="pi3_official"
+# CONFIG=""
+# source ./scripts/config/7scenes/518x392.sh
 
-# MODEL="vggt" # ['vggt','pi3','reliev3r']
-# MODEL_SIZE=""
-# CONFIG="./ckpts/VGGT-1B/config.json"
-# CKPT="./ckpts/VGGT-1B/model.pt"
-# PREFIX="vggt_official"
+MODEL="vggt" # ['vggt','pi3','reliev3r']
+
+MODEL_SIZE=""
+CONFIG="./ckpts/VGGT-1B/config.json"
+CKPT="./ckpts/VGGT-1B/model.pt"
+PREFIX="vggt_official"
+source ./scripts/config/7scenes/518x392.sh
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 # CONFIG=""

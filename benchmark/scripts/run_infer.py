@@ -21,6 +21,19 @@ from vggt.utils.pose_enc import pose_encoding_to_extri_intri
 # from vggt.utils.geometry import unproject_depth_map_to_point_map, closed_form_inverse_se3
 
 # -----------------------------------------------
+# VGGT-Ω imports 
+# -----------------------------------------------
+from models.vggt_omega.models.vggt_omega import VGGTOmega
+from models.vggt_omega.utils.pose_enc import encoding_to_camera
+
+# import sys
+# try:
+#     import numpy._core
+# except ImportError:
+#     import numpy.core
+#     sys.modules['numpy._core'] = numpy.core
+
+# -----------------------------------------------
 # Pi3 imports 
 # -----------------------------------------------
 # from models.pi3_official.pi3.models.pi3 import Pi3 ## official
@@ -63,10 +76,15 @@ DATA_ROOT_DEFAULTS = {
     "ase":     BENCH_ROOT / "data" / "ASE" /"reliev3r_sample_list_c32_s1.npz.update.npz",
     "re10k":   "/efs-m3ga/h00548084/relive3r_dataset/re10k_12.19/reliev3r_sample_list_c32.npz",
     "kitti":   BENCH_ROOT / "data" / "KITTI",
+    "sintel": BENCH_ROOT / "data" / "MPI-Sintel",
 }
 MODEL_DEFAULTS = {
     "vggt": {
         "ckpt": BENCH_ROOT / "ckpts" / "VGGT-1B",
+        "config": None,
+    },
+    "vggt_omega": {
+        "ckpt": Path("/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"),
         "config": None,
     },
     "pi3": {
@@ -161,6 +179,60 @@ def run_vggt_infer(model, images_cpu, device: torch.device, autocast_dtype: torc
         )
 
     return pred_w2c, pred_K, pred_depth, pred_point, pred_unproj
+
+
+# ---------------------- running vggt-Omega infer ------------------------------------------------
+def load_model_vggt_omega(ckpt, enable_alignment=False):
+    model = VGGTOmega(enable_alignment=enable_alignment)
+    
+    ckpt_path = Path(ckpt)
+    if not ckpt_path.is_file():
+        candidate = ckpt_path / "model.pt"
+        if candidate.exists():
+            ckpt_path = candidate
+        else:
+            raise ValueError(f"Cannot find valid checkpoint in {ckpt}")
+            
+    checkpoint = torch.load(str(ckpt_path), map_location="cpu")
+    
+    if 'module' in checkpoint:
+        state_dict = checkpoint['module']
+    elif 'model' in checkpoint:
+        state_dict = checkpoint['model']
+    elif 'state_dict' in checkpoint:
+        state_dict = checkpoint['state_dict']
+    else:
+        state_dict = checkpoint
+        
+    model.load_state_dict(state_dict, strict=False)
+    model.eval()
+    
+    num_params = sum(p.numel() for p in model.parameters())
+    print(f"[VGGT-Omega] #params = {num_params/1e6:.2f} M")
+    
+    return model
+
+def run_vggt_omega_infer(model, images_cpu, device: torch.device, autocast_dtype: torch.dtype):
+    images = images_cpu.unsqueeze(0).to(device)  # (B=1,...)
+
+    with torch.inference_mode():
+        with torch.autocast(device_type=device.type, dtype=autocast_dtype):        
+            predictions = model(images)
+
+            pred_depth = predictions["depth"]
+
+            pred_w2c, pred_K = encoding_to_camera(
+                predictions["pose_enc"],
+                images.shape[-2:],
+            )
+
+            pred_unproj = unproject_depth_map_to_point_map(
+                pred_depth.squeeze(0),
+                pred_w2c.squeeze(0),
+                pred_K.squeeze(0),
+            )
+
+    return pred_w2c, pred_K, pred_depth, pred_unproj
 
 # ---------------------- running p3 infer ------------------------------------------------
 # def load_model_pi3(ckpt):
@@ -447,6 +519,16 @@ def dump_one_seq(model,
             save_npy(pred_seq_dir, "pred_depth_maps.npy", pred_depth_maps.squeeze(0).squeeze(-1))
             save_npy(pred_seq_dir, "pred_point_maps.npy", pred_point_maps.squeeze(0))
             save_npy(pred_seq_dir, "pred_point_maps_by_unprojection.npy", pred_unproj)
+        
+        elif model_type == "vggt_omega":
+            pred_w2c, _, pred_depth_maps, pred_unproj = run_vggt_omega_infer(
+                model, batch.images_cpu, device=device, autocast_dtype=autocast_dtype
+            )
+            pred_c2w = closed_form_inverse_se3(pred_w2c.squeeze(0))
+
+            save_npy(pred_seq_dir, "pred_extrinsics.npy", pred_c2w)
+            save_npy(pred_seq_dir, "pred_depth_maps.npy", pred_depth_maps.squeeze(0).squeeze(-1))
+            save_npy(pred_seq_dir, "pred_point_maps_by_unprojection.npy", pred_unproj)
 
         elif model_type == "reliev3r":
             pred_w2c, pred_depth_maps, pred_unproj = run_reliev3r_infer(
@@ -608,6 +690,8 @@ def main():
     # load model by branch
     if args.model == "vggt":
         model = load_model_vggt(args.ckpt).to(device)
+    elif args.model == "vggt_omega":
+        model = load_model_vggt_omega(args.ckpt).to(device)
     elif args.model == "pi3":
         model = load_model_pi3(Path(args.ckpt), model_size=args.model_size).to(device)
     elif args.model == 'reliev3r':

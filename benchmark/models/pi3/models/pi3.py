@@ -150,6 +150,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             dec_num_heads=16,
             out_dim=1024,
             rope=self.rope,
+            depth=head_depth,
         )
         self.point_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=3)
 
@@ -168,6 +169,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             dec_num_heads=16,                # 8
             out_dim=512,
             rope=self.rope,
+            depth=head_depth,
             use_checkpoint=False
         )
         self.camera_head = CameraHead(dim=512)
@@ -330,6 +332,20 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                             dec_depth=56,
                             head_depth=5,
                         ),
+                        '5Bv3': dict(
+                            dec_embed_dim=3072,
+                            dec_num_heads=48,
+                            mlp_ratio=4,
+                            dec_depth=36,
+                            head_depth=6,
+                        ),
+                        '5Bv2': dict(
+                            dec_embed_dim=2560,
+                            dec_num_heads=32,
+                            mlp_ratio=4,
+                            dec_depth=56,
+                            head_depth=6,
+                        ), 
                         '2.81B': dict(
                             dec_embed_dim=1280,
                             dec_num_heads=16,
