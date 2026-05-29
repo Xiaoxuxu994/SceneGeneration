@@ -14,7 +14,7 @@ torchrun \
     --nproc_per_node npu \
     train_ds.py \
     --train_url outputs/pi3 \
-    --config configs/pi3_dinov2/main_v9.yaml \
+    --config configs/pi3_dinov2/debug.yaml \
     --ckpt_path /efs-mi-east4-2/checkpoints/Pi3/model.safetensors \
     --no_load_optim \
     --encoder_lr_ratio 0.01 \

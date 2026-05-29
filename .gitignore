@@ -20,3 +20,7 @@ data-dump
 
 datagen/data
 datagen/lib/AdaptiveSolvers*
+benchmark/experiments
+benchmark/logs
+benchmark/outputs
+*.xlsx
