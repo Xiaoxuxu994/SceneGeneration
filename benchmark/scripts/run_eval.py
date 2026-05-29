@@ -16,7 +16,7 @@ import open3d as o3d
 import _bootstrap  # noqa: F401
 
 from lib.evaluation import eval_angle, eval_trajectory, eval_depth_map, eval_point_map
-from lib.normalization import normalize_trans
+from lib.normalization import normalize_trans, normalize_trans_and_points
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -421,13 +421,19 @@ def main():
             pred_extr = torch_f32(np_load(pred_extr_p))
             gt_extr = torch_f32(np_load(gt_extr_p))
             
+            pred_extr_norm_factor, gt_extr_norm_factor = 1, 1
             if args.normalize_trans == 1:
-                pred_extr = normalize_trans(pred_extr)
-                gt_extr = normalize_trans(gt_extr)
+                pred_extr_norm, pred_extr_norm_factor = normalize_trans(pred_extr, return_norm_factor=True)
+                gt_extr_norm, gt_extr_norm_factor = normalize_trans(gt_extr, return_norm_factor=True)
 
             # ---------- pose metrics ----------
-            rra_acc, rta_acc, auc = eval_angle(pred_extr, gt_extr, threshold=args.pose_threshold)
-            ate, rpe_trans, rpe_rot = eval_trajectory(pred_extr, gt_extr)
+            rra_acc, rta_acc, auc = eval_angle(
+                pred_extr_norm if args.normalize_trans == 1 else pred_extr, 
+                gt_extr_norm if args.normalize_trans == 1 else gt_extr, 
+                threshold=args.pose_threshold)
+            ate, rpe_trans, rpe_rot = eval_trajectory(
+                pred_extr_norm if args.normalize_trans == 1 else pred_extr, 
+                gt_extr_norm if args.normalize_trans == 1 else gt_extr)
 
         row["pose_rra_acc"] = float(rra_acc)
         row["pose_rta_acc"] = float(rta_acc)

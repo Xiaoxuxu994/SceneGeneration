@@ -21,11 +21,11 @@ source ./scripts/config/scannet/518x392.sh
 # PREFIX="exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4_ckpt19"
 # CONFIG=""
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov2_large_0.95B"
-CKPT="./ckpts/Pi3/model.safetensors"
-PREFIX="pi3_official"
-CONFIG=""
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov2_large_0.95B"
+# CKPT="./ckpts/Pi3/model.safetensors"
+# PREFIX="pi3_official"
+# CONFIG=""
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE=""
@@ -34,20 +34,13 @@ CONFIG=""
 # PREFIX="vggt_official"
 # source ./scripts/config/ase/518x336.sh
 
-# MODEL="vggt" # ['vggt','pi3','reliev3r']
-# CONFIG=""
-# MODEL_SIZE=""
-# CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_final"
-# source ./scripts/config/scannet/518x392.sh
+MODEL="vggt" # ['vggt','pi3','reliev3r']
+CONFIG=""
+MODEL_SIZE=""
+CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
+PREFIX="vggt_sz_final"
 
-USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
-USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
-
-SKIP_POINTMAP=0 # 1 if skip pointmap evaluation
-SKIP_NORMAL=1 # 1 if skip point normal evaluation
-
-NPU_ID="4"
+NPU_ID="6"
 DEVICE="npu:0"
 DTYPE="fp32"
 

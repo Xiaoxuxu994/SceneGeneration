@@ -11,9 +11,9 @@ source ./scripts/config/ase/518x518.sh
 
 # MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE=""
-CKPT="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/ckpt/35000.ckpt"
-CONFIG="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/config.json"
-PREFIX="Reliev3R-260512-1B-CamRegFalse-lr1e-5_ckpt35k"
+# CKPT="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/ckpt/35000.ckpt"
+# CONFIG="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/config.json"
+# PREFIX="Reliev3R-260512-1B-CamRegFalse-lr1e-5_ckpt35k"
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE="dinov3_huge+_3Bv2"
@@ -27,17 +27,17 @@ PREFIX="Reliev3R-260512-1B-CamRegFalse-lr1e-5_ckpt35k"
 # PREFIX="pi3_official"
 # CONFIG=""
 
-MODEL="vggt" # ['vggt','pi3','reliev3r']
-MODEL_SIZE=""
-CONFIG="./ckpts/VGGT-1B/config.json"
-CKPT="./ckpts/VGGT-1B/model.pt"
-PREFIX="vggt_official"
-
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
-# CONFIG=""
 # MODEL_SIZE=""
-# CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_final"
+# CONFIG="./ckpts/VGGT-1B/config.json"
+# CKPT="./ckpts/VGGT-1B/model.pt"
+# PREFIX="vggt_official"
+
+MODEL="vggt" # ['vggt','pi3','reliev3r']
+CONFIG=""
+MODEL_SIZE=""
+CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
+PREFIX="vggt_sz_final"
 
 NPU_ID="7"
 DEVICE="npu:0"

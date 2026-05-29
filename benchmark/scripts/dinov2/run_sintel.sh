@@ -27,24 +27,17 @@ source ./scripts/config/sintel/518x224.sh
 # PREFIX="pi3_official"
 # CONFIG=""
 
-MODEL="vggt" # ['vggt','pi3','reliev3r']
-MODEL_SIZE=""
-CONFIG="./ckpts/VGGT-1B/config.json"
-CKPT="./ckpts/VGGT-1B/model.pt"
-PREFIX="vggt_official"
-
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
-# CONFIG=""
 # MODEL_SIZE=""
-# CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_final"
-# source ./scripts/config/scannet/518x392.sh
+# CONFIG="./ckpts/VGGT-1B/config.json"
+# CKPT="./ckpts/VGGT-1B/model.pt"
+# PREFIX="vggt_official"
 
-USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
-USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
-
-SKIP_POINTMAP=1 # 1 if skip pointmap evaluation
-SKIP_NORMAL=1 # 1 if skip point normal evaluation
+MODEL="vggt" # ['vggt','pi3','reliev3r']
+CONFIG=""
+MODEL_SIZE=""
+CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
+PREFIX="vggt_sz_final"
 
 NPU_ID="7"
 DEVICE="npu:0"

@@ -51,7 +51,8 @@ def check_valid_tensor(input_tensor: Optional[torch.Tensor], name: str = "tensor
         if torch.isnan(input_tensor).any() or torch.isinf(input_tensor).any():
             logging.warning(f"NaN or Inf found in tensor: {name}")
 
-def normalize_trans(extr: torch.Tensor, detach_norm_factor: bool=False, return_norm_factor=False):
+def normalize_trans(extr: torch.Tensor, 
+        detach_norm_factor: bool=False, return_norm_factor=False):
     """Normalize tranlation of extrinsics by their camera coordinate.
 
     Args:
@@ -71,6 +72,32 @@ def normalize_trans(extr: torch.Tensor, detach_norm_factor: bool=False, return_n
     if not return_norm_factor:
         return extr
     return extr, t_magnitude[..., 0, 0] # (..., v, 4, 4), (..., )
+
+def normalize_trans_and_points(extr: torch.Tensor, points: torch.Tensor,
+        detach_norm_factor: bool=False, return_norm_factor=False):
+    """Normalize tranlation of extrinsics by their camera coordinate.
+
+    Args:
+        extr (torch.Tensor): Extrinsics. Tensor of shape (..., v, 4, 4)
+        points (torch.Tensor): Points. Tensor of shape (..., v, H, W)
+
+    Returns:
+        torch.Tensor: Normalized extrinsics. Tensor of shape (..., v, 4, 4)
+        torch.Tensor: Normalized points. Tensor of shape (..., v, H, W)
+    """
+    # t: Tensor of shape (..., v, 4, 4)
+    t = extr[..., :3, 3] # ... v 3
+    t_magnitude = t.norm(dim=-1).mean(dim=-1)[..., None, None] # ... 1 1
+    if detach_norm_factor:
+        t_magnitude = t_magnitude.detach()
+    t = t / (t_magnitude + 1e-12)
+    extr_norm = extr.clone()
+    extr_norm[..., :3, 3] = t
+    points_norm = points.clone()
+    points_norm = points_norm / (t_magnitude + 1e-12)
+    if not return_norm_factor:
+        return extr_norm, points_norm
+    return extr_norm, points_norm, t_magnitude[..., 0, 0] # (..., v, 4, 4), (..., )
 
 def normalize_camera_extrinsics_and_points_batch(
     extrinsics: torch.Tensor,

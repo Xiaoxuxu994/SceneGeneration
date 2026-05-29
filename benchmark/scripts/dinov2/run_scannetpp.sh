@@ -39,7 +39,7 @@ CONFIG=""
 # CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
 # PREFIX="vggt_sz_final"
 
-NPU_ID="4"
+NPU_ID="6"
 DEVICE="npu:0"
 DTYPE="fp32"
 

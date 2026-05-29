@@ -27,17 +27,17 @@ source ./scripts/config/nrgbd/518x392.sh
 # PREFIX="pi3_official"
 # CONFIG=""
 
-MODEL="vggt" # ['vggt','pi3','reliev3r']
-MODEL_SIZE=""
-CONFIG="./ckpts/VGGT-1B/config.json"
-CKPT="./ckpts/VGGT-1B/model.pt"
-PREFIX="vggt_official"
-
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
-# CONFIG=""
 # MODEL_SIZE=""
-# CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_final"
+# CONFIG="./ckpts/VGGT-1B/config.json"
+# CKPT="./ckpts/VGGT-1B/model.pt"
+# PREFIX="vggt_official"
+
+MODEL="vggt" # ['vggt','pi3','reliev3r']
+CONFIG=""
+MODEL_SIZE=""
+CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
+PREFIX="vggt_sz_final"
 
 NPU_ID="2"
 DEVICE="npu:0"

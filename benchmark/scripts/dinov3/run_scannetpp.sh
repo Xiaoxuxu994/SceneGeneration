@@ -27,13 +27,19 @@ source ./scripts/config/scannetpp/512x336.sh
 # PREFIX="exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02_ckpt3"
 # CONFIG=""
 
-## ------ 224x224 --------
-source ./scripts/config/scannetpp/224x224.sh
 MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
-CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0429_pi3_5B_datamix_all_v5_lowres_v8-m8_224x224_lr1e4_scratch/ckpts/model_ckpt79" 
-PREFIX="exp0429_pi3_5B_datamix_all_v5_lowres_v8-m8_224x224_lr1e4_scratch_ckpt79"
+MODEL_SIZE="dinov3_huge+_3Bv2"
 CONFIG=""
+CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0528_pi3_3B_datamix_all_v9-2_lowres_v8-m8_randres_stage4_10k/ckpts/model_ckpt3/" 
+PREFIX="exp0528_pi3_3B_datamix_all_v9-2_lowres_v8-m8_randres_stage4_10k_ckpt3"
+
+## ------ 224x224 --------
+# source ./scripts/config/scannetpp/224x224.sh
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
+# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0429_pi3_5B_datamix_all_v5_lowres_v8-m8_224x224_lr1e4_scratch/ckpts/model_ckpt79" 
+# PREFIX="exp0429_pi3_5B_datamix_all_v5_lowres_v8-m8_224x224_lr1e4_scratch_ckpt79"
+# CONFIG=""
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE="dinov2_large_0.95B"
