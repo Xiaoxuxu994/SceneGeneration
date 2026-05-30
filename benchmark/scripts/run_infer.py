@@ -443,15 +443,17 @@ def run_reliev3r_infer(
     return pred_w2c_aligned, pred_depth, pred_unproj_aligned.squeeze(0).numpy()
 
 def dump_one_seq(model, 
-                 model_type,
-                 batch,
-                 pred_seq_dir: Path,
-                 gt_seq_dir: Path,
-                 device: torch.device, 
-                 autocast_dtype: torch.dtype,
-                 unproj_with_gt_extrinsics: bool,
-                 unproj_with_gt_intrinsics: bool,
-                 ):
+        model_type,
+        batch,
+        pred_seq_dir: Path,
+        gt_seq_dir: Path,
+        device: torch.device, 
+        autocast_dtype: torch.dtype,
+        unproj_with_gt_extrinsics: bool,
+        unproj_with_gt_intrinsics: bool,
+        depth_min,
+        depth_max
+    ):
     
     def check_gt_data_dump(gt_seq_dir: Path, gt_files: list):
         flag = False # do not dump new GT data
@@ -483,8 +485,8 @@ def dump_one_seq(model,
             raw_w2c=batch.raw_w2c,
             raw_K=batch.raw_K,
             output_width=W, # GT_OUTPUT_WIDTH
-            depth_far=DEPTH_FAR,
-            depth_near=DEPTH_NEAR,
+            depth_far=depth_max,
+            depth_near=depth_min,
             has_gt_depth=has_gt_depth
         )
         
@@ -741,6 +743,8 @@ def main():
             autocast_dtype=autocast_dtype,
             unproj_with_gt_extrinsics=unproj_with_gt_extrinsics,
             unproj_with_gt_intrinsics=unproj_with_gt_intrinsics,
+            depth_min=args.depth_min,
+            depth_max=args.depth_max
         )
 
         pbar.set_postfix_str(f"{seq} K={len(frame_ids)}")
