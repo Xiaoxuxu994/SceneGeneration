@@ -21,11 +21,11 @@ source ./scripts/config/eth3d/518x350.sh
 # PREFIX="exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
 # CONFIG=""
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov2_large_0.95B"
-CKPT="./ckpts/Pi3/model.safetensors"
-PREFIX="pi3_official"
-CONFIG=""
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov2_large_0.95B"
+# CKPT="./ckpts/Pi3/model.safetensors"
+# PREFIX="pi3_official"
+# CONFIG=""
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE=""
@@ -33,11 +33,11 @@ CONFIG=""
 # CKPT="./ckpts/VGGT-1B/model.pt"
 # PREFIX="vggt_official"
 
-# MODEL="vggt" # ['vggt','pi3','reliev3r']
-# CONFIG=""
-# MODEL_SIZE=""
-# CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_final"
+MODEL="vggt" # ['vggt','pi3','reliev3r']
+CONFIG=""
+MODEL_SIZE=""
+CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
+PREFIX="vggt_sz_final"
 
 NPU_ID="4"
 DEVICE="npu:0"

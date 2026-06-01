@@ -21,17 +21,23 @@ source ./scripts/config/eth3d/512x336.sh
 # CONFIG="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/config.json"
 # PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt0"
 
+MODEL="pi3" # ['vggt','pi3','reliev3r']
+MODEL_SIZE="dinov3_huge+_3Bv2"
+CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt79" 
+PREFIX="exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5_ckpt79"
+CONFIG=""
+
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE="dinov3_huge+_3Bv2"
 # CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02/ckpts/model_ckpt3" 
 # PREFIX="exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02_ckpt3"
 # CONFIG=""
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov3_huge+_3Bv2"
-CONFIG=""
-CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0528_pi3_3B_datamix_all_v9-2_lowres_v8-m8_randres_stage4_10k/ckpts/model_ckpt3/" 
-PREFIX="exp0528_pi3_3B_datamix_all_v9-2_lowres_v8-m8_randres_stage4_10k_ckpt3"
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov3_huge+_3Bv2"
+# CONFIG=""
+# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0528_pi3_3B_datamix_all_v9-2_lowres_v8-m8_randres_stage4_10k/ckpts/model_ckpt3/" 
+# PREFIX="exp0528_pi3_3B_datamix_all_v9-2_lowres_v8-m8_randres_stage4_10k_ckpt3"
 
 # source ./scripts/config/eth3d/224x224.sh
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
@@ -46,7 +52,7 @@ PREFIX="exp0528_pi3_3B_datamix_all_v9-2_lowres_v8-m8_randres_stage4_10k_ckpt3"
 # PREFIX="pi3_official"
 # CONFIG=""
 
-NPU_ID="4"
+NPU_ID="3"
 DEVICE="npu:0"
 DTYPE="fp32"
 
