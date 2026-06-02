@@ -316,7 +316,7 @@ class ScanNetDataset(BaseDataset):
             rgb_image,
             depthmap,
             intrinsic.copy(),
-            resolution=(512,336),
+            resolution,
             rng=rng,
             info=osp.join(self.SCANNET_DIR, frame["color"]),
         )
