@@ -1,5 +1,5 @@
 ## Root folder of the dataset
-data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE
+data_root: /efs-mi-east4-3/c50041401/datasets/reliev3r_synth_data/ASE
 
 ## Scale of depth maps
 depth_scale: 0.001

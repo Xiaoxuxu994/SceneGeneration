@@ -37,6 +37,7 @@ NPU_PROFILING = False
 ENABLE_TIME_PROFILING = True
 TRAIN_PCD_VISUALIZE_THRE = 0.5
 EVAL_PCD_VISUALIZE_THRE  = 0.5
+EPOCH_STEP = 2500
 
 def clean_up():
     dist.destroy_process_group()
@@ -142,8 +143,10 @@ def run(rank, cfg):
     
     """Load models. """
     if cfg.get("train_pi3", False):
+        print("[ INFO ] Training Pi3")
         model = Reliev3R_Pi3(cfg.model).to(device=DEVICE_NAME)
     else:
+        print("[ INFO ] Training Reliev3R")
         model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
     
     """Create loss functions. """
@@ -172,14 +175,14 @@ def run(rank, cfg):
             load_module_only=True, 
             load_optimizer_states=not cfg.no_load_optim,
             load_lr_scheduler_states=not cfg.no_load_optim, 
-            load_module_strict=False, 
+            load_module_strict=cfg.strict_load, 
         )
-        step = client_state.get("step", 0)
-        print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
+        if not cfg.no_load_optim:
+            step = client_state.get("step", 0)
+        print("[ INFO ] Loaded checkpoint from local path: {}".format(cfg.ckpt_path))
 
     step_begins = step
     
-
     engine.train()
     torch_device_lib.empty_cache()
     dist.barrier()
@@ -234,6 +237,8 @@ def run(rank, cfg):
                 step_start.record()
                 data_start.record()
             
+            if step % EPOCH_STEP == 0:
+                dataloader.set_epoch(step // EPOCH_STEP)
             data = dataloader.sample(step)
             step += 1
             if dataset_count.get(data["dataset_names"][0], None) is None:
@@ -408,6 +413,7 @@ if __name__ == '__main__':
     parser.add_argument("--no_load_optim", action="store_true", help="Set to disable loading optimizer when ckpt is given.")
     parser.add_argument("--learning_rate", type=float, default=None, help="Maximum learning rate.")
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
+    parser.add_argument("--strict_load", action="store_true", help="Load checkpoints strictly.")
     parser.add_argument("--lr_scheduler", type=str, default=None, help="Set scheduler type if set.")
     parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
@@ -440,5 +446,6 @@ if __name__ == '__main__':
         cfg.training.lr_scheduler = args.lr_scheduler
     cfg.eval = args.eval
     cfg.no_load_optim = args.no_load_optim
+    cfg.strict_load = args.strict_load
     
     main(cfg)

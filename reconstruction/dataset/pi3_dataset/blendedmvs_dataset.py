@@ -80,16 +80,20 @@ class BlendedMVSDataset(BaseDataset):
         max_distance=24,
         split_ratio=0.9,
         seq_num=-1,
+        dataset_label="BlendedMVS",
+        scene_filter_file=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         assert data_root is not None
 
-        self.dataset_label = "BlendedMVS"
+        self.dataset_label = dataset_label
         self.data_root = data_root
         self.verbose = verbose
         self.max_distance = max_distance
         self.split_ratio = split_ratio
+        self.scene_filter_file = scene_filter_file
+        self.scene_filter_set = self._load_scene_filter_set(scene_filter_file)
 
         self.all_sequences = []
         self.scene_to_path = {}
@@ -110,6 +114,10 @@ class BlendedMVSDataset(BaseDataset):
                 self.cache_loaded = True
                 print(f"[Dataset] Cache loaded.")
 
+        # Apply optional scene filtering before train/test split.
+        # This keeps the split ratio meaningful for the filtered subset.
+        self._apply_scene_filter()
+
         self.sequences = self._split_sequences(self.all_sequences)
 
         if seq_num > 0:
@@ -125,6 +133,77 @@ class BlendedMVSDataset(BaseDataset):
 
     def __len__(self):
         return len(self.sequences)
+
+    # =========================
+    # optional scene filtering
+    # =========================
+    def _load_scene_filter_set(self, scene_filter_file):
+        """
+        Load a text file that contains one BlendedMVS scene id per line.
+
+        Example lines:
+            5a0d4d4...
+            5a0d4d4...  # comments are allowed after whitespace
+
+        Empty lines and lines starting with '#' are ignored.
+        """
+        if scene_filter_file is None or str(scene_filter_file).strip() == "":
+            return None
+
+        if isinstance(scene_filter_file, (list, tuple)):
+            files = [str(x) for x in scene_filter_file]
+        else:
+            files = [str(scene_filter_file)]
+
+        keep = set()
+        for path in files:
+            if not osp.exists(path):
+                raise FileNotFoundError(f"scene_filter_file does not exist: {path}")
+
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    # Use the first whitespace-separated token as scene id.
+                    scene_id = line.split()[0]
+                    if scene_id:
+                        keep.add(scene_id)
+
+        if len(keep) == 0:
+            raise ValueError(f"scene_filter_file is empty: {scene_filter_file}")
+
+        return keep
+
+    def _scene_id_from_sequence(self, sequence):
+        """Return the top-level BlendedMVS scene id from a sequence key."""
+        if isinstance(sequence, (tuple, list)):
+            sequence = sequence[0]
+        sequence = str(sequence)
+        return sequence.replace("\\", "/").split("/")[0]
+
+    def _apply_scene_filter(self):
+        if self.scene_filter_set is None:
+            return
+
+        old_len = len(self.all_sequences)
+        self.all_sequences = [
+            s for s in self.all_sequences
+            if self._scene_id_from_sequence(s) in self.scene_filter_set
+        ]
+
+        print(
+            f"[{self.dataset_label}] Applied scene_filter_file={self.scene_filter_file}: "
+            f"{old_len} -> {len(self.all_sequences)} scenes "
+            f"(keep_list={len(self.scene_filter_set)})",
+            flush=True,
+        )
+
+        if len(self.all_sequences) == 0:
+            raise RuntimeError(
+                f"[{self.dataset_label}] scene filter removed all scenes. "
+                f"Please check scene ids in {self.scene_filter_file} and data_root={self.data_root}."
+            )
 
     # =========================
     # scan / cache
@@ -199,24 +278,7 @@ class BlendedMVSDataset(BaseDataset):
     # =========================
     # sample
     # =========================
-    def _sample_frame_ids(self, frame_ids, rng):
-        n = len(frame_ids)
-        assert n > 0
-
-        if self.frame_num > 16 and rng.random() < self.random_sample_thres:
-            pos = rng.choice(n, size=self.frame_num, replace=(n < self.frame_num))
-            return [frame_ids[int(i)] for i in pos]
-
-        ref = int(rng.integers(0, n))
-        max_dist = int(self.max_distance / 8 * self.frame_num)
-
-        start = max(0, ref - max_dist)
-        end = min(n, ref + max_dist + 1)
-        pool = np.arange(start, end)
-
-        extra = rng.choice(pool, size=self.frame_num - 1, replace=(len(pool) < self.frame_num - 1))
-        pos = [ref] + list(extra)
-        return [frame_ids[int(i)] for i in pos]
+    # re-implement in basedataset
 
     # =========================
     # load one view
@@ -288,14 +350,74 @@ class BlendedMVSDataset(BaseDataset):
         return views
 
 
+class BlendedMVSObjectDataset(BlendedMVSDataset):
+    """
+    BlendedMVS subset for DTU-like object/sculpture scenes.
+
+    Pass scene_filter_file pointing to blendedmvs_small_sculpture.txt.
+    The cache is still built from the same data_root; filtering is applied before
+    train/test split, so this class can be used as a separate datamix entry.
+    """
+    def __init__(
+        self,
+        scene_filter_file=None,
+        dataset_label="BlendedMVSObject",
+        **kwargs,
+    ):
+        if scene_filter_file is None:
+            raise ValueError(
+                "BlendedMVSObjectDataset requires scene_filter_file, "
+                "e.g. /path/to/blendedmvs_small_sculpture.txt"
+            )
+        super().__init__(
+            scene_filter_file=scene_filter_file,
+            dataset_label=dataset_label,
+            **kwargs,
+        )
+
+
 if __name__ == "__main__":
     from datasets.sample_utils.vis_util import visualize_gt
 
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/BlendedMVS"
-    out_dir = "output_debug/BlendedMVS/"
+    # data_root = "/efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS"
+    # out_dir = "output_debug/BlendedMVS/"
+    # os.makedirs(out_dir, exist_ok=True)
+
+    # dataset = BlendedMVSDataset(
+    #     data_root=data_root,
+    #     mode="train",
+    #     resolution=[[224, 224]],
+    #     frame_num=24,
+    #     max_distance=24,
+    #     split_ratio=0.9,
+    #     verbose=False,
+    #     shuffle=False,
+    # )
+
+    # print(f"len(dataset) = {len(dataset)}")
+
+    # views = dataset[0]
+    # print(f"[dataset] number of views = {len(views)}")
+    # for i, v in enumerate(views):
+    #     img_shape = tuple(v["img"].shape) if hasattr(v["img"], "shape") else v["img"].size
+    #     print(
+    #         f"[dataset view {i}] "
+    #         f"img={img_shape}, "
+    #         f"depth={v['depthmap'].shape}, "
+    #         f"depthmin={v['depthmap'].min()}, "
+    #         f"depthmax={v['depthmap'].max()}, "
+    #         f"pts3d={v['pts3d'].shape}, "
+    #         f"valid={v['valid_mask'].sum()}"
+    #     )
+
+    # visualize_gt(views, out_dir, prefix="BlendedMVS_GT")
+
+
+    data_root = "/efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS"
+    out_dir = "output_debug/BlendedMVSObj/"
     os.makedirs(out_dir, exist_ok=True)
 
-    dataset = BlendedMVSDataset(
+    dataset = BlendedMVSObjectDataset(
         data_root=data_root,
         mode="train",
         resolution=[[224, 224]],
@@ -304,6 +426,8 @@ if __name__ == "__main__":
         split_ratio=0.9,
         verbose=False,
         shuffle=False,
+        dataset_label="BlendedMVSObj",
+        scene_filter_file='/efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS/blendedmvs_small_sculpture.txt',
     )
 
     print(f"len(dataset) = {len(dataset)}")

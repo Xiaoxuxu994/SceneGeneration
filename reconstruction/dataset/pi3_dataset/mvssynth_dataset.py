@@ -163,34 +163,27 @@ class MVSSynthDataset(BaseDataset):
         depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
         return depth
 
-    def _w2c_to_c2w(self, extrinsic_w2c):
-        c2w = np.eye(4, dtype=np.float32)
-        w2c = np.eye(4, dtype=np.float32)
-        w2c[:3, :] = extrinsic_w2c.astype(np.float32)
-        c2w = np.linalg.inv(w2c).astype(np.float32)
-        return c2w
+    def _build_intrinsic_hardcode_pixel(self, data, W, H):
+        # fx = 771.89826242
+        fx = 771.89826242 / (2*640) * W
+        fy = float(data["f_y"])
+        cx = 0.5 * W
+        cy = 0.5 * H
+
+        intrinsic = np.array(
+            [
+                [fx, 0.0, cx],
+                [0.0, fy, cy],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float32,
+        )
+        return intrinsic
 
     # =========================
     # sample
     # =========================
-    def _sample_frame_ids(self, frame_ids, rng):
-        n = len(frame_ids)
-        assert n > 0
-
-        if self.frame_num > 16 and rng.random() < self.random_sample_thres:
-            pos = rng.choice(n, size=self.frame_num, replace=(n < self.frame_num))
-            return [frame_ids[int(i)] for i in pos]
-
-        ref = int(rng.integers(0, n))
-        max_dist = int(self.max_distance / 8 * self.frame_num)
-
-        start = max(0, ref - max_dist)
-        end = min(n, ref + max_dist + 1)
-        pool = np.arange(start, end)
-
-        extra = rng.choice(pool, size=self.frame_num - 1, replace=(len(pool) < self.frame_num - 1))
-        pos = [ref] + list(extra)
-        return [frame_ids[int(i)] for i in pos]
+    # re-implement in basedataset
 
     # =========================
     # load one view
@@ -206,27 +199,18 @@ class MVSSynthDataset(BaseDataset):
         with open(pose_path, "r") as f:
             data = json.load(f)
 
-        intrinsic = np.array(
-            [
-                [data["f_x"], 0.0, data["c_x"]],
-                [0.0, data["f_y"], data["c_y"]],
-                [0.0, 0.0, 1.0],
-            ],
-            dtype=np.float32,
-        )
+        W0, H0 = rgb_image.size
+        intrinsic = self._build_intrinsic_hardcode_pixel(data, W0, H0)
 
-        # extrinsic[:3, :]，w2c
-        extrinsic_w2c = np.array(data["extrinsic"][:-1], dtype=np.float32)
-
-        # # =====================================================
-        # # MVS-Synth: follow the scale factor of MoGe
-        # # https://github.com/microsoft/MoGe/issues/123
-        # # Pi3 training should not be sensitive to this
-        # # =====================================================
+        # # # =====================================================
+        # # # MVS-Synth: follow the scale factor of MoGe
+        # # # https://github.com/microsoft/MoGe/issues/123
+        # # # Pi3 training should not be sensitive to this
+        # # # =====================================================
+        extrinsic_w2c = np.array(data["extrinsic"], dtype=np.float32)
         depthmap = depthmap / 10.0
-        extrinsic_w2c[:, 3] /= 10.0
-
-        camera_pose = self._w2c_to_c2w(extrinsic_w2c)
+        extrinsic_w2c[:3, 3] /= 10.0
+        camera_pose = np.linalg.inv(extrinsic_w2c).astype(np.float32)
 
         # 清理 depth
         depthmap = np.nan_to_num(depthmap, nan=0.0, posinf=0.0, neginf=0.0)
@@ -293,7 +277,7 @@ if __name__ == "__main__":
     from datasets.sample_utils.vis_util import visualize_gt
 
     data_root = "/mnt/nvme3/z00533370/dataset/sample_data/MVS-Synth/GTAV_540/"
-    out_dir = "output_debug/MVS/"
+    out_dir = "output_debug/MVS_hardcodeK_yy3/"
     os.makedirs(out_dir, exist_ok=True)
 
     dataset = MVSSynthDataset(
@@ -301,8 +285,9 @@ if __name__ == "__main__":
         mode="train",
         resolution=[[224, 224]],
         frame_num=8,
-        max_distance=24,
+        max_distance=8,
         min_num_images=24,
+        z_far=160,
         verbose=False,
         shuffle=False,
     )
