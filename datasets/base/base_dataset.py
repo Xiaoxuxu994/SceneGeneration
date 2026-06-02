@@ -22,13 +22,18 @@ class BaseDataset(EasyDataset):
         frame_num=2,
         transform=tvf.ToTensor(),
         mode='train',
-        max_refetch=3,
-        random_sample_thres=0.1,
+        # max_refetch=3,
+        max_distance=8,
+        random_sample_thres=0.0,
+        stride_sample_thres=0.0,
+        stride_candidates=None,
+        force_global_sampling=False,
         shuffle=True,
         use_sparse_depth=False,
     ):
         super().__init__()
         self.frame_num = frame_num
+        self.max_distance = max_distance
 
         self.transform = transform
 
@@ -47,9 +52,12 @@ class BaseDataset(EasyDataset):
         self.dataset_label = 'BaseDataset'
 
         self.mode = mode
-        self.max_refetch = max_refetch
+        # self.max_refetch = max_refetch
 
-        self.random_sample_thres = random_sample_thres  # default not to do that
+        self.random_sample_thres = random_sample_thres
+        self.stride_sample_thres = stride_sample_thres
+        self.stride_candidates = stride_candidates
+        self.force_global_sampling = force_global_sampling
 
     def convert_attributes(self):
         """
@@ -93,6 +101,163 @@ class BaseDataset(EasyDataset):
                 except ValueError as e:
                     print(f"[{self.dataset_label}] Error converting <{attr_name}>: {e}", flush=True)
 
+    def _sample_frame_ids(self, frame_ids, rng):
+        """
+        Mixed frame sampler:
+          1. global random sampling: long-baseline augmentation
+          2. stride-like sampling: mimic dataset-specific eval stride
+          3. local window sampling: stable high-overlap samples
+
+        Returned frame ids are sorted by temporal order.
+        """
+        mode = str(getattr(self, "mode", "train")).lower()
+        is_train = mode == "train"
+        n = len(frame_ids)
+        assert n > 0
+
+        f = self.frame_num
+        assert f > 0
+
+        # ------------------------------------------------------------
+        # Case 0: sequence too short
+        # ------------------------------------------------------------
+        if n <= f:
+            if n == f:
+                return [frame_ids[i] for i in range(n)]
+
+            if is_train:
+                pos = rng.choice(n, size=f, replace=True)
+                pos = sorted([int(i) for i in pos])
+            else:
+                repeat = int(np.ceil(f / n))
+                pos = (list(range(n)) * repeat)[:f]
+                pos = sorted([int(i) for i in pos])
+
+            return [frame_ids[i] for i in pos]
+
+        # ------------------------------------------------------------
+        # Probabilities
+        # ------------------------------------------------------------
+        global_prob = float(getattr(self, "random_sample_thres", 0.0))
+        stride_prob = float(getattr(self, "stride_sample_thres", 0.0))
+        force_global = bool(getattr(self, "force_global_sampling", False))
+
+        stride_candidates = getattr(self, "stride_candidates", None)
+        if stride_candidates is None:
+            stride_candidates = []
+
+        # OmegaConf ListConfig -> normal list
+        try:
+            stride_candidates = list(stride_candidates)
+        except TypeError:
+            stride_candidates = []
+
+        r = rng.random()
+
+        # ------------------------------------------------------------
+        # Branch 1: global sampling
+        #   - train: controlled by global_prob
+        #   - val/test: if force_global_sampling=True, use deterministic global sampling
+        # ------------------------------------------------------------
+        if (is_train and r < global_prob) or force_global:
+            if is_train:
+                pos = rng.choice(n, size=f, replace=False)
+                pos = sorted([int(i) for i in pos])
+            else:
+                pos = np.linspace(0, n - 1, f)
+                pos = np.round(pos).astype(np.int64)
+                pos = sorted([int(i) for i in pos])
+
+            return [frame_ids[i] for i in pos]
+
+        # ------------------------------------------------------------
+        # Branch 2: dataset-specific stride-like sampling
+        # ------------------------------------------------------------
+        if is_train and r < global_prob + stride_prob and len(stride_candidates) > 0:
+            valid_strides = [
+                int(s) for s in stride_candidates
+                if n >= int(s) * (f - 1) + 1
+            ]
+
+            if len(valid_strides) > 0:
+                stride = int(rng.choice(valid_strides))
+
+                max_start = n - 1 - stride * (f - 1)
+                start = int(rng.integers(0, max_start + 1))
+
+                # base positions: start, start+stride, ..., start+stride*(f-1)
+                pos = start + np.arange(f) * stride
+
+                # jitter proportional to stride, but capped
+                # stride=25 -> about 2
+                # stride=100 -> about 5
+                jitter_radius = max(2, min(5, int(round(stride * 0.05))))
+                jitter = rng.integers(-jitter_radius, jitter_radius + 1, size=f)
+
+                pos = np.clip(pos + jitter, 0, n - 1)
+                pos = sorted(set([int(i) for i in pos]))
+
+                # jitter may create duplicates; fill missing frames locally
+                if len(pos) < f:
+                    need = f - len(pos)
+
+                    span_start = max(0, start - stride)
+                    span_end = min(n, start + stride * (f - 1) + stride + 1)
+
+                    candidates = [
+                        i for i in range(span_start, span_end)
+                        if i not in pos
+                    ]
+
+                    if len(candidates) >= need:
+                        extra = rng.choice(candidates, size=need, replace=False)
+                    else:
+                        all_candidates = [
+                            i for i in range(n)
+                            if i not in pos
+                        ]
+
+                        extra = rng.choice(
+                            all_candidates,
+                            size=need,
+                            replace=(len(all_candidates) < need),
+                        )
+
+                    pos = sorted(pos + [int(i) for i in extra])
+
+                # safety: if somehow more than f frames, uniformly keep f
+                if len(pos) > f:
+                    keep = np.linspace(0, len(pos) - 1, f).round().astype(int)
+                    pos = [pos[int(i)] for i in keep]
+
+                return [frame_ids[i] for i in pos]
+
+            # If sequence is too short for stride-like sampling,
+            # fall through to local window sampling.
+
+        # ------------------------------------------------------------
+        # Branch 3: local window sampling
+        # ------------------------------------------------------------
+        ref = int(rng.integers(0, n))
+
+        max_dist = int(self.max_distance / 8 * f)
+
+        start = max(0, ref - max_dist)
+        end = min(n, ref + max_dist + 1)
+
+        pool = np.arange(start, end)
+
+        extra = rng.choice(
+            pool,
+            size=f - 1,
+            replace=(len(pool) < f - 1),
+        )
+
+        pos = [ref] + [int(i) for i in extra]
+        # pos = sorted(pos)
+
+        return [frame_ids[int(i)] for i in pos]
+    
     def _set_resolutions(self, resolutions):
         assert resolutions is not None, 'undefined resolution'
         if OmegaConf.is_config(resolutions):
@@ -167,6 +332,10 @@ class BaseDataset(EasyDataset):
         return image, depthmap, intrinsics2, *other
     
     def __getitem__(self, idx):
+        mode = str(getattr(self, "mode", "train")).lower()
+        is_train = mode == "train"
+        max_retry = 10 if is_train else 100
+
         if isinstance(idx, tuple):
             # the idx is specifying the aspect-ratio
             if len(idx) == 3:
@@ -177,17 +346,22 @@ class BaseDataset(EasyDataset):
         else:
             assert len(self._resolutions) == 1
             ar_idx = 0
-
+        
+        idx = int(idx)
+        origin_idx = idx
         # over-loaded code
         resolution = self._resolutions[ar_idx]  # DO NOT CHANGE THIS (compatible with BatchedRandomSampler)
         
         error = None
-        for _ in range(10):              # default: 3
+        views = None
+        for retry in range(max_retry):              # default: 3
             try:
+                if hasattr(self, "this_views_info"):
+                    delattr(self, "this_views_info")
                 views = self._get_views(idx, resolution, self._rng)
 
                 # assert len(views) == self.frame_num
-                if self.shuffle:
+                if self.shuffle and is_train:
                     self._rng.shuffle(views)
 
                 # check data-types
@@ -252,7 +426,12 @@ class BaseDataset(EasyDataset):
                     print(
                         f"Failed to load data from {self.dataset_label}-{idx} for error {e}.", flush=True
                     )
-                idx = np.random.randint(0, len(self))
+                
+                if is_train:
+                    idx = int(self._rng.integers(0, len(self)))
+                else:
+                    # val 确定性 fallback，避免某个 rank 随机 retry 太久
+                    idx = int((origin_idx + retry + 1) % len(self))
                 error = e
             
             if views is not None:

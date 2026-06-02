@@ -130,7 +130,7 @@ class ARKitScenesDataset(BaseDataset):
                         if res_intri[2] < self.tol and res_rgb[2] < self.tol and res_depth[2] < self.tol:
                             timestamp_list.append((res_intri[0], res_intri[1], res_rgb[1], res_depth[1])) 
                     
-                    print(subdir, scene_id, len(timestamp_list))
+                    # print(subdir, scene_id, len(timestamp_list))
                     if len(timestamp_list) > self.min_num_images:
                         key = f"{subdir}/{scene_id}"
                         all_sequences.append(key)
@@ -156,24 +156,7 @@ class ARKitScenesDataset(BaseDataset):
     # =========================
     # sample
     # =========================
-    def _sample_frame_ids(self, frame_ids, rng):
-        n = len(frame_ids)
-        assert n > 0
-
-        if self.frame_num > 16 and rng.random() < self.random_sample_thres:
-            pos = rng.choice(n, size=self.frame_num, replace=(n < self.frame_num))
-            return [frame_ids[int(i)] for i in pos]
-
-        ref = int(rng.integers(0, n))
-        max_dist = int(self.max_distance / 8 * self.frame_num)
-
-        start = max(0, ref - max_dist)
-        end = min(n, ref + max_dist + 1)
-        pool = np.arange(start, end)
-
-        extra = rng.choice(pool, size=self.frame_num - 1, replace=(len(pool) < self.frame_num - 1))
-        pos = [ref] + list(extra)
-        return [frame_ids[int(i)] for i in pos]
+    # re-implement in basedataset
 
     # =========================
     # load one view
@@ -252,7 +235,7 @@ class ARKitScenesDataset(BaseDataset):
         views = []
         for fid in idxs:
             timestamp_group = meta['frames_timestamp'][fid]
-            print(timestamp_group)
+            # print(timestamp_group)
             views.append(
                 self._load_one_view(
                     scene_path=scene_path,

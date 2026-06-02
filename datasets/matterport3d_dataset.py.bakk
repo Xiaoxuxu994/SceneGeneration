@@ -1,0 +1,673 @@
+import sys
+sys.path.append('.')
+
+import os
+import os.path as osp
+import hashlib
+from glob import glob
+
+import numpy as np
+import torch
+from PIL import Image
+from tqdm import tqdm
+
+FILE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(FILE_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from datasets.base.base_dataset import BaseDataset
+from datasets.base.transforms import *
+from datasets.sample_utils.common import threshold_depth_map
+
+
+class Matterport3DDataset(BaseDataset):
+    def __init__(
+        self,
+        data_root=None,
+        verbose=False,
+        max_distance=24,
+        split_ratio=0.9,
+        seq_num=-1,
+        min_num_images=24,
+
+        # -------------------------
+        # New: overlap sampling
+        # -------------------------
+        use_overlap_sampling=False,
+        overlap_kind="iis",
+        overlap_min_iou=0.05,
+        overlap_max_iou=0.65,
+        overlap_topk=200,
+        overlap_fallback_max_distance=4,
+
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        '''
+            https://github.com/niessner/Matterport/blob/master/data_organization.md
+            camera is c2w, OpenGL
+            image & depth keep no flip, origin is bottom left, flip intrinsic only
+        '''
+        assert data_root is not None
+
+        self.dataset_label = "Matterport3D"
+        self.data_root = data_root
+        self.verbose = verbose
+        self.max_distance = max_distance
+        self.split_ratio = split_ratio
+        self.min_num_images = min_num_images
+
+        # -------------------------
+        # New: overlap sampling config
+        # -------------------------
+        self.use_overlap_sampling = use_overlap_sampling
+        self.overlap_kind = overlap_kind
+        self.overlap_min_iou = overlap_min_iou
+        self.overlap_max_iou = overlap_max_iou
+        self.overlap_topk = overlap_topk
+        self.overlap_fallback_max_distance = overlap_fallback_max_distance
+        self._overlap_cache = {}
+
+        self.all_sequences = []
+        self.scene_to_path = {}
+        self.scene_meta = {}
+
+        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
+        os.makedirs(cache_dir, exist_ok=True)
+        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+
+        # Changed:
+        # Old cache does not contain frame_iids.
+        # Use a new cache name to force rebuilding once.
+        cache_path = os.path.join(
+            cache_dir,
+            f"{self.dataset_label}_{root_hash}_cache_v2_overlap.pkl",
+        )
+
+        if not os.path.exists(cache_path):
+            print(f"[Dataset] Constructing cache {cache_path}..")
+            self._scan_scenes()
+            self._save_cache(
+                keys=["all_sequences", "scene_to_path", "scene_meta"],
+                save_path=cache_path,
+            )
+            print(f"[Dataset] Cache is saved {cache_path}..")
+        else:
+            print(f"[Dataset] Loading cache from {cache_path}..")
+            res = self._load_cache(cache_path)
+            if res:
+                self.cache_loaded = True
+                print(f"[Dataset] Cache is loaded.")
+
+        self.sequences = self._split_sequences(self.all_sequences)
+
+        if seq_num > 0:
+            self.sequences = self.sequences[:seq_num]
+
+        if self.verbose:
+            print(f"[{self.dataset_label}] Sequences: {self.sequences}")
+
+        print(
+            f"[{self.dataset_label}] Found {len(self.sequences)} unique videos in {self.data_root} ({self.mode})",
+            flush=True,
+        )
+
+    def __len__(self):
+        return len(self.sequences)
+
+    # =========================
+    # scan / cache
+    # =========================
+    def _scan_scenes(self):
+        scene_names = sorted([
+            x for x in os.listdir(self.data_root)
+            if osp.isdir(osp.join(self.data_root, x))
+        ])
+
+        all_sequences = []
+        scene_to_path = {}
+        scene_meta = {}
+
+        for scene in tqdm(scene_names, desc="Building Matterport3D cache"):
+            outer_scene_path = osp.join(self.data_root, scene)
+            inner_scene_path = osp.join(outer_scene_path, scene)
+            scene_path = inner_scene_path if osp.isdir(inner_scene_path) else outer_scene_path
+
+            cam_param_dir = osp.join(scene_path, "undistorted_camera_parameters")
+            color_dir = osp.join(scene_path, "undistorted_color_images")
+            depth_dir = osp.join(scene_path, "undistorted_depth_images")
+
+            if not (osp.isdir(cam_param_dir) and osp.isdir(color_dir) and osp.isdir(depth_dir)):
+                continue
+
+            conf_files = sorted(glob(osp.join(cam_param_dir, "*.conf")))
+            if len(conf_files) == 0:
+                continue
+
+            conf_path = conf_files[0]
+
+            try:
+                frame_ids, frame_iids, camera_info, file_info = self._parse_conf(scene_path, conf_path)
+            except Exception as e:
+                print(f"[Matterport3D] Skip scene {scene}, failed to parse {conf_path}: {e}")
+                continue
+
+            if len(frame_ids) < self.min_num_images:
+                continue
+
+            all_sequences.append(scene)
+            scene_to_path[scene] = scene_path
+            scene_meta[scene] = {
+                "frame_ids": frame_ids,       # fid used to load image/depth/pose
+                "frame_iids": frame_iids,     # official zero-based iid for overlap matrix
+                "camera_info": camera_info,
+                "file_info": file_info,
+            }
+
+        self.all_sequences = sorted(all_sequences)
+        self.scene_to_path = scene_to_path
+        self.scene_meta = scene_meta
+
+    def _parse_conf(self, scene_path, conf_path):
+        frame_ids = []
+        frame_iids = []
+        camera_info = {}
+        file_info = {}
+
+        color_dirname = None
+        depth_dirname = None
+        current_K = None
+
+        with open(conf_path, "r") as f:
+            lines = [x.strip() for x in f.readlines() if x.strip()]
+
+        # official zero-based image index among all scan lines in conf.
+        # This index must increase for every scan line, even if image/depth is missing.
+        scan_iid = 0
+
+        for line in lines:
+            parts = line.split()
+            key = parts[0]
+
+            if key == "color_directory":
+                color_dirname = parts[1]
+
+            elif key == "depth_directory":
+                depth_dirname = parts[1]
+
+            elif key == "intrinsics_matrix":
+                vals = list(map(float, parts[1:10]))
+                current_K = np.array(vals, dtype=np.float32).reshape(3, 3)
+
+            elif key == "scan":
+                official_iid = scan_iid
+                scan_iid += 1
+
+                assert color_dirname is not None
+                assert depth_dirname is not None
+                assert current_K is not None
+
+                depth_name = parts[1]
+                color_name = parts[2]
+                pose_vals = list(map(float, parts[3:19]))
+                pose = np.array(pose_vals, dtype=np.float32).reshape(4, 4)
+
+                # Official docs:
+                # c2w matrix that takes canonical camera coords to world coords.
+                # canonical camera: x right, y up, view direction (0,0,-1)
+                # convert camera local frame to OpenCV style: x right, y down, z forward
+                pose[:, 1:3] *= -1
+
+                fid = osp.splitext(color_name)[0]
+
+                img_path = osp.join(scene_path, color_dirname, color_name)
+                depth_path = osp.join(scene_path, depth_dirname, depth_name)
+
+                if not (osp.isfile(img_path) and osp.isfile(depth_path)):
+                    continue
+
+                frame_ids.append(fid)
+                frame_iids.append(int(official_iid))
+
+                camera_info[fid] = {
+                    "camera_pose": pose.astype(np.float32),         # c2w
+                    "camera_intrinsics": current_K.astype(np.float32),
+                }
+                file_info[fid] = {
+                    "img_path": img_path,
+                    "depth_path": depth_path,
+                }
+
+        return frame_ids, frame_iids, camera_info, file_info
+
+    # =========================
+    # split
+    # =========================
+    def _split_sequences(self, all_sequences):
+        split_idx = int(len(all_sequences) * self.split_ratio)
+        if self.mode == "train":
+            return all_sequences[:split_idx]
+        return all_sequences[split_idx:]
+
+    # =========================
+    # Matterport3D sampler override
+    # =========================
+    def _sample_frame_ids(self, frame_ids, rng):
+        """
+        Override BaseDataset._sample_frame_ids for Matterport3D.
+
+        If use_overlap_sampling=True:
+            sample views by official Matterport image overlap matrix.
+        Else:
+            fall back to BaseDataset sampler.
+
+        Note:
+            _get_views sets self._current_sampling_scene before calling this.
+        """
+        if not getattr(self, "use_overlap_sampling", False):
+            return super()._sample_frame_ids(frame_ids, rng)
+
+        scene = getattr(self, "_current_sampling_scene", None)
+        if scene is None:
+            print(
+                "[Matterport3D] _current_sampling_scene is missing, "
+                "fallback to BaseDataset sampler.",
+                flush=True,
+            )
+            return super()._sample_frame_ids(frame_ids, rng)
+
+        meta = self.scene_meta[scene]
+        frame_iids = meta.get("frame_iids", None)
+
+        if frame_iids is None:
+            print(
+                f"[Matterport3D] frame_iids missing for scene={scene}, "
+                f"fallback to BaseDataset sampler. Please rebuild cache.",
+                flush=True,
+            )
+            return super()._sample_frame_ids(frame_ids, rng)
+
+        return self._sample_frame_ids_by_overlap(
+            scene=scene,
+            frame_ids=frame_ids,
+            frame_iids=frame_iids,
+            rng=rng,
+        )
+
+    # =========================
+    # overlap sampling
+    # =========================
+    def _get_overlap_iou_path(self, scene):
+        """
+        Expected structure:
+            data_root/
+              zsNo4HB9uLZ/
+                zsNo4HB9uLZ/
+                  image_overlap_data/
+                    zsNo4HB9uLZ_iis_iou.png
+
+        scene_to_path[scene] points to:
+            data_root/zsNo4HB9uLZ/zsNo4HB9uLZ
+        """
+        scene_path = self.scene_to_path[scene]
+        return osp.join(
+            scene_path,
+            "image_overlap_data",
+            f"{scene}_{self.overlap_kind}_iou.png",
+        )
+
+    def _load_overlap_iou_matrix(self, scene):
+        cache_key = (scene, self.overlap_kind)
+        if cache_key in self._overlap_cache:
+            return self._overlap_cache[cache_key]
+
+        path = self._get_overlap_iou_path(scene)
+
+        if not osp.isfile(path):
+            raise FileNotFoundError(f"Overlap iou png not found: {path}")
+
+        mat = np.asarray(Image.open(path)).astype(np.float32)
+
+        if mat.ndim != 2:
+            raise ValueError(f"Bad overlap matrix shape={mat.shape}, path={path}")
+
+        # Matterport overlap png stores IoU * 1000
+        mat = mat / 1000.0
+
+        self._overlap_cache[cache_key] = mat
+
+        print(
+            f"[Matterport3D] Loaded overlap matrix: {path}, shape={mat.shape}",
+            flush=True,
+        )
+
+        return mat
+
+    def _sample_frame_ids_by_overlap(self, scene, frame_ids, frame_iids, rng):
+        """
+        Matterport3D overlap-aware sampling.
+
+        frame_ids:
+            fid used by this dataloader to load image/depth/pose.
+
+        frame_iids:
+            official zero-based iid in the .conf scan order,
+            used to index *_iis_iou.png.
+
+        Return:
+            sampled frame_ids, not frame_iids.
+        """
+        n = len(frame_ids)
+        f = self.frame_num
+
+        assert n > 0
+        assert f > 0
+        assert len(frame_ids) == len(frame_iids)
+
+        if n <= f:
+            if n == f:
+                return [frame_ids[i] for i in range(n)]
+
+            pos = rng.choice(n, size=f, replace=True)
+            pos = [int(i) for i in pos]
+            return [frame_ids[i] for i in pos]
+
+        mode = str(getattr(self, "mode", "train")).lower()
+        is_train = mode == "train"
+
+        try:
+            overlap = self._load_overlap_iou_matrix(scene)
+        except Exception as e:
+            print(
+                f"[Matterport3D] Failed to load overlap for scene={scene}, "
+                f"error={repr(e)}, fallback to small local sampler.",
+                flush=True,
+            )
+            return self._sample_frame_ids_overlap_fallback(frame_ids, rng)
+
+        official_iids = np.asarray(frame_iids, dtype=np.int64)
+
+        valid_mask = (
+            (official_iids >= 0)
+            & (official_iids < overlap.shape[0])
+            & (official_iids < overlap.shape[1])
+        )
+        valid_pos = np.where(valid_mask)[0]
+
+        if len(valid_pos) < f:
+            return self._sample_frame_ids_overlap_fallback(frame_ids, rng)
+
+        # Select reference view.
+        if is_train:
+            ref_pos = int(rng.choice(valid_pos))
+        else:
+            # deterministic eval/test
+            ref_pos = int(valid_pos[len(valid_pos) // 2])
+
+        ref_iid = int(official_iids[ref_pos])
+
+        all_pos = np.arange(n)
+        ious = np.zeros(n, dtype=np.float32)
+
+        valid_iids = official_iids[valid_pos]
+
+        # symmetric overlap for safety
+        iou_row = overlap[ref_iid, valid_iids]
+        iou_col = overlap[valid_iids, ref_iid]
+        ious[valid_pos] = np.maximum(iou_row, iou_col)
+
+        min_iou = float(getattr(self, "overlap_min_iou", 0.05))
+        max_iou = float(getattr(self, "overlap_max_iou", 0.65))
+        topk = int(getattr(self, "overlap_topk", 200))
+
+        candidates = np.where(
+            valid_mask
+            & (all_pos != ref_pos)
+            & (ious >= min_iou)
+            & (ious <= max_iou)
+        )[0]
+
+        # Relax if too few candidates.
+        if len(candidates) < f - 1:
+            candidates = np.where(
+                valid_mask
+                & (all_pos != ref_pos)
+                & (ious > 0.0)
+                & (ious <= 0.85)
+            )[0]
+
+        if len(candidates) == 0:
+            return self._sample_frame_ids_overlap_fallback(frame_ids, rng)
+
+        # Keep top-k by IoU.
+        if len(candidates) > topk:
+            order = np.argsort(-ious[candidates])
+            candidates = candidates[order[:topk]]
+
+        if is_train:
+            extra = rng.choice(
+                candidates,
+                size=f - 1,
+                replace=(len(candidates) < f - 1),
+            )
+        else:
+            # deterministic eval/test: pick evenly from candidates sorted by IoU
+            order = np.argsort(-ious[candidates])
+            candidates_sorted = candidates[order]
+
+            if len(candidates_sorted) >= f - 1:
+                keep = np.linspace(0, len(candidates_sorted) - 1, f - 1)
+                keep = np.round(keep).astype(np.int64)
+                extra = candidates_sorted[keep]
+            else:
+                extra = rng.choice(
+                    candidates_sorted,
+                    size=f - 1,
+                    replace=True,
+                )
+
+        # Keep view0 as reference; do not sort.
+        pos = [ref_pos] + [int(i) for i in extra]
+
+        if self.verbose:
+            sampled_ious = [float(ious[int(i)]) for i in pos[1:]]
+            print(
+                f"[Matterport3D][overlap] scene={scene}, "
+                f"n={n}, overlap_shape={overlap.shape}, "
+                f"ref_pos={ref_pos}, ref_iid={ref_iid}, "
+                f"cand={len(candidates)}, "
+                f"sampled_iou_min={min(sampled_ious) if sampled_ious else None}, "
+                f"sampled_iou_max={max(sampled_ious) if sampled_ious else None}, "
+                f"idxs={[frame_ids[int(i)] for i in pos]}",
+                flush=True,
+            )
+
+        return [frame_ids[int(i)] for i in pos]
+
+    def _sample_frame_ids_overlap_fallback(self, frame_ids, rng):
+        """
+        Fallback when overlap file or overlap candidates are unavailable.
+        Use a very small local window to avoid large-baseline samples.
+        """
+        n = len(frame_ids)
+        f = self.frame_num
+
+        if n <= f:
+            if n == f:
+                return [frame_ids[i] for i in range(n)]
+
+            pos = rng.choice(n, size=f, replace=True)
+            pos = [int(i) for i in pos]
+            return [frame_ids[i] for i in pos]
+
+        mode = str(getattr(self, "mode", "train")).lower()
+        is_train = mode == "train"
+
+        if is_train:
+            ref = int(rng.integers(0, n))
+        else:
+            ref = n // 2
+
+        max_dist = int(getattr(self, "overlap_fallback_max_distance", 4))
+
+        start = max(0, ref - max_dist)
+        end = min(n, ref + max_dist + 1)
+
+        pool = np.arange(start, end)
+        pool = pool[pool != ref]
+
+        if len(pool) == 0:
+            pool = np.array([i for i in range(n) if i != ref], dtype=np.int64)
+
+        extra = rng.choice(
+            pool,
+            size=f - 1,
+            replace=(len(pool) < f - 1),
+        )
+
+        # Keep view0 as reference; do not sort.
+        pos = [ref] + [int(i) for i in extra]
+
+        return [frame_ids[int(i)] for i in pos]
+
+    # =========================
+    # helpers
+    # =========================
+    def _read_rgb(self, path):
+        return Image.open(path).convert("RGB")
+
+    def _read_depth(self, path):
+        # Official docs:
+        # 16-bit PNG, z-direction depth, 0.25 mm per unit -> divide by 4000
+        depth = np.array(Image.open(path)).astype(np.float32) / 4000.0
+        depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+        depth[(depth <= 0)] = 0.0
+        return depth.astype(np.float32)
+
+    def _adjust_intrinsics_for_flip(self, K, H):
+        K = K.copy()
+        # flip_vertical:
+        K[1, 2] = (H - 1) - K[1, 2]
+        return K
+
+    # =========================
+    # load one view
+    # =========================
+    def _load_one_view(self, scene_name, fid, cam_info, file_info, resolution, rng):
+        img_path = file_info["img_path"]
+        depth_path = file_info["depth_path"]
+
+        rgb_image = self._read_rgb(img_path)
+        depthmap = self._read_depth(depth_path)
+
+        W0, H0 = rgb_image.size
+        intrinsics = self._adjust_intrinsics_for_flip(
+            cam_info["camera_intrinsics"].copy(),
+            H0,
+        )
+
+        # Matterport undistorted depth is already z-depth in meters
+        rgb_image, depthmap, intrinsics_ = self._crop_resize_if_necessary(
+            rgb_image,
+            depthmap,
+            intrinsics.copy(),
+            resolution,
+            rng=rng,
+            info=img_path,
+        )
+
+        depthmap = np.nan_to_num(depthmap, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+        depthmap[(depthmap <= 0)] = 0.0
+        depthmap = threshold_depth_map(depthmap, max_percentile=98)
+
+        return dict(
+            img=rgb_image,
+            depthmap=depthmap.astype(np.float32),
+            camera_pose=cam_info["camera_pose"].astype(np.float32),
+            camera_intrinsics=intrinsics_.astype(np.float32),
+            dataset=self.dataset_label,
+            label=scene_name,
+            instance=fid,
+        )
+
+    # =========================
+    # main interface
+    # =========================
+    def _get_views(self, index, resolution, rng):
+        if self.mode == "train":
+            index = index % len(self.sequences)
+
+        scene = self.sequences[index]
+        meta = self.scene_meta[scene]
+
+        # Only provide scene context to the overridden _sample_frame_ids.
+        # No overlap/normal sampling switch here.
+        self._current_sampling_scene = scene
+
+        idxs = self._sample_frame_ids(meta["frame_ids"], rng)
+
+        self.this_views_info = {
+            "scene": scene,
+            "idxs": idxs,
+        }
+
+        views = []
+        for fid in idxs:
+            views.append(
+                self._load_one_view(
+                    scene_name=scene,
+                    fid=fid,
+                    cam_info=meta["camera_info"][fid],
+                    file_info=meta["file_info"][fid],
+                    resolution=resolution,
+                    rng=rng,
+                )
+            )
+
+        return views
+
+
+if __name__ == "__main__":
+    from datasets.sample_utils.vis_util import visualize_gt
+
+    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/Matterport3D_decode"
+    out_dir = "output_debug/Matterport3D_overlap/"
+    os.makedirs(out_dir, exist_ok=True)
+
+    dataset = Matterport3DDataset(
+        data_root=data_root,
+        mode="train",
+        resolution=[[224, 224]],
+        frame_num=8,
+        max_distance=8,
+        min_num_images=8,
+        split_ratio=1.0,
+        verbose=True,
+        shuffle=False,
+
+        # overlap sampling debug
+        use_overlap_sampling=True,
+        overlap_kind="iis",
+        overlap_min_iou=0.05,
+        overlap_max_iou=0.65,
+        overlap_topk=50,
+        overlap_fallback_max_distance=4,
+    )
+
+    print(f"len(dataset) = {len(dataset)}")
+
+    views = dataset[0]
+    print(f"[dataset] number of views = {len(views)}")
+    for i, v in enumerate(views):
+        print(
+            f"[dataset view {i}] "
+            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
+            f"depth={v['depthmap'].shape}, "
+            f"depthmin={v['depthmap'].min()}, "
+            f"depthmax={v['depthmap'].max()}, "
+            f"pts3d={v['pts3d'].shape}, "
+            f"valid={v['valid_mask'].sum()}"
+        )
+
+    visualize_gt(views, out_dir, prefix="Matterport3D_GT")

@@ -273,24 +273,7 @@ class ScanNetDataset(BaseDataset):
     # =========================
     # sample
     # =========================
-    def _sample_frame_ids(self, frame_ids, rng):
-        n = len(frame_ids)
-        assert n > 0
-
-        if self.frame_num > 16 and rng.random() < self.random_sample_thres:
-            pos = rng.choice(n, size=self.frame_num, replace=(n < self.frame_num))
-            return [frame_ids[int(i)] for i in pos]
-
-        ref = int(rng.integers(0, n))
-        max_dist = int(self.max_distance / 8 * self.frame_num)
-
-        start = max(0, ref - max_dist)
-        end = min(n, ref + max_dist + 1)
-        pool = np.arange(start, end)
-
-        extra = rng.choice(pool, size=self.frame_num - 1, replace=(len(pool) < self.frame_num - 1))
-        pos = [ref] + list(extra)
-        return [frame_ids[int(i)] for i in pos]
+    # re-implement in basedataset
 
     # =========================
     # load one view
@@ -299,7 +282,7 @@ class ScanNetDataset(BaseDataset):
         
         # rgb_image = read_any_file(osp.join(self.SCANNET_DIR, frame["color"]))
         rgb_image = np.array(Image.open(osp.join(self.SCANNET_DIR, frame["color"])).resize((640, 480), resample=lanczos))
-        # rgb_image = np.array(Image.open(osp.join(self.SCANNET_DIR, frame["color"])).resize((480, 270), resample=lanczos))
+        # rgb_image = np.array(Image.open(osp.join(self.SCANNET_DIR, frame["color"])).resize((600, 400), resample=lanczos))
         depthmap = read_any_file(osp.join(self.SCANNET_DIR, frame["depth"]))
 
         depthmap = depthmap * 0.001
@@ -333,7 +316,7 @@ class ScanNetDataset(BaseDataset):
             rgb_image,
             depthmap,
             intrinsic.copy(),
-            resolution,
+            resolution=(512,336),
             rng=rng,
             info=osp.join(self.SCANNET_DIR, frame["color"]),
         )
@@ -391,6 +374,9 @@ if __name__ == "__main__":
         frame_num=8,
         max_distance=24,
         split_ratio=0.9,
+        random_sample_thres=0.05,
+        stride_sample_thres=0.30,
+        stride_candidates=[20, 22, 25, 28, 30],
         verbose=False,
         shuffle=False,
     )
