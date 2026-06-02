@@ -11,7 +11,7 @@ from ..utils.cropping import crop_image_depthmap, center_crop_image_depthmap, re
 from .transforms import *
 from .utils import *
 
-CACHE_DIR = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
+CACHE_DIR = "/efs-m3ga/c50041401/datasets/pi3_dataset_cache"
 
 class BaseDataset(EasyDataset):
     def __init__(
