@@ -48,6 +48,11 @@ from models.reliev3r.model.reliev3r import Reliev3R, Reliev3R_Pi3
 # from models.reliev3r.submodules.pi3.models.pi3 import Pi3 as Reliev3R_Pi3
 
 # -----------------------------------------------
+# DA3 imports 
+# -----------------------------------------------
+from models.depth_anything_3.api import DepthAnything3
+
+# -----------------------------------------------
 # dataset related
 # -----------------------------------------------
 from datasets import get_dataset, get_dataset_config
@@ -77,6 +82,7 @@ DATA_ROOT_DEFAULTS = {
     "re10k":   "/efs-m3ga/h00548084/relive3r_dataset/re10k_12.19/reliev3r_sample_list_c32.npz",
     "kitti":   BENCH_ROOT / "data" / "KITTI",
     "sintel": BENCH_ROOT / "data" / "MPI-Sintel",
+    "spatialvid":   "/efs-m3ga/c50041401/datasets/SpatialVID/reliev3r_clips_all/reliev3r_sample_list_c32.npz",
 }
 MODEL_DEFAULTS = {
     "vggt": {
@@ -94,6 +100,10 @@ MODEL_DEFAULTS = {
     "reliev3r": {
         "config": Path("/efs-mi-east4-2/exp/ssff3d/251213-450M-pi3Base-s32v8-MoGe2/config.json"),
         "ckpt":   Path("/efs-mi-east4-2/exp/ssff3d/251213-450M-pi3Base-s32v8-MoGe2/ckpt/60000.ckpt"),
+    },
+    "da3": {
+        "ckpt": BENCH_ROOT / "ckpts" / "depthanything3",
+        "config": None,
     },
 }
 
@@ -297,7 +307,7 @@ def load_model_pi3(
 
 
 def run_pi3_infer(model, images_cpu, depth_masks, device: torch.device, autocast_dtype: torch.dtype):
-    images = images_cpu.to(device).unsqueeze(0).to(device)  # (B=1,...)
+    images = images_cpu.to(device).unsqueeze(0)  # (B=1,...)
     # depth_masks = torch.from_numpy(depth_masks).to(device=device, dtype=torch.float32)
 
     with torch.autocast(device_type=device.type, dtype=autocast_dtype):        
@@ -316,6 +326,38 @@ def run_pi3_infer(model, images_cpu, depth_masks, device: torch.device, autocast
         )
         
     return pred_w2c_aligned.squeeze(0).numpy(), pred_depth, pred_points_aligned.squeeze(0).numpy()
+
+# ---------------------- running da3 infer ------------------------------------------------
+def load_model_da3(ckpt):
+    model = DepthAnything3.from_pretrained(ckpt)
+    model.eval()
+    return model
+
+def run_da3_infer(model, images_cpu, depth_masks, device: torch.device, autocast_dtype: torch.dtype):
+    images = images_cpu.to(device).unsqueeze(0)  # (B=1,...)
+    # depth_masks = torch.from_numpy(depth_masks).to(device=device, dtype=torch.float32)
+
+    with torch.autocast(device_type=device.type, dtype=autocast_dtype):        
+        results = model(images)
+        pred_depth = results["depth"].cpu() # (B, V, H, W)
+        pred_w2c = results["extrinsics"].cpu() # (B, V, 3, 4)
+        pred_K = results["intrinsics"].cpu() # (B, V, 3, 3)
+        
+        pred_points = unproject_depth_map_to_point_map(
+            pred_depth.squeeze(0).unsqueeze(-1),
+            pred_w2c.squeeze(0),
+            pred_K.squeeze(0)
+        ) # (V, H, W, 3)
+
+        # align to the first frame
+        pred_w2c_aligned, _, pred_points_aligned, _ = normalize_camera_extrinsics_and_points_batch(
+            extrinsics=pred_w2c.double(),
+            world_points=torch.from_numpy(pred_points).unsqueeze(0),
+            scale_by_points=False,
+            # point_masks=depth_masks.unsqueeze(0)
+        )
+        
+    return pred_w2c_aligned.squeeze(0).numpy(), pred_depth.squeeze(0).numpy(), pred_points_aligned.squeeze(0).numpy()
 
 # ---------------------- running reliev3r infer ------------------------------------------
 def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, strict: bool = True):
@@ -561,6 +603,15 @@ def dump_one_seq(model,
             save_npy(pred_seq_dir, "pred_extrinsics.npy", pred_c2w)         # (V,4,4)
             save_npy(pred_seq_dir, "pred_depth_maps.npy", pred_depth_maps)  # (V,H,W)
             save_npy(pred_seq_dir, "pred_point_maps.npy", pred_point_maps)  # (V,H,W,3)
+        elif model_type == "da3":
+            pred_w2c, pred_depth_maps, pred_point_maps = run_da3_infer(
+                model, batch.images_cpu, gt_depth_masks, device=device, autocast_dtype=autocast_dtype
+            )
+            pred_c2w = closed_form_inverse_se3(pred_w2c)
+
+            save_npy(pred_seq_dir, "pred_extrinsics.npy", pred_c2w)         # (V,4,4)
+            save_npy(pred_seq_dir, "pred_depth_maps.npy", pred_depth_maps)  # (V,H,W)
+            save_npy(pred_seq_dir, "pred_point_maps.npy", pred_point_maps)  # (V,H,W,3)
         else:
             raise ValueError(f"Unknown model_type={model_type}")
 
@@ -696,6 +747,8 @@ def main():
         model = load_model_vggt_omega(args.ckpt).to(device)
     elif args.model == "pi3":
         model = load_model_pi3(Path(args.ckpt), model_size=args.model_size).to(device)
+    elif args.model == "da3":
+        model = load_model_da3(args.ckpt).to(device)
     elif args.model == 'reliev3r':
         if not args.ckpt:
             raise ValueError("--reliev3r_ckpt is required when --model reliev3r")

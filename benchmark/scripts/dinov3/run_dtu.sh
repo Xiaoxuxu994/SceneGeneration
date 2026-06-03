@@ -45,11 +45,17 @@ source ./scripts/config/dtu/512x384.sh
 # PREFIX="exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02_ckpt3"
 # CONFIG=""
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov3_huge+_3Bv2"
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov3_huge+_3Bv2"
+# CONFIG=""
+# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0528_pi3_3B_datamix_all_v9-2_lowres_v8-m8_randres_stage4_10k/ckpts/model_ckpt3/" 
+# PREFIX="exp0528_pi3_3B_datamix_all_v9-2_lowres_v8-m8_randres_stage4_10k_ckpt3"
+
+MODEL="vggt_omega"
+CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
+PREFIX="vggt_omega_1B_official"
 CONFIG=""
-CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0528_pi3_3B_datamix_all_v9-2_lowres_v8-m8_randres_stage4_10k/ckpts/model_ckpt3/" 
-PREFIX="exp0528_pi3_3B_datamix_all_v9-2_lowres_v8-m8_randres_stage4_10k_ckpt3"
+MODEL_SIZE=""
 
 ## ------ 224x224 --------
 # source ./scripts/config/dtu/224x224.sh

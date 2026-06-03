@@ -35,11 +35,11 @@ MODEL_SIZE=""
 
 ## ------ 224x224 --------
 # source ./scripts/config/7scenes/224x224.sh
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
-CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0505_pi3_5B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt39/" 
-PREFIX="exp0505_pi3_5B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
-CONFIG=""
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
+# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0505_pi3_5B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt39/" 
+# PREFIX="exp0505_pi3_5B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
+# CONFIG=""
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE="dinov2_large_0.95B"

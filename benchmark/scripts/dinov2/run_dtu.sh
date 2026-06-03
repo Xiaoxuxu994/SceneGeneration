@@ -21,11 +21,11 @@ source ./scripts/config/dtu/518x392.sh
 # PREFIX="exp0410_pi3_3B_datamix_sync_v2_highres_v2-16-m16_512x336_lr1e4_ckpt19"
 # CONFIG=""
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov2_large_0.95B"
-CKPT="./ckpts/Pi3/model.safetensors"
-PREFIX="pi3_official"
-CONFIG=""
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov2_large_0.95B"
+# CKPT="./ckpts/Pi3/model.safetensors"
+# PREFIX="pi3_official"
+# CONFIG=""
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE=""
@@ -38,6 +38,12 @@ CONFIG=""
 # MODEL_SIZE=""
 # CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
 # PREFIX="vggt_sz_final"
+
+MODEL="da3" # ['vggt','pi3','reliev3r']
+MODEL_SIZE=""
+CONFIG="./ckpts/depthanything3/config.json"
+CKPT="./ckpts/depthanything3"
+PREFIX="depthanything3"
 
 NPU_ID="4"
 DEVICE="npu:0"

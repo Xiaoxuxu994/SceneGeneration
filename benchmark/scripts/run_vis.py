@@ -290,12 +290,13 @@ def main() -> None:
         export_cameras(c2w, out_dir / "vis_cameras.ply")
         
         try:
-            export_pointcloud(pts, out_dir / "vis_pointcloud.ply", 
-                pts_mask=mask if np.sum(mask) > 0 else None, 
-                col_mask=mask if np.sum(mask) > 0 else None, 
-                colors=gt_images
-            )
-            export_depth(dep, out_dir / "vis_depth", vmin=args.depth_vmin, vmax=args.depth_vmax)
+            if np.sum(dep) != 0:
+                export_pointcloud(pts, out_dir / "vis_pointcloud.ply", 
+                    pts_mask=mask if np.sum(mask) > 0 else None, 
+                    col_mask=mask if np.sum(mask) > 0 else None, 
+                    colors=gt_images
+                )
+                export_depth(dep, out_dir / "vis_depth", vmin=args.depth_vmin, vmax=args.depth_vmax)
         except Exception as e:
             print(e)
             pass

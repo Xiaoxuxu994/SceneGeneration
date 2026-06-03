@@ -17,6 +17,7 @@ def setup_pythonpath() -> None:
         BENCH_ROOT / "models" / "vggt_official", # `import vggt` 
         BENCH_ROOT / "models" / "reliev3r", # `import reliev3r` 
         BENCH_ROOT / "models" / "pi3_official", # `import pi3` 
+        BENCH_ROOT / "models" / "depth_anything_3", # `import da3` 
     ]
     for p in candidates:
         if p.exists():

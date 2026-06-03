@@ -21,11 +21,11 @@ source ./scripts/config/eth3d/512x336.sh
 # CONFIG="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/config.json"
 # PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt0"
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov3_huge+_3Bv2"
-CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt79" 
-PREFIX="exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5_ckpt79"
-CONFIG=""
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov3_huge+_3Bv2"
+# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt79" 
+# PREFIX="exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5_ckpt79"
+# CONFIG=""
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE="dinov3_huge+_3Bv2"
@@ -51,6 +51,12 @@ CONFIG=""
 # CKPT="./ckpts/Pi3/model.safetensors"
 # PREFIX="pi3_official"
 # CONFIG=""
+
+MODEL="vggt_omega"
+CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
+PREFIX="vggt_omega_1B_official"
+CONFIG=""
+MODEL_SIZE=""
 
 NPU_ID="3"
 DEVICE="npu:0"
