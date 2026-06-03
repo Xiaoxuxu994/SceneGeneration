@@ -85,7 +85,7 @@ def export_pcds_and_cam_as_ply(path_prefix: str, point_maps: torch.Tensor, image
     """
     assert point_maps.ndim == 5, "This function is designed to process batched data."
     cam_color_ends = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-    point_maps, extrs, _ = trans_geo_to_first_frame_and_norm(point_maps, extrs)
+    point_maps, extrs, _ = trans_geo_to_first_frame_and_norm(point_maps, extrs, normalize=False)
     
     extrs = calc_extr_inv(extrs)
     

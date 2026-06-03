@@ -301,7 +301,7 @@ def globalpoint2local(points: torch.Tensor, extrs: torch.Tensor):
     return points_local
 
 
-def trans_geo_to_first_frame_and_norm(point_maps: torch.Tensor, extrs: torch.Tensor, depths: torch.Tensor=None):
+def trans_geo_to_first_frame_and_norm(point_maps: torch.Tensor, extrs: torch.Tensor, depths: torch.Tensor=None, normalize=True):
     """Transformer point maps and camera extrinsics coordinate to the first frame.
 
     Args:
@@ -325,7 +325,8 @@ def trans_geo_to_first_frame_and_norm(point_maps: torch.Tensor, extrs: torch.Ten
     homo_point_maps = mat_mul_vec_by_conv(homo_point_maps, trans_mat)
     point_maps = homo_point_maps[..., :3]
     extrs = extrs @ calc_extr_inv(trans_mat) # c0-to-world @ world-to-c -> c0-to-c
-    point_maps, extrs, depths = normalize_trans(point_maps, extrs, depths)
+    if normalize:
+        point_maps, extrs, depths = normalize_trans(point_maps, extrs, depths)
     return point_maps, extrs, depths
 
 
