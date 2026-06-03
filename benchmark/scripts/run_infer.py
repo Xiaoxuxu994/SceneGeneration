@@ -82,6 +82,8 @@ DATA_ROOT_DEFAULTS = {
     "re10k":   "/efs-m3ga/h00548084/relive3r_dataset/re10k_12.19/reliev3r_sample_list_c32.npz",
     "kitti":   BENCH_ROOT / "data" / "KITTI",
     "sintel": BENCH_ROOT / "data" / "MPI-Sintel",
+    "bonn": BENCH_ROOT / "data" / "bonn",
+    "tum": BENCH_ROOT / "data" / "tum",
     "spatialvid":   "/efs-m3ga/c50041401/datasets/SpatialVID/reliev3r_clips_all/reliev3r_sample_list_c32.npz",
 }
 MODEL_DEFAULTS = {

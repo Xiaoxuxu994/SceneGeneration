@@ -33,9 +33,12 @@ VIS_SCRIPT="scripts/run_vis.py"
 # CONFIG="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/config.json"
 # PREFIX="Reliev3R-3B_260519_subPi3-3B_v6ckpt63_ckpt5000"
 
-MODEL="vggt_omega"
-CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
-PREFIX="vggt_omega_1B_official"
+# MODEL="vggt_omega"
+# CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
+# PREFIX="vggt_omega_1B_official"
+# PREFIX=""
+# CONFIG=""
+
 ## ------ 224x224 --------
 source ./scripts/config/ase/224x224.sh
 MODEL="pi3" # ['vggt','pi3','reliev3r']

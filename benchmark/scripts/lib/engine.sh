@@ -55,6 +55,10 @@ run_vis_if_needed () {
     echo "[VIS] skip (exists & non-empty): ${VIS_DIR}"
     return 0
   fi
+  if [[ -d "${VIS_DIR}" ]] && [[ -n "$(ls -A "${VIS_DIR}" 2>/dev/null)" ]]; then
+    echo "[VIS] skip (exists & non-empty): ${VIS_DIR}"
+    return 0
+  fi
 
   echo "[VIS] run: dir=${DIR} (vmin=${DEPTH_VMIN}, vmax=${DEPTH_VMAX})"
   ${PYTHON} ${VIS_SCRIPT} \
@@ -163,7 +167,6 @@ for DATASET in "${DATASETS[@]}"; do
       --cy "${CY}" \
       "${EXTRA_ARGS[@]}"
   fi
-
   t1=$(date +%s)
   echo "[TIME] INFER seconds=$((t1-t0))"
 
@@ -175,7 +178,7 @@ for DATASET in "${DATASETS[@]}"; do
 
   REUSE_EVAL_IF_EXISTS=1
   echo "${ROOT_DIR}/metrics_${PRED_SUBDIR}.xlsx"
-  if [[ "${REUSE_EVAL_IF_EXISTS}" -eq 1 ]] && [ -e "${ROOT_DIR}/metrics_${PRED_SUBDIR}.xlsx" ]; then
+  if [ -e "${ROOT_DIR}/metrics_${PRED_SUBDIR}.xlsx" ]; then
     echo "[INFER] skip: found existing metrics ${ROOT_DIR}/metrics_${PRED_SUBDIR}.xlsx"
 
   else
@@ -224,21 +227,21 @@ for DATASET in "${DATASETS[@]}"; do
   t1=$(date +%s)
   echo "[TIME] EVAL seconds=$((t1-t0))"
 
-  # -------------------------
-  # 2) VIS
-  # -------------------------
-  banner_stage "VIS"
-  t0=$(date +%s)
+  # # -------------------------
+  # # 2) VIS
+  # # -------------------------
+  # banner_stage "VIS"
+  # t0=$(date +%s)
 
-  echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
-  echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
+  # echo "[VIS] gt_dir=${GT_DIR}  (expect vis: ${GT_DIR}_vis)"
+  # echo "[VIS] pred_dir=${PRED_DIR} (expect vis: ${PRED_DIR}_vis)"
 
-  # requirement: if gt has no gt_vis -> run; if exists -> skip
-  run_vis_if_needed "${GT_DIR}"
-  run_vis_if_needed "${PRED_DIR}"
+  # # requirement: if gt has no gt_vis -> run; if exists -> skip
+  # run_vis_if_needed "${GT_DIR}"
+  # run_vis_if_needed "${PRED_DIR}"
 
-  t1=$(date +%s)
-  echo "[TIME] VIS seconds=$((t1-t0))"
+  # t1=$(date +%s)
+  # echo "[TIME] VIS seconds=$((t1-t0))"
 
   banner_done "${IDX}" "${TOTAL}" "${DATASET}"
 done

@@ -13,6 +13,8 @@ from .dtu import DTUDataset
 from .eth3d import ETH3DDataset
 from .kitti import KITTIDataset
 from .sintel import SintelDataset
+from .bonn import BonnDataset
+from .tum import TumDataset
 from .spatialvid import SpatialVIDDataset
 
 from pathlib import Path
@@ -30,6 +32,8 @@ DATASET_REGISTRY = {
     "re10k": RE10KDataset, # currently only support sampled sequences as a .npz file
     "kitti": KITTIDataset,
     "sintel": SintelDataset,
+    "bonn": BonnDataset,
+    "tum": TumDataset
     "spatialvid": SpatialVIDDataset
 }
 
