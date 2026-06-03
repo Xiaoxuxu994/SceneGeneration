@@ -333,6 +333,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         
         # encode by dinov2 / dinov3
         imgs = imgs.reshape(B*N, _, H, W)
+        imgs = imgs.to(dtype=next(self.encoder.parameters()).dtype)
         hidden = self.encoder(imgs, is_training=True)
 
         if isinstance(hidden, dict):

@@ -4,6 +4,7 @@ from copy import deepcopy
 import torch.nn.functional as F
 from einops import rearrange
 from utils.platform import DEVICE_NAME
+from utils.precision import linear_in_dtype
 
 # code adapted from 'https://github.com/nianticlabs/marepo/blob/9a45e2bb07e5bb8cb997620088d352b439b13e0e/transformer/transformer.py#L172'
 class ResConvBlock(nn.Module):
@@ -25,9 +26,12 @@ class ResConvBlock(nn.Module):
         self.res_conv3 = nn.Linear(self.out_channels, self.out_channels)
 
     def forward(self, res):
-        x = F.relu(self.res_conv1(res))
-        x = F.relu(self.res_conv2(x))
-        x = F.relu(self.res_conv3(x))
+        # x = F.relu(self.res_conv1(res))
+        # x = F.relu(self.res_conv2(x))
+        # x = F.relu(self.res_conv3(x))
+        x = F.relu(linear_in_dtype(res, self.res_conv1))
+        x = F.relu(linear_in_dtype(x, self.res_conv2))
+        x = F.relu(linear_in_dtype(x, self.res_conv3))
         res = self.head_skip(res) + x
         return res
 
@@ -67,13 +71,24 @@ class CameraHead(nn.Module):
             register_tokens = register_tokens.reshape(register_tokens.size(0), -1)
             feat = torch.cat([feat, register_tokens], dim=-1)
 
-        feat = self.more_mlps(feat)  # [B, D_]
+        # feat = self.more_mlps(feat)  # [B, D_]
+        for layer in self.more_mlps:
+            feat = linear_in_dtype(feat, layer) if isinstance(layer, nn.Linear) else layer(feat)
+
+        # with torch.amp.autocast(device_type=DEVICE_NAME, enabled=False):
+        #     out_t = self.fc_t(feat.float())  # [B,3]
+        #     out_r = self.fc_rot(feat.float())  # [B,9]
+        #     pose = self.convert_pose_to_4x4(BN, out_r, out_t, feat.device, v=v)
+        #     if self.pred_fov:
+        #         out_fov = torch.sigmoid(self.fc_fov(feat.float())) * torch.pi # [B, 2]
+        #         return pose, out_fov
+        #     return pose
         with torch.amp.autocast(device_type=DEVICE_NAME, enabled=False):
-            out_t = self.fc_t(feat.float())  # [B,3]
-            out_r = self.fc_rot(feat.float())  # [B,9]
+            out_t = linear_in_dtype(feat.float(), self.fc_t)  # [B,3]
+            out_r = linear_in_dtype(feat.float(), self.fc_rot)  # [B,9]
             pose = self.convert_pose_to_4x4(BN, out_r, out_t, feat.device, v=v)
             if self.pred_fov:
-                out_fov = torch.sigmoid(self.fc_fov(feat.float())) * torch.pi # [B, 2]
+                out_fov = torch.sigmoid(linear_in_dtype(feat.float(), self.fc_fov)) * torch.pi # [B, 2]
                 return pose, out_fov
             return pose
 

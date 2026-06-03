@@ -7,6 +7,7 @@ from torch.utils.checkpoint import checkpoint
 import torch.nn.functional as F
 import torch
 from model.blocks.utils import init_weights
+from utils.precision import linear_in_dtype
 
 class TransformerDecoder(nn.Module):
     def __init__(
@@ -86,7 +87,8 @@ class LinearPts3d (nn.Module):
         B, S, D = tokens.shape
 
         # extract 3D points
-        feat = self.proj(tokens)  # B,S,D
+        # feat = self.proj(tokens)  # B,S,D
+        feat = linear_in_dtype(tokens, self.proj)  # B,S,D
         feat = feat.transpose(-1, -2).view(B, -1, H//self.patch_size, W//self.patch_size)
         feat = F.pixel_shuffle(feat, self.patch_size)  # B,3,H,W
         feat = self.activation(feat)
