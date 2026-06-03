@@ -123,36 +123,9 @@ class SpatialVIDDataset(BaseDataset):
         cam_info = np.load(camera_paths, allow_pickle=True).item()
         
         # load extrinsics
-        # NOTE the original data is OpenGL's camera-to-world x-down y-right z-out
-        # need to convert it to OpenCV's world-to-camera (x-right y-down z-in)
+        # w2c
         poses = np.stack([cam_info["extr_mat"][i] for i in frame_ids]).astype(float)
         poses = torch.from_numpy(poses) # 4,4
-        # trans_mat = torch.tensor([
-        #     [0.0, 1.0, 0.0, 0.0],
-        #     [1.0, 0.0, 0.0, 0.0],
-        #     [0.0, 0.0, -1.0, 0.0],
-        #     [0.0, 0.0, 0.0, 1.0]
-        # ]).to(poses.dtype)
-        # poses = trans_mat @ poses
-        # poses[:, 0:3, 1:3] *= -1
-        # poses = closed_form_inverse_se3(poses) # convert to world-to-camera
-        
-        # # denormalize intrinsics
-        # V,C,H,W = images_cpu.shape
-        # pix_Ks, norm_Ks = [], []
-        # for i in frame_ids:
-        #     norm_K = np.array(cam_info["intr_mat"][i]).astype(float) # normalized intrinsics
-        #     norm_K = torch.from_numpy(norm_K)
-            
-        #     pix_K = norm_K.clone()
-        #     pix_K[0, 0] = norm_K[0, 0] / (norm_K[0, 2] * 2) * W
-        #     pix_K[0, 2] = norm_K[0, 2] / (norm_K[0, 2] * 2) * W
-        #     pix_K[1, 1] = norm_K[1, 1] / (norm_K[1, 2] * 2) * H
-        #     pix_K[1, 2] = norm_K[1, 2] / (norm_K[1, 2] * 2) * H
-            
-        #     K.append(pix_K)
-            
-        # K = torch.stack(K)
         
         norm_K = np.stack([cam_info["intr_mat"][i] for i in frame_ids]).astype(float)
         norm_K = torch.from_numpy(norm_K).float()
