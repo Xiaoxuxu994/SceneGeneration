@@ -254,7 +254,7 @@ class BaseDataset(EasyDataset):
         )
 
         pos = [ref] + [int(i) for i in extra]
-        # pos = sorted(pos)
+        pos = sorted(pos)
 
         return [frame_ids[int(i)] for i in pos]
     

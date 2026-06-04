@@ -8,7 +8,7 @@ from ..utils.geometry import homogenize_points, se3_inverse, depth_edge
 from ..utils.alignment import align_points_scale
 
 from datasets import __HIGH_QUALITY_DATASETS__, __MIDDLE_QUALITY_DATASETS__
-
+from einops import rearrange
 # ---------------------------------------------------------------------------
 # Some functions from MoGe
 # ---------------------------------------------------------------------------
@@ -52,7 +52,14 @@ def huber_loss(pred, target, delta=1.0, reduction='mean'):
 # ---------------------------------------------------------------------------
 
 class PointLoss(nn.Module):
-    def __init__(self, local_align_res=4096, train_conf=False, expected_dist_thresh=0.02):
+    def __init__(
+        self,
+        local_align_res=4096,
+        train_conf=False,
+        expected_dist_thresh=0.02,
+        w_unproj_global=0.0,
+        w_normalized_loss=0.0,
+    ):
         super().__init__()
         self.local_align_res = local_align_res
         self.criteria_local = nn.L1Loss(reduction='none')
@@ -62,6 +69,8 @@ class PointLoss(nn.Module):
             self.prepare_segformer()
             self.conf_loss_fn = torch.nn.BCEWithLogitsLoss()
             self.expected_dist_thresh = expected_dist_thresh
+        self.w_unproj_global = w_unproj_global
+        self.w_normalized_loss = w_normalized_loss
 
     def prepare_segformer(self):
         from pi3.models.segformer.model import EncoderDecoder
@@ -94,6 +103,86 @@ class PointLoss(nn.Module):
 
         return torch.stack(output, dim=0)
     
+    def mat_mul_vec_by_conv(self, vec: torch.Tensor, mat: torch.Tensor):
+        """Implement multiplicatoin between matrix and vector by convolution.
+
+        Args:
+            vec (torch.Tensor): Tensor of shape (B, C, H, W) or (B, H, W, C) or (B, V, C, H, W) or (B, V, H, W, C)
+            mat (torch.Tensor): Tensor of shape (B, C, C) or (B, V, C, C)
+        
+        Returns:
+            torch.Tensor: A tensor with the same shape of vec.
+        """
+        assert vec.ndim == 5 and vec.shape[:2] == mat.shape[:2] or vec.ndim == 4 and vec.shape[:1] == mat.shape[:1], \
+            "mat shape: {}, vec shape: {}".format(mat.shape, vec.shape)
+        assert mat.shape[-2] == mat.shape[-1] and (mat.shape[-1] == vec.shape[-1] or mat.shape[-1] == vec.shape[-3]), \
+            "mat shape: {}, vec shape: {}".format(mat.shape, vec.shape)
+        vec_shape = vec.shape
+        mat_shape = mat.shape
+        vec = vec.reshape(-1, *vec_shape[-3:])
+        mat = mat.reshape(-1, *mat_shape[-2:])
+        shuffle = False
+        if vec.shape[-1] == mat.shape[-1]:
+            shuffle = True
+            vec = rearrange(vec, "b h w c -> b c h w")
+        b, d, h, w = vec.shape
+        ret = torch.nn.functional.conv2d(vec.reshape(1, b * d, h, w), mat.reshape(b * d, d, 1, 1), groups=b)
+        ret = ret.reshape(b, d, h, w)
+        if shuffle:
+            ret = rearrange(ret, "b c h w -> b h w c")
+        ret = ret.reshape(*vec_shape)
+        return ret
+
+    def calc_extr_inv(self, extr: torch.Tensor):
+        assert extr.shape[-2] == 4 and extr.shape[-1] == 4
+
+        rot = extr[..., :3, :3]
+        trans = extr[..., :3, 3:]
+
+        ret = torch.zeros_like(extr)
+        ret[..., :3, :3] = rot.transpose(-2, -1)
+        ret[..., :3, 3:] = torch.matmul(rot.transpose(-2, -1), -trans)
+        ret[..., 3, 3] = ret[..., 3, 3] + 1.0
+
+        return ret
+
+    def pad_one(self, x: torch.Tensor, dim: int):
+        shape = torch.tensor(x.shape)
+        shape[dim] = 1
+        return torch.cat([x, torch.ones(*shape, dtype=x.dtype, device=x.device)], dim=dim)
+
+
+    def localpoint2global(self, points: torch.Tensor, extrs: torch.Tensor):
+        """Align local point map under the global coordinate.
+
+        Args:
+            points (torch.Tensor): Local point map, tensor of shape (..., h, w, 3).
+            extrs (torch.Tensor): World-to-camera transform, tensor of shape (..., 4, 4)
+        """
+        points_world_homo = self.mat_mul_vec_by_conv(self.pad_one(points, dim=-1), self.calc_extr_inv(extrs))
+        points_world = points_world_homo[..., :3] / points_world_homo[..., -1:]
+        return points_world
+
+    def normalize_loss(self, pred, valid_masks=None):
+        ## Access local points
+        pred_local_pts = pred['local_points']
+        B, N = pred_local_pts.shape[:2]
+        ## pred['camera_poses'] is c2w, convert it to w2c/extrs first.
+        pred_w2c = se3_inverse(pred['camera_poses'])
+        ## Transform local points to global points.
+        pred_global_pts = self.localpoint2global(pred_local_pts, pred_w2c)
+        ## Transform global points to the coordinate of first frame.
+        # pred_trans_to_firstF = torch.cat([pred_w2c[:, :1] for _ in range(N)], dim=1) # b v 4 4
+        # pred_global_pts = self.mat_mul_vec_by_conv(self.pad_one(pred_global_pts, dim=-1), pred_trans_to_firstF)[..., :3] # b v h w 3
+        ## Calculate the overall scale.
+        point_norm = pred_global_pts.norm(dim=-1)
+        if valid_masks is not None:
+            valid = valid_masks.float()
+            point_scale = (point_norm * valid).reshape(B, -1).sum(dim=-1) / (valid.reshape(B, -1).sum(dim=-1) + 1e-8)
+        else:
+            point_scale = point_norm.reshape(B, -1).mean(dim=-1)
+        return (point_scale - 1.0).abs().mean()
+
     def noraml_loss(self, points, gt_points, mask):
         not_edge = ~depth_edge(gt_points[..., 2], rtol=0.03)
         mask = torch.logical_and(mask, not_edge)
@@ -194,7 +283,31 @@ class PointLoss(nn.Module):
             final_loss += global_pts_loss.mean()
             details['global_pts_loss'] = global_pts_loss.mean()
 
+        # [Optional] Unprojected Global Point Loss
+        if self.w_unproj_global != 0.0:
+            ## Global Point Loss, compare the points globally in the coordinate of the first camera. 
+            gt_pts = gt['global_points']
+
+            pred_w2c = se3_inverse(pred['camera_poses'])
+            pred_global_pts = self.localpoint2global(pred_local_pts, pred_w2c)
+
+            pred_trans_to_firstF = torch.cat([pred_w2c[:, :1] for _ in range(N)], dim=1) # b v 4 4
+            pred_global_pts = self.mat_mul_vec_by_conv(self.pad_one(pred_global_pts, dim=-1), pred_trans_to_firstF)[..., :3] # b v h w 3
+            pred_global_pts = pred_global_pts * S_opt_local.view(B, 1, 1, 1, 1)
+            global_pts_loss = self.criteria_local(pred_global_pts[valid_masks].float(), 
+                                                gt_pts[valid_masks].float()) * weights_[valid_masks].float()[..., None]
+
+            final_loss += self.w_unproj_global * global_pts_loss.mean()
+            details['global_pts_loss'] = global_pts_loss.mean()
+
+        # [Optional] Normalize Loss
+        if self.w_normalized_loss != 0.0:
+            normalized_loss = self.normalize_loss(pred, valid_masks)
+            final_loss += self.w_normalized_loss * normalized_loss
+            details['normalized_loss'] = normalized_loss
+
         return final_loss, details, S_opt_local
+
 
 # ---------------------------------------------------------------------------
 # CameraLoss: Affine-invariant Camera Pose
@@ -268,9 +381,17 @@ class Pi3Loss(nn.Module):
     def __init__(
         self,
         train_conf=False,
+        w_unproj_global=0.0,
+        w_normalized_loss=0.0,
     ):
         super().__init__()
-        self.point_loss = PointLoss(train_conf=train_conf)
+
+        self.point_loss = PointLoss(
+            train_conf=train_conf,
+            w_unproj_global=w_unproj_global,
+            w_normalized_loss=w_normalized_loss,
+        )
+
         self.camera_loss = CameraLoss()
 
     def prepare_gt(self, gt, device):
