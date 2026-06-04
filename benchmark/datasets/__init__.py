@@ -16,6 +16,7 @@ from .sintel import SintelDataset
 from .bonn import BonnDataset
 from .tum import TumDataset
 from .spatialvid import SpatialVIDDataset
+from .hiroom import HiRoomDataset
 
 from pathlib import Path
 
@@ -34,7 +35,8 @@ DATASET_REGISTRY = {
     "sintel": SintelDataset,
     "bonn": BonnDataset,
     "tum": TumDataset,
-    "spatialvid": SpatialVIDDataset
+    "spatialvid": SpatialVIDDataset,
+    "hiroom": HiRoomDataset
 }
 
 def get_dataset(name: str, config: DatasetConfig):
