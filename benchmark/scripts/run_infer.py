@@ -86,6 +86,7 @@ DATA_ROOT_DEFAULTS = {
     "bonn": BENCH_ROOT / "data" / "bonn",
     "tum": BENCH_ROOT / "data" / "tum",
     "spatialvid":   "/efs-m3ga/c50041401/datasets/SpatialVID/reliev3r_clips_all/reliev3r_sample_list_c32.npz",
+    "hiroom": BENCH_ROOT / "data" / "hiroom",
 }
 MODEL_DEFAULTS = {
     "vggt": {
