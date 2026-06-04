@@ -33,7 +33,7 @@ DATASET_REGISTRY = {
     "kitti": KITTIDataset,
     "sintel": SintelDataset,
     "bonn": BonnDataset,
-    "tum": TumDataset
+    "tum": TumDataset,
     "spatialvid": SpatialVIDDataset
 }
 

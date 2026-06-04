@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch_npu  
+import torchvision.transforms as TF
 from tqdm import tqdm
 from omegaconf import OmegaConf
 from safetensors.torch import load_file
@@ -337,6 +338,7 @@ def load_model_da3(ckpt):
 
 def run_da3_infer(model, images_cpu, depth_masks, device: torch.device, autocast_dtype: torch.dtype):
     images = images_cpu.to(device).unsqueeze(0)  # (B=1,...)
+    images = TF.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(images)
     # depth_masks = torch.from_numpy(depth_masks).to(device=device, dtype=torch.float32)
 
     with torch.autocast(device_type=device.type, dtype=autocast_dtype):        
