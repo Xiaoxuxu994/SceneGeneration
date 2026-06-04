@@ -4,10 +4,10 @@ ckpt_interval: 5000
 verbose_interval: 1000
 warm_up_iterations: 10000
 eval_interval: 50
-learning_rate: 0.00001
+learning_rate: 0.0001
 lr_scheduler: "cosine"
-encoder_lr_ratio: 0.1
-decoder_lr_ratio: 1.
+encoder_lr_ratio: 0.01
+decoder_lr_ratio: 0.1
 
 optimizer:
   type: AdamW

@@ -15,8 +15,8 @@ torchrun \
     train_ds.py \
     --train_url outputs/pi3 \
     --config configs/pi3_dinov2/debug.yaml \
-    --ckpt_path /efs-mi-east4-2/checkpoints/Pi3/model.safetensors \
-    --no_load_optim \
+    --ckpt_path /efs-m3ga/y00959808/exp/reliev3r/0603_stage2_v9-5_lr5e-5/ckpt \
+    --ckpt_id 20000 \
     --encoder_lr_ratio 0.01 \
     --decoder_lr_ratio 0.1 \
     --deepspeed \

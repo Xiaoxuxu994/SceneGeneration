@@ -3,19 +3,21 @@ name: ours
 depth_shape:
   w: 1.0 # 1.0
   norm_depth: true
-  detach_depth: true
+  detach_depth: false
 geometric:
   w: 0.5 # 0.5
 dist:
-  w: 0. # 0.1
-camera_extr:
-  w: 0.1
+  w: 0.1 # 0.1
+  norm_dist: false
+  norm_dist_ps: false
 camera_intr:
   w: 1.0
+normalize:
+  w: 1.0
+camera_extr:
+  w: 0.1
 point:
   w: 1.0
-normalize:
-  w: 0.
 
 enable_conf: true
 conf_alpha: 1.0 # 0.1
@@ -23,3 +25,5 @@ conf_alpha: 1.0 # 0.1
 enable_alternate_geometric_opt: false
 
 enable_slide: true
+
+full_weak_exclusive: false
