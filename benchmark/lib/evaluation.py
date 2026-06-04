@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 import open3d as o3d
 
@@ -7,6 +8,7 @@ from lib.metric import se3_to_relative_pose_error, calculate_auc, umeyama, accur
 from lib.evo_utils import get_tum_poses, eval_metrics
 from lib.depth import depth_evaluation
 from lib.utils import timing_decorator
+from lib.geometry import closed_form_inverse_se3
 
 @timing_decorator
 def eval_angle(pred_extrinsics, gt_extrinsics, threshold=30):
@@ -170,6 +172,7 @@ def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1,
 
     transformation = icp_alignment_fast(pcd, pcd_gt, downsampling_resolution=0.25)
     pcd = pcd.transform(transformation)
+    pred_pts = np.asarray(pcd.points)
     
     if pred_poses is not None:
         pred_t = pred_poses[:, :3, 3].T # 3,V
@@ -180,6 +183,12 @@ def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1,
         pred_t = R_icp @ pred_t + t_icp
         
         pred_poses[:, :3, 3] = pred_t.T # V,3
+        
+        # align to the first frame
+        first_cam_extrinsic_inv = closed_form_inverse_se3(pred_poses[0:1]) # (1, 4, 4)
+        pred_poses = pred_poses @ first_cam_extrinsic_inv  # (S, 4, 4)
+        
+        pred_pts = pred_pts @ first_cam_extrinsic_inv[0, :3, :3] + first_cam_extrinsic_inv[0, 3:4, :3]
     
     # # debugging
     # o3d.io.write_point_cloud("gt.ply", pcd_gt)
@@ -212,8 +221,8 @@ def eval_point_map(pred_pts, gt_pts, valid_masks, threshold=0.1,
     results["normal_consistency_2"] = {"mean": nc2, "median": nc2_med}
     if return_point_maps: 
         results["point_maps"] = {
-            "pred": np.asarray(pcd.points), 
-            "gt": np.asarray(pcd_gt.points),
+            "pred": pred_pts, 
+            "gt": gt_pts,
             # "icp": np.asarray(transformation),
             # "umeyama": {
             #     "c": c,

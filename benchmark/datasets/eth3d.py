@@ -47,6 +47,7 @@ class ETH3DDataset(BaseDataset):
         for seq in self.sequence_list:
             seq_path = osp.join(self.config.data_root, seq)
             rgbs = self._list_suffix(seq_path, prefix="images/dslr_images_undistorted_600x400", suffix=".JPG")
+            # rgbs = self._list_suffix(seq_path, prefix="images/dslr_images_undistorted", suffix=".JPG")
             names = [s.split('/')[-1].split('.')[0] for s in rgbs]
             self.frame_id2name[seq] = {id_: name for id_, name in enumerate(names)}
 
@@ -61,6 +62,8 @@ class ETH3DDataset(BaseDataset):
 
         rgbs = self._list_suffix(seq_path, prefix="images/dslr_images_undistorted_600x400", suffix=".JPG")
         depths = self._list_suffix(seq_path, prefix="gt_depth/undistorted_600x400", suffix=".png")
+        # rgbs = self._list_suffix(seq_path, prefix="images/dslr_images_undistorted", suffix=".JPG")
+        # depths = self._list_suffix(seq_path, prefix="gt_depth/undistorted", suffix=".png")
 
         if not (len(rgbs) == len(depths)):
             print(f"{seq} mismatched: rgb={len(rgbs)} depth={len(depths)}")
@@ -71,6 +74,8 @@ class ETH3DDataset(BaseDataset):
         names = [f"{self.frame_id2name[seq][i]}" for i in frame_ids]
         images = [osp.join(seq_dir, "images/dslr_images_undistorted_600x400" ,f"{self.frame_id2name[seq][i]}.JPG") for i in frame_ids]
         depths = [osp.join(seq_dir, "gt_depth/undistorted_600x400", f"{self.frame_id2name[seq][i]}.png") for i in frame_ids]
+        # images = [osp.join(seq_dir, "images/dslr_images_undistorted" ,f"{self.frame_id2name[seq][i]}.JPG") for i in frame_ids]
+        # depths = [osp.join(seq_dir, "gt_depth/undistorted", f"{self.frame_id2name[seq][i]}.png") for i in frame_ids]
         metas = osp.join(seq_dir, "dslr_calibration_undistorted", "images.txt")
         cameras = osp.join(seq_dir, "dslr_calibration_undistorted", "cameras.txt")
         return names, images, depths, metas, cameras
@@ -137,6 +142,12 @@ class ETH3DDataset(BaseDataset):
                 interpolation=TF.InterpolationMode.NEAREST
             )
             depths.append(depth)
+            
+            # depth = self._resize_sparse_depth(depth_path, 
+            #     self.config.rgb_origin_H, self.config.rgb_origin_W)
+            # depth = depth / self.config.depth_scale  # mm -> m
+            # depth = torch.from_numpy(depth).unsqueeze(0)
+            # depths.append(depth)
         depths = torch.concat(depths)
         
         # border cropping
@@ -161,6 +172,44 @@ class ETH3DDataset(BaseDataset):
             )
         
         return depths
+    
+    def _resize_sparse_depth(self, depth_path, target_width=600, target_height=400):
+        # 1. Load image (using cv2.IMREAD_UNCHANGED to preserve 16-bit or float data)
+        depth = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED).astype(np.float32)
+
+        # 2. Create a binary mask where depth is valid (1.0) and invalid (0.0)
+        valid_mask = (depth > 0).astype(np.float32)
+        
+        # depth_path = Path(depth_path)
+        # mask_dir = depth_path.parent.parent / "valid_mask"
+        # mask_dir.mkdir(exist_ok=True, parents=True)
+        # mask_path = mask_dir / "{}.png".format(depth_path.stem)
+        
+        # from PIL import Image
+        # img = valid_mask.astype(np.uint8) * 255
+        # img = Image.fromarray(img, mode="L")
+        # img.save(mask_path)
+
+        # 3. Downsample both the depth map and the mask using AREA interpolation.
+        # cv2.INTER_AREA is ideal for shrinking images as it integrates pixel values
+        # over the entire pixel area, preventing aliasing.
+        target_size = (target_width, target_height)
+        downscaled_depth_sum = cv2.resize(depth, target_size, interpolation=cv2.INTER_AREA)
+        downscaled_mask_sum = cv2.resize(
+            valid_mask, target_size, interpolation=cv2.INTER_AREA
+        )
+
+        # 4. Divide the downscaled depth by the downscaled mask.
+        # This effectively computes the average of ONLY the valid pixels that
+        # fell into each target pixel's receptive field.
+        resized_depth = np.divide(
+            downscaled_depth_sum,
+            downscaled_mask_sum,
+            out=np.zeros_like(downscaled_depth_sum),
+            where=downscaled_mask_sum > 0,
+        )
+
+        return resized_depth
         
     def _load_view_meta(self, meta_path: str, camera_path: str) -> Tuple[dict, dict]:
         # load view meta

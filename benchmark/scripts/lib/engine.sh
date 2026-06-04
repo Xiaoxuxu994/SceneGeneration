@@ -55,6 +55,10 @@ run_vis_if_needed () {
     echo "[VIS] skip (exists & non-empty): ${VIS_DIR}"
     return 0
   fi
+  if [[ -d "${VIS_DIR}" ]] && [[ -n "$(ls -A "${VIS_DIR}" 2>/dev/null)" ]]; then
+    echo "[VIS] skip (exists & non-empty): ${VIS_DIR}"
+    return 0
+  fi
 
   echo "[VIS] run: dir=${DIR} (vmin=${DEPTH_VMIN}, vmax=${DEPTH_VMAX})"
   ${PYTHON} ${VIS_SCRIPT} \
@@ -172,6 +176,7 @@ for DATASET in "${DATASETS[@]}"; do
   banner_stage "EVAL"
   t0=$(date +%s)
 
+  REUSE_EVAL_IF_EXISTS=1
   echo "${ROOT_DIR}/metrics_${PRED_SUBDIR}.xlsx"
   if [ -e "${ROOT_DIR}/metrics_${PRED_SUBDIR}.xlsx" ]; then
     echo "[INFER] skip: found existing metrics ${ROOT_DIR}/metrics_${PRED_SUBDIR}.xlsx"
@@ -189,10 +194,11 @@ for DATASET in "${DATASETS[@]}"; do
 
     # per-model PREDICTED_POINTMAP
     case "${MODEL}" in
-      vggt)     PREDICTED_POINTMAP=0 ;;
-      pi3)      PREDICTED_POINTMAP=1 ;;
-      reliev3r) PREDICTED_POINTMAP=0 ;;
-      *)        PREDICTED_POINTMAP=0 ;;
+      vggt)       PREDICTED_POINTMAP=0 ;;
+      vggt_omega) PREDICTED_POINTMAP=0 ;;
+      pi3)        PREDICTED_POINTMAP=1 ;;
+      reliev3r)   PREDICTED_POINTMAP=0 ;;
+      *)          PREDICTED_POINTMAP=1 ;;
     esac
 
     echo "[EVAL] root=${ROOT_DIR}"

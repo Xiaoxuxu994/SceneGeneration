@@ -16,12 +16,6 @@ CKPT=$4
 PREFIX=$5
 NPU_ID=$6
 
-USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
-USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
-
-SKIP_POINTMAP=1 # 1 if skip pointmap evaluation
-SKIP_NORMAL=1 # 1 if skip point normal evaluation
-
 DEVICE="npu:0"
 DTYPE="fp32"
 
