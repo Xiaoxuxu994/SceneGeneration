@@ -509,7 +509,7 @@ class LossFunction(torch.nn.Module):
         # pr_global_points = mat_mul_vec_by_conv(pad_one(pr_global_points, dim=-1), pred_trans_to_firstF)[..., :3] # b v h w 3
         ## Calculate the overall scale.
         point_scale = pr_global_points.norm(dim=-1).reshape(B, -1).mean(dim=-1) # B
-        return (point_scale - 1).abs().mean()
+        return (point_scale - 1).abs().mean() + (point_scale + 1 / (point_scale + 1e-8)).mean()
     
     
     def forward(self, output_dict, data):
