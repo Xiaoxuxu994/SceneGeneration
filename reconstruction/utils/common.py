@@ -301,7 +301,7 @@ def globalpoint2local(points: torch.Tensor, extrs: torch.Tensor):
     return points_local
 
 
-def trans_geo_to_first_frame_and_norm(point_maps: torch.Tensor, extrs: torch.Tensor, depths: torch.Tensor=None, normalize=True):
+def trans_geo_to_first_frame_and_norm(point_maps: torch.Tensor, extrs: torch.Tensor, depths: torch.Tensor=None, depth_masks: torch.Tensor=None, normalize=True):
     """Transformer point maps and camera extrinsics coordinate to the first frame.
 
     Args:
@@ -309,9 +309,16 @@ def trans_geo_to_first_frame_and_norm(point_maps: torch.Tensor, extrs: torch.Ten
         extrs (torch.Tensor): Camera extrinsics (w2c). Tensor of shape (B, V, 4, 4)
         depths (torch.Tensor): Depth maps. Tensor of shape (B, V, 1, H, W)
     """
-    def normalize_trans(point_maps: torch.Tensor, extr: torch.Tensor, depths: torch.Tensor=None):
+    def normalize_trans(point_maps: torch.Tensor, extr: torch.Tensor, depths: torch.Tensor=None, depth_masks: torch.Tensor=None):
         # t: Tensor of shape (..., v, 4, 4)
-        norm_magnitude = point_maps.norm(dim=-1).mean(-1).mean(-1).mean(-1) # ...
+        # norm_magnitude = point_maps.norm(dim=-1).mean(-1).mean(-1).mean(-1) # ...
+        norm_magnitude = point_maps.norm(dim=-1)
+        if depth_masks is not None:
+            depth_masks = depth_masks.reshape(*depth_masks.shape[:-4], -1)
+            norm_magnitude = norm_magnitude.reshape(*norm_magnitude.shape[:-3], -1)
+            norm_magnitude = (norm_magnitude * depth_masks / (depth_masks.sum(dim=-1, keepdim=True) + 1e-8)).sum(dim=-1).mean()
+        else:
+            norm_magnitude = norm_magnitude.mean(dim=-1).mean(dim=-1).mean(dim=-1)
         t = extr[..., :3, 3] / norm_magnitude[..., None, None] # ... v 3
         extr = extr.clone()
         extr[..., :3, 3] = t
@@ -326,7 +333,7 @@ def trans_geo_to_first_frame_and_norm(point_maps: torch.Tensor, extrs: torch.Ten
     point_maps = homo_point_maps[..., :3]
     extrs = extrs @ calc_extr_inv(trans_mat) # c0-to-world @ world-to-c -> c0-to-c
     if normalize:
-        point_maps, extrs, depths = normalize_trans(point_maps, extrs, depths)
+        point_maps, extrs, depths = normalize_trans(point_maps, extrs, depths, depth_masks)
     return point_maps, extrs, depths
 
 

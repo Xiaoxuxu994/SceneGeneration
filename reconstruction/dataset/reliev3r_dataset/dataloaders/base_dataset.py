@@ -542,7 +542,8 @@ class Synthetic_Dataset(Base_Dataset):
         depths = data["input_depths"] * data["input_depth_masks"]
         V, _, H, W = depths.shape
         depths = depths.reshape(V, -1)
-        thres = torch.topk(depths, k=int(H * W * p * data["input_depth_masks"].mean()) + 1, dim=-1).values.min(dim=-1).values # V
+        depth_masks = data["input_depth_masks"].reshape(V, -1)
+        thres = torch.topk(depths, k=int(H * W * p * depth_masks.mean(dim=-1).min()) + 1, dim=-1).values.min(dim=-1).values # V
         valid_mask = (data["input_depths"] < thres[..., None, None, None]).to(depths.dtype) # V 1 H W
         data["input_depth_masks"] = data["input_depth_masks"] * valid_mask
         return data
@@ -663,7 +664,7 @@ class Synthetic_Dataset(Base_Dataset):
                 
                 ## Normalize geometrics.
                 data["input_points"], data["input_extrs"], data["input_depths"] = \
-                    trans_geo_to_first_frame_and_norm(data["input_points"], data["input_extrs"], data["input_depths"])
+                    trans_geo_to_first_frame_and_norm(data["input_points"], data["input_extrs"], data["input_depths"], data["input_depth_masks"])
                 data["input_points_local"] = globalpoint2local(data["input_points"], data["input_extrs"])
                 
                 batch_data.append(data)
