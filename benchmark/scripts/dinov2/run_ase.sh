@@ -45,7 +45,7 @@ CONFIG="./ckpts/depthanything3/config.json"
 CKPT="./ckpts/depthanything3"
 PREFIX="depthanything3"
 
-NPU_ID="7"
+NPU_ID="0"
 DEVICE="npu:0"
 DTYPE="fp32"
 

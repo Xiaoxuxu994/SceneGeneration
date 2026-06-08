@@ -15,11 +15,11 @@ source ./scripts/config/hiroom/512x512.sh
 # CONFIG="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/config.json"
 # PREFIX="Reliev3R-260512-1B-CamRegFalse-lr1e-5_ckpt35k"
 
-# MODEL="pi3" # ['vggt','pi3','reliev3r']
-# MODEL_SIZE="dinov3_huge+_3Bv2" #"dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
-# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt39" 
-# PREFIX="exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
-# CONFIG=""
+MODEL="pi3" # ['vggt','pi3','reliev3r']
+MODEL_SIZE="dinov3_huge+_3Bv2" #"dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
+CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0529_pi3_3B_datamix_all_v9-5_lowres_v8-m8_randres_stage5_100k/ckpts/model_ckpt39" 
+PREFIX="exp0529_pi3_3B_datamix_all_v9-5_lowres_v8-m8_randres_stage5_100k_ckpt39"
+CONFIG=""
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE="dinov3_huge+_5Bv2" #"dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
@@ -57,11 +57,11 @@ source ./scripts/config/hiroom/512x512.sh
 # CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
 # PREFIX="vggt_sz_final"
 
-MODEL="vggt_omega"
-CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
-PREFIX="vggt_omega_1B_official"
-CONFIG=""
-MODEL_SIZE=""
+# MODEL="vggt_omega"
+# CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
+# PREFIX="vggt_omega_1B_official"
+# CONFIG=""
+# MODEL_SIZE=""
 
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
