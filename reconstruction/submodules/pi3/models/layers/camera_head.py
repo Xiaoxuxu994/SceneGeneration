@@ -32,50 +32,64 @@ class ResConvBlock(nn.Module):
         return res
 
 class CameraHead(nn.Module):
-    def __init__(self, dim=512, pred_fov=False, input_register_token_num=None):
+    def __init__(self, dim=512, pred_fov=False, vggt_like=False):
         super().__init__()
         output_dim = dim
-        self.res_conv = nn.ModuleList([deepcopy(ResConvBlock(output_dim, output_dim)) 
-                for _ in range(2)])
-        self.avgpool = nn.AdaptiveAvgPool2d(1)
-        self.more_mlps = nn.Sequential(
-            nn.Linear(output_dim,output_dim) if input_register_token_num is None \
-                else nn.Linear(output_dim*(input_register_token_num+1),output_dim*(input_register_token_num+1)),
-            nn.ReLU(),
-            nn.Linear(output_dim,output_dim) if input_register_token_num is None \
-                else nn.Linear(output_dim*(input_register_token_num+1),output_dim),
-            nn.ReLU()
-            )
-        self.fc_t = nn.Linear(output_dim, 3)
-        self.fc_rot = nn.Linear(output_dim, 9)
-        self.zero_4x4 = torch.zeros((4, 4), device=DEVICE_NAME)
-        self.pred_fov = pred_fov
-        self.input_register_token_num = input_register_token_num
-        if self.pred_fov:
-            self.fc_fov = nn.Linear(output_dim, 2)
-
-    def forward(self, feat, patch_h, patch_w, v=None, register_tokens=None):
-        BN, hw, c = feat.shape
-
-        for i in range(2):
-            feat = self.res_conv[i](feat)
-
-        feat = self.avgpool(feat.permute(0, 2, 1).reshape(BN, -1, patch_h, patch_w).contiguous())              ##########
-        feat = feat.view(feat.size(0), -1)
-        
-        if register_tokens is not None and self.input_register_token_num is not None:
-            register_tokens = register_tokens.reshape(register_tokens.size(0), -1)
-            feat = torch.cat([feat, register_tokens], dim=-1)
-
-        feat = self.more_mlps(feat)  # [B, D_]
-        with torch.amp.autocast(device_type=DEVICE_NAME, enabled=False):
-            out_t = self.fc_t(feat.float())  # [B,3]
-            out_r = self.fc_rot(feat.float())  # [B,9]
-            pose = self.convert_pose_to_4x4(BN, out_r, out_t, feat.device, v=v)
+        self.vggt_like = vggt_like
+        if not self.vggt_like:
+            self.res_conv = nn.ModuleList([deepcopy(ResConvBlock(output_dim, output_dim)) 
+                    for _ in range(2)])
+            self.avgpool = nn.AdaptiveAvgPool2d(1)
+            self.more_mlps = nn.Sequential(
+                nn.Linear(output_dim,output_dim),
+                nn.ReLU(),
+                nn.Linear(output_dim,output_dim),
+                nn.ReLU()
+                )
+            self.fc_t = nn.Linear(output_dim, 3)
+            self.fc_rot = nn.Linear(output_dim, 9)
+            self.zero_4x4 = torch.zeros((4, 4), device=DEVICE_NAME)
+            self.pred_fov = pred_fov
             if self.pred_fov:
-                out_fov = torch.sigmoid(self.fc_fov(feat.float())) * torch.pi # [B, 2]
-                return pose, out_fov
-            return pose
+                self.fc_fov = nn.Linear(output_dim, 2)
+        else:
+            self.fc_t = nn.Linear(output_dim, 3)
+            self.fc_rot = nn.Linear(output_dim, 9)
+            self.zero_4x4 = torch.zeros((4, 4), device=DEVICE_NAME)
+            self.pred_fov = pred_fov
+            if self.pred_fov:
+                self.fc_fov = nn.Linear(output_dim, 2)
+
+    def forward(self, feat, patch_h, patch_w, v=None):
+        if not self.vggt_like:
+            BN, hw, c = feat.shape
+
+            for i in range(2):
+                feat = self.res_conv[i](feat)
+
+            feat = self.avgpool(feat.permute(0, 2, 1).reshape(BN, -1, patch_h, patch_w).contiguous())              ##########
+            feat = feat.view(feat.size(0), -1)
+
+            feat = self.more_mlps(feat)  # [B, D_]
+            with torch.amp.autocast(device_type=DEVICE_NAME, enabled=False):
+                out_t = self.fc_t(feat.float())  # [B,3]
+                out_r = self.fc_rot(feat.float())  # [B,9]
+                pose = self.convert_pose_to_4x4(BN, out_r, out_t, feat.device, v=v)
+                if self.pred_fov:
+                    out_fov = torch.sigmoid(self.fc_fov(feat.float())) * torch.pi # [B, 2]
+                    return pose, out_fov
+                return pose
+        else:
+            BN, hw, c = feat.shape
+            camera_token = feat[:, 0] # BN c
+            with torch.amp.autocast(device_type=DEVICE_NAME, enabled=False):
+                out_t = self.fc_t(camera_token.float())   # BN 3
+                out_r = self.fc_rot(camera_token.float()) # BN 9
+                pose = self.convert_pose_to_4x4(BN, out_r, out_t, camera_token.device, v=v)
+                if self.pred_fov:
+                    out_fov = torch.sigmoid(self.fc_fov(camera_token.float())) * torch.pi # [B, 2]
+                    return pose, out_fov
+                return pose
 
     def convert_pose_to_4x4(self, B, out_r, out_t, device, v=None):
         out_r = self.svd_orthogonalize(out_r)  # [N,3,3]

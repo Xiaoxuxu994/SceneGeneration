@@ -155,7 +155,7 @@ class Reliev3R_Pi3(Pi3):
                 "local_points_detach_xy": cam_rays.detach() * pred_depths,  # Local points, intrs detached, b v 3 h w
                 "local_points_detach_z":  cam_rays * pred_depths.detach(),  # Local points, depths detached, b v 3 h w
                 "depths":                 pred_depths,                      # Predicted depth, b v 1 h w
-                "depths_conf":            aligned_depth_dict["confs"],      # Predicted depth confidence, b v 1 h w
+                "depths_conf":            aligned_depth_dict["confs"] + 1e-3, # Predicted depth confidence, b v 1 h w
                 "camera_extrs":           cameras,                          # Predicted camera poses, b v 4 4.
             }
         else:

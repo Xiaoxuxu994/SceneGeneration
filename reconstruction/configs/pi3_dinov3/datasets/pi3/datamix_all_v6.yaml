@@ -19,34 +19,33 @@ train_dataset:
 
     weights:
         # synthetic / clean geometry anchor
-        ASE:              10000
-        GTA-sfm:           3200
-        MatrixCity:        2200
-        Hypersim:          1800
-        TarTanAir:         1800
-        TartanGround:      1800
-        BlendedMVS:        1200
-        Spring:            1600
-        Unreal4k:           800
-        Habitat:           1800
-        MVSSynth:           300
-        VirtualKitti:       200
-        Replica:            200
-        OmniObject3DNew:    800
-        Matterport3D:      2200
-        ADT:               3000
-        Objaverse:          800
+        # ASE:              10000
+        # GTA-sfm:           3200
+        # MatrixCity:        2200
+        # Hypersim:          1800
+        # TarTanAir:         1800
+        # TartanGround:      1800
+        # BlendedMVS:        1200
+        # Spring:            1600
+        # Unreal4k:           800
+        # Habitat:           1800
+        # MVSSynth:           300
+        # VirtualKitti:       200
+        # Replica:            200
+        # OmniObject3DNew:    800
+        # Matterport3D:      2200
+        # Objaverse:          800
 
         # real / scanned / internet / object
         ScanNet:           7000
-        ARKitScenes:       8000
-        Scannetpp:         5000
-        Taskonomy:         2500
-        Wildrgbd:          3500
-        CO3D:              2200
-        MegaDepth:         2600
-        Mapillary:         3000
-        DL3DV:             2200
+        # ARKitScenes:       8000
+        # Scannetpp:         5000
+        # Taskonomy:         2500
+        # Wildrgbd:          3500
+        # CO3D:              2200
+        # MegaDepth:         2600
+        # Mapillary:         3000
+        # DL3DV:             2200
 
 
     Hypersim:
@@ -236,6 +235,7 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
+        match_eps: 0.005
 
     CO3D:
         _target_: dataset.pi3_dataset.co3d_dataset.CO3DDataset
@@ -493,15 +493,15 @@ train_dataloader:
 
 test_dataset:
     weights:
-        ASE:           2000
-        Kubric:        2000
-        Habitat:       2000
+        # ASE:           2000
+        # Kubric:        2000
+        # Habitat:       2000
 
-        CO3D:          2000        
-        Taskonomy:     2000
-        Wildrgbd:      2000
-        ScanNet:       2000
-        DL3DV:         2000
+        # CO3D:          2000        
+        # Taskonomy:     2000
+        # Wildrgbd:      2000
+        # ScanNet:       2000
+        # DL3DV:         2000
         Scannetpp:     2000
 
     Kubric:

@@ -191,10 +191,24 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         # ----------------------
         #     Register_token
         # ----------------------
-        num_register_tokens = 5
-        self.patch_start_idx = num_register_tokens
-        self.register_token = nn.Parameter(torch.randn(1, 1, num_register_tokens, self.dec_embed_dim))
-        nn.init.normal_(self.register_token, std=1e-6)
+        self.vggt_like = cfg.get("vggt_like", False)
+        self.specialize_first_frame = cfg.get("specialize_first_frame", False)
+        if not self.vggt_like:
+            num_register_tokens = 5
+            self.patch_start_idx = num_register_tokens
+            self.register_token = nn.Parameter(torch.randn(1, 1, num_register_tokens, self.dec_embed_dim))
+            nn.init.normal_(self.register_token, std=1e-6)
+        else:
+            num_register_tokens = 16
+            self.patch_start_idx = num_register_tokens + 1
+            if self.specialize_first_frame:
+                self.camera_token = nn.Parameter(torch.randn(1, 2, 1, self.dec_embed_dim))
+                self.register_token = nn.Parameter(torch.randn(1, 2, num_register_tokens, self.dec_embed_dim))
+            else:
+                self.camera_token = nn.Parameter(torch.randn(1, 1, 1, self.dec_embed_dim))
+                self.register_token = nn.Parameter(torch.randn(1, 1, num_register_tokens, self.dec_embed_dim))
+            nn.init.normal_(self.camera_token, std=1e-3)
+            nn.init.normal_(self.register_token, std=1e-3)
         pos_special = torch.zeros(1, self.patch_start_idx, 2, dtype=torch.int64)
         self.register_buffer('pos_special', pos_special)
 
@@ -262,15 +276,11 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             dec_embed_dim=1024,
             dec_num_heads=16,                # 8
             out_dim=512,
-            rope=self.rope,
+            rope=self.rope if not self.vggt_like else None,
             depth=head_depth,
             use_checkpoint=(USE_CHECKPOINT=='True')
         )
-        if cfg.get("enable_camera_register", False):
-            self.camera_head = CameraHead(dim=512, pred_fov=hasattr(self, "depth_head"), 
-                                        input_register_token_num=self.patch_start_idx)
-        else:
-            self.camera_head = CameraHead(dim=512, pred_fov=hasattr(self, "depth_head"))
+        self.camera_head = CameraHead(dim=512, pred_fov=hasattr(self, "depth_head"), vggt_like=self.vggt_like)
 
         # For ImageNet Normalize
         image_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
@@ -288,7 +298,16 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         
         hidden = hidden.reshape(B*N, hw, -1)
 
-        register_token = self.register_token.repeat(B, N, 1, 1).reshape(B*N, *self.register_token.shape[-2:])
+        if not self.vggt_like:
+            register_token = self.register_token.repeat(B, N, 1, 1).reshape(B*N, *self.register_token.shape[-2:])
+        else:
+            if self.specialize_first_frame:
+                camera_token = slice_expand_and_flatten(self.camera_token, B, N)
+                register_token = slice_expand_and_flatten(self.register_token, B, N)
+            else:
+                camera_token = self.camera_token.repeat(B, N, 1, 1).reshape(B*N, *self.camera_token.shape[-2:])
+                register_token = self.register_token.repeat(B, N, 1, 1).reshape(B*N, *self.register_token.shape[-2:])
+            register_token = torch.cat([camera_token, register_token], dim=1)
 
         # Concatenate special tokens with patch tokens
         hidden = torch.cat([register_token, hidden], dim=1)
@@ -350,13 +369,18 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         else:
             point_hidden = self.depth_decoder(hidden, xpos=pos, xpos_max=xpos_max)
         conf_hidden = self.conf_decoder(hidden, xpos=pos, xpos_max=xpos_max)
-        camera_hidden = self.camera_decoder(hidden, xpos=pos, xpos_max=xpos_max)
+        if not self.vggt_like:
+            camera_hidden = self.camera_decoder(hidden, xpos=pos, xpos_max=xpos_max)
+        else:
+            camera_hidden = self.camera_decoder(hidden[:, :self.patch_start_idx], xpos=pos, xpos_max=xpos_max)
 
         with torch.amp.autocast(device_type=DEVICE_NAME, enabled=False):
             # camera
             camera_hidden = camera_hidden.float()
-            camera_poses = self.camera_head(camera_hidden[:, self.patch_start_idx:], patch_h, patch_w, 
-                                            register_tokens=camera_hidden[:, :self.patch_start_idx])
+            if not self.vggt_like:
+                camera_poses = self.camera_head(camera_hidden[:, self.patch_start_idx:], patch_h, patch_w)
+            else:
+                camera_poses = self.camera_head(camera_hidden, patch_h, patch_w)
             if hasattr(self, "depth_head"):
                 camera_poses, camera_fovs = camera_poses
                 camera_poses = camera_poses.reshape(B, N, 4, 4)
@@ -391,3 +415,9 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
     
     def forward(self, imgs):
         return self._forward(imgs)
+
+def slice_expand_and_flatten(token_tensor: torch.Tensor, batch_size: int, num_frames: int) -> torch.Tensor:
+    first_frame_token = token_tensor[:, 0:1].expand(batch_size, 1, *token_tensor.shape[2:])
+    other_frame_tokens = token_tensor[:, 1:].expand(batch_size, num_frames - 1, *token_tensor.shape[2:])
+    tokens = torch.cat([first_frame_token, other_frame_tokens], dim=1)
+    return tokens.view(batch_size * num_frames, *tokens.shape[2:])
