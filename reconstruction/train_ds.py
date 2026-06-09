@@ -71,11 +71,11 @@ def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
         print("[ INFO ] Visualizing with GT camera: {}".format(pred.get("camera_extrs", None) is None))
         cam_poses = data["input_viewmats"] if pred.get("camera_extrs", None) is None else pred["camera_extrs"]
         pred_points = localpoint2global(rearrange(pred["local_points"], "b v c h w -> b v h w c"), cam_poses)
-        pred_points_conf = pred["depths_conf"]
+        # pred_points_conf = pred["depths_conf"]
     
     export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}".format(step)), 
                                pred_points, data["input_images"], cam_poses, 
-                               pred_points_conf, conf_thre=thre)
+                               conf_thre=thre)  # pred_points_conf
     if data.get("input_points", None) is not None:
         export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}_GT".format(step)), 
                                    data["input_points"], data["input_images"], data["input_viewmats"], 
@@ -322,11 +322,11 @@ def run(rank, cfg):
             
             if global_rank == 0:
                 """Log training loss information"""
-                print("[ INFO ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]; Dataset: {}".format(
+                print("[ INFO ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]; Dataset: {}".format(
                     step, loss_dict["total"].item(), 
                     pred["local_points"][..., :2, :, :].min().item(), pred["local_points"][..., :2, :, :].max().item(), 
                     pred["local_points"][..., -1:, :, :].min().item(), pred["local_points"][..., -1:, :, :].max().item(), 
-                    pred["depths_conf"].min().item(), pred["depths_conf"].max().item(), 
+                    # pred["depths_conf"].min().item(), pred["depths_conf"].max().item(), 
                     pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item(), 
                     data["dataset_names"][0]))
                 for loss_name, loss_value in loss_dict.items():
@@ -348,11 +348,11 @@ def run(rank, cfg):
                     with torch.no_grad():
                         pred = engine(data)
                         loss_dict = loss_func(pred, data)
-                    print("[ INFO - val ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]".format(
+                    print("[ INFO - val ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]".format(
                         step, loss_dict["total"].item(), 
                         pred["local_points"][..., :2, :, :].min().item(), pred["local_points"][..., :2, :, :].max().item(), 
                         pred["local_points"][..., -1:, :, :].min().item(), pred["local_points"][..., -1:, :, :].max().item(), 
-                        pred["depths_conf"].min().item(), pred["depths_conf"].max().item(), 
+                        # pred["depths_conf"].min().item(), pred["depths_conf"].max().item(), 
                         pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item()))
                     for loss_name, loss_value in loss_dict.items():
                         if loss_name == "matching_info":

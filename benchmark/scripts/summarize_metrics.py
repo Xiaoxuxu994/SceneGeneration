@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# python scripts/summarize_metrics.py --out abc.xlsx
 
 import re
 import argparse
@@ -18,17 +19,10 @@ from openpyxl.utils import get_column_letter
 # 1. 实验配置：主要改这里
 # ============================================================
 
-ENCODER_TYPE = "dinov2"  # "dinov3"
-STEPS = [5000, 10000, 15000, 20000]
+ENCODER_TYPE = "dinov3"  # "dinov2"
+STEPS = [5000, 10000]
 EXP_DISPLAY_NAMES = {
-    "0527_v9_lr1e-5_enc0x_dec0x": "enc0x-dec0x",
-    "0527_v9_lr1e-5_enc0x_dec1x": "enc0x-dec1x",
-    "0527_v9_lr1e-5_enc1e-2x_dec1e-2x": "enc0.01x-dec0.01x",
-    "0527_v9_lr1e-5_enc1e-2x_dec1e-1x": "enc0.01x-dec0.1x",
-    "0527_v9_lr1e-5_enc1e-2x_dec1x": "enc0.01x-dec1x",
-    "0527_v9_lr1e-5_enc1e-1x_dec1e-1x": "enc0.1x-dec0.1x",
-    "0527_v9_lr1e-5_enc1e-1x_dec1x": "enc0.1x-dec1x",
-    "0527_v9_lr1e-5_enc1x_dec1x": "enc1x-dec1x",
+    "0608_5Bv2_v9-5_enc1e-1x_dec1x": "5Bv2",
 }
 DST_EXP_NAMES = list(EXP_DISPLAY_NAMES.keys())
 
@@ -44,7 +38,6 @@ DATASETS = [
     "7scenes",
     "eth3d",
     "kitti",
-    "sintel",
 ]
 
 # 每个 dataset 只读取这个 setting 目录
@@ -60,21 +53,20 @@ if ENCODER_TYPE == "dinov2":
         "re10k": "test_stride4_maxall_len8_numseq100_518x294",
         "scannet": "test_stride25_maxall_len8_numseq10_518x392",
         "scannetpp": "test_stride25_maxall_len8_numseq10_518x350",
-        "sintel": "test_stride5_maxall_len8_numseq14_518x224"
+        # "sintel": "test_stride5_maxall_len8_numseq14_518x224"
     }
 elif ENCODER_TYPE == "dinov3":
-    raise NotImplementedError()
     DATASET_SETTING_MAP = {
-        # "7scenes": "test_stride40_maxall_len8_numseq10_518x392",
-        # "ase": "test_rand_maxall_len8_numseq10_518x518",
-        # "dl3dv": "test_stride4_maxall_len8_numseq100_518x294",
-        # "dtu": "test_stride1_maxall_len8_numseq10_518x392",
-        # "eth3d": "test_stride1_maxall_len8_numseq10_518x350",
-        # "kitti": "test_stride2_maxall_len8_numseq10_518x154",
-        # "nrgbd": "test_stride100_maxall_len8_numseq10_518x392",
-        # "re10k": "test_stride4_maxall_len8_numseq100_518x294",
-        # "scannet": "test_stride25_maxall_len8_numseq10_518x392",
-        # "scannetpp": "test_stride25_maxall_len8_numseq10_518x350",
+        "7scenes": "test_stride40_maxall_len8_numseq10_512x384",
+        "ase": "test_rand_maxall_len8_numseq10_512x512",
+        "dl3dv": "test_stride4_maxall_len8_numseq100_512x288",
+        "dtu": "test_stride1_maxall_len8_numseq10_512x384",
+        "eth3d": "test_stride1_maxall_len8_numseq10_512x336",
+        "kitti": "test_stride2_maxall_len8_numseq10_512x144",
+        "nrgbd": "test_stride100_maxall_len8_numseq10_512x384",
+        "re10k": "test_stride4_maxall_len8_numseq100_512x288",
+        "scannet": "test_stride25_maxall_len8_numseq10_512x384",
+        "scannetpp": "test_stride25_maxall_len8_numseq10_512x336",
         # "sintel": "test_stride5_maxall_len8_numseq14_518x224"
     }
 

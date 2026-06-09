@@ -5,22 +5,15 @@ export pred_z_depth=True
 
 MODEL=reliev3r  # ['vggt', 'pi3', 'reliev3r']
 MODEL_SIZE=""
-ENCODER_TYPE=dinov2  # ['dinov2', 'dinov3']
+ENCODER_TYPE=dinov3  # ['dinov2', 'dinov3']
 
 SRC_ROOT=/efs-m3ga/y00959808/exp/reliev3r
 DST_ROOT=experiments
 
-STEPS=(5000 10000 15000 20000)
+STEPS=(5000 10000)
 
 DST_EXP_NAMES=(
-    0527_v9_lr1e-5_enc0x_dec0x
-    0527_v9_lr1e-5_enc0x_dec1x
-    0527_v9_lr1e-5_enc1e-2x_dec1e-2x
-    0527_v9_lr1e-5_enc1e-2x_dec1e-1x
-    0527_v9_lr1e-5_enc1e-2x_dec1x
-    0527_v9_lr1e-5_enc1e-1x_dec1e-1x
-    0527_v9_lr1e-5_enc1e-1x_dec1x
-    0527_v9_lr1e-5_enc1x_dec1x
+    0608_5Bv2_v9-5_enc1e-1x_dec1x
 )
 
 DATASETS=(
@@ -34,11 +27,10 @@ DATASETS=(
     re10k
     scannet
     scannetpp
-    sintel
 )
 
-NPU_IDS=(4 5 6 7)
-MAX_JOBS_PER_NPU=4
+NPU_IDS=(2 3 5 6 7)
+MAX_JOBS_PER_NPU=2
 NUM_NPUS=${#NPU_IDS[@]}
 NUM_WORKERS=$(( NUM_NPUS * MAX_JOBS_PER_NPU ))
 

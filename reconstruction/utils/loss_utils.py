@@ -92,8 +92,11 @@ def calc_pixel_grad_map(x: torch.Tensor, w: torch.Tensor, eps=1e-6) -> torch.Ten
         vert_grad = _x[..., :-1, :-1] - _x[..., 1:, :-1] # ..., 1, H-1, W-1
         norm_grad = (hori_grad.square() + vert_grad.square() + eps).sqrt() + eps # ..., 1, H-1, W-1
         maps.append(torch.cat([hori_grad / norm_grad, vert_grad / norm_grad], dim=-3)) # Concatinate by channel.
-        _w = w[..., ::step, ::step]
-        total_grad_w = _w[..., :-1, :-1] * _w[..., :-1, 1:] * _w[..., 1:, :-1]
+        if w is None:
+            total_grad_w = _x.new_ones(*_x.shape[:-2], _x.shape[-2] - 1, _x.shape[-1] - 1)
+        else:
+            _w = w[..., ::step, ::step]
+            total_grad_w = _w[..., :-1, :-1] * _w[..., :-1, 1:] * _w[..., 1:, :-1]
         weights.append(total_grad_w)
         step *= 2
     return maps, weights
@@ -187,6 +190,76 @@ def compute_angle_loss(unnormed_points: torch.Tensor, cam_cents: torch.Tensor):
     cossim   = (vec_mat * cent_mat).sum(dim=-1)
     
     return cossim # b v v k
+
+
+def translation_error_se3(local_points: torch.Tensor,
+                          extrs_w2c: torch.Tensor,
+                          matching_info: dict,
+                          view_per_batch: int = 2,
+                          conf_map: torch.Tensor | None = None,
+                          eps: float = 1e-6,
+                          min_points: int = 16,
+                          clip_err: float = 5.0,
+                          robust_delta: float = 1.0):
+
+    assert view_per_batch == 2
+
+    # local_points -> (B*V, 3, H, W)
+    lp = local_points.permute(0, 3, 1, 2).contiguous()
+    BV, _, H, W = lp.shape
+    assert BV % 2 == 0
+    B = BV // 2
+
+    tracks = matching_info["matches"]        # (B,2,K,2)
+    vis    = matching_info["visibilities"]   # (B,2,K)
+    mask   = torch.all(vis, dim=1)           # (B,K)
+
+    # ---- sample Xc0, Xc1 from local pointmaps ----
+    pts = samp_points_by_pixel(lp, tracks.reshape(-1, *tracks.shape[-2:]))  # (B*2,K,3)
+    pts = pts.reshape(B, 2, *pts.shape[-2:])                                 # (B,2,K,3)
+    X0, X1 = pts[:, 0], pts[:, 1]                                            # (B,K,3)
+
+    # ---- compute relative pose T10 = w2c1 * inv(w2c0) ----
+    extrs = extrs_w2c.reshape(B, 2, 4, 4)
+    T0 = extrs[:, 0]  # (B,4,4) w2c0
+    T1 = extrs[:, 1]  # (B,4,4) w2c1
+    T0_inv = calc_extr_inv(T0)  # (B,4,4) c2w0
+
+    T10 = T1 @ T0_inv           # (B,4,4) cam0 -> cam1
+    R10 = T10[:, :3, :3]        # (B,3,3)
+    t10 = T10[:, :3, 3]         # (B,3)
+
+    mask = mask & (X0[..., 2] > 1e-4) & (X1[..., 2] > 1e-4) # Xc0, Xc1 本来 in camera coords -> just check z>0
+
+    X1_hat = torch.einsum("bij,bkj->bki", R10, X0) + t10[:, None, :]  # (B,K,3)  predict X1_hat = R10*X0 + t10
+    resid = X1_hat - X1                                               # (B,K,3)
+
+    # ---- depth normalization ----
+    scale = 0.5 * (X0.norm(dim=-1) + X1.norm(dim=-1)) + 1e-3          # (B,K)     # scale = mean depth magnitude
+    resid_n = resid / scale[..., None]                                # (B,K,3)
+
+    # per-point error smooth_l1_loss
+    err = F.smooth_l1_loss(resid_n, torch.zeros_like(resid_n),
+                           beta=robust_delta, reduction="none").sum(dim=-1)  # (B,K)
+
+    if clip_err is not None:
+        err = err.clamp(max=clip_err)
+
+    if conf_map is not None:
+        # conf_map: (B*V, H, W) -> sample to (B,2,K)
+        conf_chw = conf_map.unsqueeze(1)  # (B*V,1,H,W)
+        conf = samp_points_by_pixel(conf_chw, tracks.reshape(-1, *tracks.shape[-2:]))  # (B*2,K,1)
+        conf = conf.squeeze(-1).reshape(B, 2, -1)                                      # (B,2,K)
+        w = (conf[:, 0] * conf[:, 1]).clamp(0.0, 1.0).detach()                         # detach
+    else:
+        w = torch.ones_like(err)
+
+    denom = (w * mask).sum(dim=-1).add(eps)
+    loss_per_batch = (err * w * mask).sum(dim=-1) / denom  # (B,)
+
+    valid_batch = mask.sum(dim=-1) > min_points
+    loss = (loss_per_batch * valid_batch).sum() / (valid_batch.sum().add(eps))
+    return loss
 
 
 def matching_error_3D(points: torch.Tensor, 
@@ -375,7 +448,8 @@ class LossFunction(torch.nn.Module):
             depths = depths.detach()
         input_depths = data["input_depths"].detach()
         input_masks  = torch.ones_like(output_dict["depths_conf"]) if data["input_depth_masks"] is None else data["input_depth_masks"]
-        output_dict["depths_conf"] = ClampLower.apply(output_dict["depths_conf"] * input_masks, lower)
+        if enable_conf:
+            output_dict["depths_conf"] = ClampLower.apply(output_dict["depths_conf"] * input_masks, lower)
         ds_loss = depth_shape_loss(depths, input_depths, 
             conf_map=output_dict["depths_conf"] if enable_conf else None, 
             alpha=self.conf_alpha, norm_depth=self.norm_depth)
@@ -502,14 +576,19 @@ class LossFunction(torch.nn.Module):
         pr_local_points = rearrange(output_dict["local_points_detach_xy"], "b v c h w -> b v h w c") # b v h w c
         # pr_local_points = rearrange(output_dict["local_points_detach_z"], "b v c h w -> b v h w c") # b v h w c
         B, N = pr_local_points.shape[:2]
-        ## Transform local points to global points
-        pr_global_points = localpoint2global(pr_local_points, output_dict["camera_extrs"]) # b v h w c
-        # ## Transform global points to the coordinate of first frame
-        # pred_trans_to_firstF = torch.cat([output_dict['camera_extrs'][:, :1] for _ in range(N)], dim=1) # b v 4 4
-        # pr_global_points = mat_mul_vec_by_conv(pad_one(pr_global_points, dim=-1), pred_trans_to_firstF)[..., :3] # b v h w 3
-        ## Calculate the overall scale.
-        point_scale = pr_global_points.norm(dim=-1).reshape(B, -1).mean(dim=-1) # B
-        return (point_scale - 1).abs().mean()
+        if self.cfg.normalize.use_local:
+            point_scale = pr_local_points.norm(dim=-1).reshape(B, -1).mean(dim=-1)
+        else:
+            ## Transform local points to global points
+            pr_global_points = localpoint2global(pr_local_points, output_dict["camera_extrs"]) # b v h w c
+            # ## Transform global points to the coordinate of first frame
+            # pred_trans_to_firstF = torch.cat([output_dict['camera_extrs'][:, :1] for _ in range(N)], dim=1) # b v 4 4
+            # pr_global_points = mat_mul_vec_by_conv(pad_one(pr_global_points, dim=-1), pred_trans_to_firstF)[..., :3] # b v h w 3
+            ## Calculate the overall scale.
+            point_scale = pr_global_points.norm(dim=-1).reshape(B, -1).mean(dim=-1) # B
+        loss = (point_scale - 1).abs().mean()
+        if self.cfg.normalize.penalize_zero: loss = loss + (point_scale + 1 / (point_scale + 1e-8)).mean()
+        return loss
     
     
     def forward(self, output_dict, data):

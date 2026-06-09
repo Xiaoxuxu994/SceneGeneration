@@ -33,8 +33,8 @@ def create_optimizer(model: nn.Module, weight_decay, learning_rate, encoder_lr_r
     if decoder_lr_ratio == 0:
         model.register_token.requires_grad_(False)
         model.decoder.eval().requires_grad_(False)
-    model.conf_decoder.eval().requires_grad_(False)
-    model.conf_head.eval().requires_grad_(False)
+    if hasattr(model, 'conf_decoder'): model.conf_decoder.eval().requires_grad_(False)
+    if hasattr(model, 'conf_head'): model.conf_head.eval().requires_grad_(False)
 
     def nodecay(name, param) -> bool:
         return param.dim() == 1 or getattr(param, '_no_weight_decay', False) \

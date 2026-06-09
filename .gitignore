@@ -43,3 +43,5 @@ benchmark/experiments
 benchmark/logs
 benchmark/outputs
 *.xlsx
+
+outputs

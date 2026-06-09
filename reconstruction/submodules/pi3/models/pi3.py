@@ -160,6 +160,18 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 mlp_ratio = 4
                 dec_depth = 36
                 head_depth = 6
+            elif model_size == '5Bv2':
+                dec_embed_dim=2560
+                dec_num_heads=32
+                mlp_ratio=4
+                dec_depth=56
+                head_depth=6
+            elif model_size == '5Bv3':
+                dec_embed_dim = 3072
+                dec_num_heads = 48
+                mlp_ratio = 4
+                dec_depth = 36
+                head_depth = 6
             else:
                 raise NotImplementedError
 
@@ -241,18 +253,18 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             )
             self.depth_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="exp")
 
-        # ----------------------
-        #     Conf Decoder
-        # ----------------------
-        if hasattr(self, "point_head"):
-            self.conf_decoder = deepcopy(self.point_decoder)
-            # self.conf_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="linear")
-            self.conf_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="2sigmoid")
-        elif hasattr(self, "depth_head"):
-            self.conf_decoder = deepcopy(self.depth_decoder)
-            self.conf_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="2sigmoid")
-        else:
-            raise NotImplementedError()
+        # # ----------------------
+        # #     Conf Decoder
+        # # ----------------------
+        # if hasattr(self, "point_head"):
+        #     self.conf_decoder = deepcopy(self.point_decoder)
+        #     # self.conf_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="linear")
+        #     self.conf_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="2sigmoid")
+        # elif hasattr(self, "depth_head"):
+        #     self.conf_decoder = deepcopy(self.depth_decoder)
+        #     self.conf_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1, activation="2sigmoid")
+        # else:
+        #     raise NotImplementedError()
 
         # ----------------------
         #  Camera Pose Decoder
@@ -349,7 +361,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             # xy_hidden = self.xy_decoder(hidden, xpos=pos, xpos_max=xpos_max)
         else:
             point_hidden = self.depth_decoder(hidden, xpos=pos, xpos_max=xpos_max)
-        conf_hidden = self.conf_decoder(hidden, xpos=pos, xpos_max=xpos_max)
+        # conf_hidden = self.conf_decoder(hidden, xpos=pos, xpos_max=xpos_max)
         camera_hidden = self.camera_decoder(hidden, xpos=pos, xpos_max=xpos_max)
 
         with torch.amp.autocast(device_type=DEVICE_NAME, enabled=False):
@@ -379,13 +391,13 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 z = self.depth_head([point_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
             local_points = torch.cat([xy, z], dim=-1)
 
-            # confidence
-            conf_hidden = conf_hidden.float()
-            conf = self.conf_head([conf_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
+            # # confidence
+            # conf_hidden = conf_hidden.float()
+            # conf = self.conf_head([conf_hidden[:, self.patch_start_idx:]], (H, W)).reshape(B, N, H, W, -1)
 
         return dict(
             local_points=local_points,
-            conf=conf,
+            # conf=conf,
             camera_poses=camera_poses,
         )
     

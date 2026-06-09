@@ -44,7 +44,7 @@ class Reliev3R(nn.Module):
                 "local_points_detach_xy": cam_rays.detach() * pred_depths,  # Local points, intrs detached, b v 3 h w
                 "local_points_detach_z":  cam_rays * pred_depths.detach(),  # Local points, depths detached, b v 3 h w
                 "depths":                 pred_depths,                      # Predicted depth, b v 1 h w
-                "depths_conf":            aligned_depth_dict["confs"],      # Predicted depth confidence, b v 1 h w
+                # "depths_conf":            aligned_depth_dict["confs"],      # Predicted depth confidence, b v 1 h w
                 "camera_extrs":           cameras,                          # Predicted camera poses, b v 4 4.
             }
         else:
@@ -78,7 +78,7 @@ class Reliev3R(nn.Module):
         output_dict = {
             "mono_depths":      aligned_depth_dict["mono_depth"],         # Pseudo depth label
             "depths":           aligned_depth_dict["aligned_depth"],      # Depth prediction
-            "depths_conf":      aligned_depth_dict["aligned_depth_conf"], # Predicted depth confidence
+            # "depths_conf":      aligned_depth_dict["aligned_depth_conf"], # Predicted depth confidence
             "scaled_depths":    aligned_depth_dict["scaled_depth"],       # Scaled depth prediction
             "pred_depth_scale": aligned_depth_dict["depth_scales"],       # Predicted depth scale
             "pred_depth_trans": aligned_depth_dict["depth_transs"],       # Predicted depth transition
@@ -112,7 +112,7 @@ class Reliev3R(nn.Module):
             depth_aligner_outputs = self.depth_aligner(imgs)
             output_dict.update({
                 "aligner_output": rearrange(depth_aligner_outputs["local_points"], "b v h w c -> b v c h w"), # b v 3 h w
-                "confs":          rearrange(depth_aligner_outputs["conf"], "b v h w c -> b v c h w"), # b v 1 h w
+                # "confs":          rearrange(depth_aligner_outputs["conf"], "b v h w c -> b v c h w"), # b v 1 h w
                 "camera_poses":   depth_aligner_outputs["camera_poses"], # b v 4 4
             })
         else:
@@ -155,7 +155,7 @@ class Reliev3R_Pi3(Pi3):
                 "local_points_detach_xy": cam_rays.detach() * pred_depths,  # Local points, intrs detached, b v 3 h w
                 "local_points_detach_z":  cam_rays * pred_depths.detach(),  # Local points, depths detached, b v 3 h w
                 "depths":                 pred_depths,                      # Predicted depth, b v 1 h w
-                "depths_conf":            aligned_depth_dict["confs"] + 1e-3, # Predicted depth confidence, b v 1 h w
+                # "depths_conf":            aligned_depth_dict["confs"] + 1e-3, # Predicted depth confidence, b v 1 h w
                 "camera_extrs":           cameras,                          # Predicted camera poses, b v 4 4.
             }
         else:
@@ -179,7 +179,7 @@ class Reliev3R_Pi3(Pi3):
             depth_aligner_outputs = super()._forward(imgs)
             output_dict.update({
                 "aligner_output": rearrange(depth_aligner_outputs["local_points"], "b v h w c -> b v c h w"), # b v 3 h w
-                "confs":          rearrange(depth_aligner_outputs["conf"], "b v h w c -> b v c h w"), # b v 1 h w
+                # "confs":          rearrange(depth_aligner_outputs["conf"], "b v h w c -> b v c h w"), # b v 1 h w
                 "camera_poses":   depth_aligner_outputs["camera_poses"], # b v 4 4
             })
         else:
