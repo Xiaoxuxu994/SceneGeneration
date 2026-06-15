@@ -26,6 +26,7 @@ from .scannetv2_dataset import ScanNetv2_Dataset
 from .scannetpp_dataset import ScanNetpp_Dataset
 from .wildrgbd_dataset import WildRGBD_Dataset
 from .spatialvid_dataset import SpatialVID_Dataset
+from .sekai_dataset import Sekai_Dataset
 
 from ..utils.common import customized_collate_fn_placeholder
 
@@ -46,6 +47,7 @@ DATASET_DICT = {
     "scannetpp":  ScanNetpp_Dataset,  # outdoor
     "wildrgbd":   WildRGBD_Dataset, 
     "spatialvid": SpatialVID_Dataset, 
+    "sekai":      Sekai_Dataset, 
 }
 
 EPOCH_SCALE = 100000
@@ -66,6 +68,7 @@ DATASET_SAMPLES_PER_EPOCH_TRAIN = {
     "scannetpp":  20  * EPOCH_SCALE, 
     "wildrgbd":   25  * EPOCH_SCALE, 
     "spatialvid": 100 * EPOCH_SCALE, 
+    "sekai":      100 * EPOCH_SCALE, 
 }
 DATASET_SAMPLES_PER_EPOCH_EVAL = {
     "ase":        1 * EPOCH_SCALE, 
@@ -84,6 +87,7 @@ DATASET_SAMPLES_PER_EPOCH_EVAL = {
     "scannetpp":  1 * EPOCH_SCALE, 
     "wildrgbd":   1 * EPOCH_SCALE, 
     "spatialvid": 1 * EPOCH_SCALE, 
+    "sekai":      1 * EPOCH_SCALE, 
 }
 
 
