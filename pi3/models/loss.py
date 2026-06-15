@@ -59,6 +59,8 @@ class PointLoss(nn.Module):
         expected_dist_thresh=0.02,
         w_unproj_global=0.0,
         w_normalized_loss=0.0,
+        normalize_use_local=False,
+        normalize_penalize_zero=False,
     ):
         super().__init__()
         self.local_align_res = local_align_res
@@ -71,6 +73,8 @@ class PointLoss(nn.Module):
             self.expected_dist_thresh = expected_dist_thresh
         self.w_unproj_global = w_unproj_global
         self.w_normalized_loss = w_normalized_loss
+        self.normalize_use_local = normalize_use_local
+        self.normalize_penalize_zero=normalize_penalize_zero
 
     def prepare_segformer(self):
         from pi3.models.segformer.model import EncoderDecoder
@@ -164,24 +168,38 @@ class PointLoss(nn.Module):
         return points_world
 
     def normalize_loss(self, pred, valid_masks=None):
-        ## Access local points
-        pred_local_pts = pred['local_points']
-        B, N = pred_local_pts.shape[:2]
-        ## pred['camera_poses'] is c2w, convert it to w2c/extrs first.
-        pred_w2c = se3_inverse(pred['camera_poses'])
-        ## Transform local points to global points.
-        pred_global_pts = self.localpoint2global(pred_local_pts, pred_w2c)
-        ## Transform global points to the coordinate of first frame.
-        # pred_trans_to_firstF = torch.cat([pred_w2c[:, :1] for _ in range(N)], dim=1) # b v 4 4
-        # pred_global_pts = self.mat_mul_vec_by_conv(self.pad_one(pred_global_pts, dim=-1), pred_trans_to_firstF)[..., :3] # b v h w 3
-        ## Calculate the overall scale.
-        point_norm = pred_global_pts.norm(dim=-1)
+        pred_local_pts = pred.get("local_points_raw", pred["local_points"])
+
+        if pred_local_pts.ndim == 5 and pred_local_pts.shape[2] == 3:
+            pred_local_pts = rearrange(pred_local_pts, "b v c h w -> b v h w c")
+
+        B = pred_local_pts.shape[0]
+
+        if self.normalize_use_local:
+            point_norm = pred_local_pts.norm(dim=-1)
+        else:
+            camera_poses = pred.get("camera_poses_raw", pred["camera_poses"])
+            pred_w2c = se3_inverse(camera_poses)
+            pred_global_pts = self.localpoint2global(pred_local_pts, pred_w2c)
+            point_norm = pred_global_pts.norm(dim=-1)
+
         if valid_masks is not None:
             valid = valid_masks.float()
-            point_scale = (point_norm * valid).reshape(B, -1).sum(dim=-1) / (valid.reshape(B, -1).sum(dim=-1) + 1e-8)
+            if valid.ndim == 5 and valid.shape[2] == 1:
+                valid = valid[:, :, 0]
+
+            point_scale = (point_norm * valid).reshape(B, -1).sum(dim=-1) / (
+                valid.reshape(B, -1).sum(dim=-1) + 1e-8
+            )
         else:
             point_scale = point_norm.reshape(B, -1).mean(dim=-1)
-        return (point_scale - 1.0).abs().mean()
+
+        loss = (point_scale - 1.0).abs().mean()
+
+        if self.normalize_penalize_zero:
+            loss = loss + (point_scale + 1.0 / (point_scale + 1e-8)).mean()
+
+        return loss
 
     def noraml_loss(self, points, gt_points, mask):
         not_edge = ~depth_edge(gt_points[..., 2], rtol=0.03)
@@ -383,6 +401,9 @@ class Pi3Loss(nn.Module):
         train_conf=False,
         w_unproj_global=0.0,
         w_normalized_loss=0.0,
+        normalize_use_local=False,
+        normalize_penalize_zero=False,
+
     ):
         super().__init__()
 
@@ -390,6 +411,8 @@ class Pi3Loss(nn.Module):
             train_conf=train_conf,
             w_unproj_global=w_unproj_global,
             w_normalized_loss=w_normalized_loss,
+            normalize_use_local=normalize_use_local,
+            normalize_penalize_zero=normalize_penalize_zero
         )
 
         self.camera_loss = CameraLoss()
@@ -435,6 +458,12 @@ class Pi3Loss(nn.Module):
         )
     
     def normalize_pred(self, pred, gt):
+
+        pred = pred.copy()
+
+        pred["local_points_raw"] = pred["local_points"]
+        pred["camera_poses_raw"] = pred["camera_poses"]
+
         local_points = pred['local_points']
         camera_poses = pred['camera_poses']
         B, N, H, W, _ = local_points.shape
@@ -449,7 +478,8 @@ class Pi3Loss(nn.Module):
         local_points  = local_points / norm_factor[..., None, None, None, None]
 
         if 'global_points' in pred and pred['global_points'] is not None:
-            pred['global_points'] /= norm_factor[..., None, None, None, None]
+            # pred['global_points'] /= norm_factor[..., None, None, None, None]
+            pred['global_points'] = pred['global_points'] / norm_factor[..., None, None, None, None]
 
         camera_poses_normalized = camera_poses.clone()
         camera_poses_normalized[..., :3, 3] /= norm_factor.view(B, 1, 1)

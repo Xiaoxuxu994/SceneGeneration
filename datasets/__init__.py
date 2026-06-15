@@ -43,20 +43,27 @@ def create_dataloader(cfg, mode):
         num_resolution = cfg.train.num_resolution if 'num_resolution' in cfg.train and mode == 'train' else 1
         if mode == 'train' and 'random_reslution' in cfg.train and cfg.train.random_reslution:
             seed = 777 + 0
-            resolutions = sample_resolutions(aspect_ratio_range=cfg.train.aspect_ratio_range, pixel_count_range=cfg.train.pixel_count_range, patch_size=cfg.train.patch_size, num_resolutions=num_resolution, seed=seed)
+            resolutions = sample_resolutions(aspect_ratio_range=cfg.train.aspect_ratio_range, pixel_count_range=cfg.train.pixel_count_range, patch_size=cfg.train.patch_size, num_resolutions=num_resolution, seed=seed,
+                                             width_range=cfg.train.get("width_range", None))
             print('Initialized resolution', resolutions)
             num_resolution = len(resolutions)
             for dataset_name, weight in weights.items():
                 dataset_i = hydra.utils.instantiate(cfg_dataset[dataset_name], resolution=resolutions)
                 dataset_i.convert_attributes()
                 datasets_all.append(weight @ dataset_i)
-        elif 'resolution' in cfg.train:
+        
+        elif mode == 'train' and 'resolution' in cfg.train:
             resolutions = cfg.train.resolution
             print('Setting dataset resolution', resolutions)
+
+            # fixed multi-resolution list: num_resolution should match resolution list length
+            num_resolution = len(resolutions)
+
             for dataset_name, weight in weights.items():
                 dataset_i = hydra.utils.instantiate(cfg_dataset[dataset_name], resolution=resolutions)
                 dataset_i.convert_attributes()
                 datasets_all.append(weight @ dataset_i)
+
         else:
             for dataset_name, weight in weights.items():
                 dataset_i = hydra.utils.instantiate(cfg_dataset[dataset_name])
@@ -95,7 +102,7 @@ def create_dataloader(cfg, mode):
         dataset=dataset,
         batch_sampler=batch_sampler,
         num_workers=num_workers,
-        pin_memory=False,
+        pin_memory=True,
         persistent_workers=True,
         prefetch_factor=2,
         collate_fn=unified_collate_fn

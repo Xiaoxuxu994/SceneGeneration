@@ -5,7 +5,6 @@ import os
 import os.path as osp
 import hashlib
 from glob import glob
-from pathlib import Path
 
 import h5py
 import torch
@@ -53,9 +52,6 @@ class GTASfMDataset(BaseDataset):
         self.all_sequences = []
         self.scene_to_path = {}
         self.scene_meta = {}
-
-        # lazy h5 handle
-        self._h5_handles = {}
 
         cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
         os.makedirs(cache_dir, exist_ok=True)
@@ -183,17 +179,6 @@ class GTASfMDataset(BaseDataset):
             return all_sequences[split_idx:]
 
     # =========================
-    # h5 helpers
-    # =========================
-    def _get_h5_handle(self, h5_path):
-        """
-        lazy open per worker/process
-        """
-        if h5_path not in self._h5_handles:
-            self._h5_handles[h5_path] = h5py.File(h5_path, "r")
-        return self._h5_handles[h5_path]
-
-    # =========================
     # sample
     # =========================
     # re-implement in basedataset
@@ -201,8 +186,7 @@ class GTASfMDataset(BaseDataset):
     # =========================
     # load one view
     # =========================
-    def _load_one_view(self, h5_path, scene_name, fid, resolution, rng):
-        f = self._get_h5_handle(h5_path)
+    def _load_one_view(self, f, h5_path, scene_name, fid, resolution, rng):
 
         image_raw = np.asarray(f[f"image_{fid}"])
         depthmap = np.asarray(f[f"depth_{fid}"]).astype(np.float32)
@@ -210,7 +194,8 @@ class GTASfMDataset(BaseDataset):
         camera_pose = np.asarray(f[f"pose_{fid}"]).astype(np.float32)
 
         image_bytes = image_raw.reshape(-1).astype(np.uint8).tobytes()
-        rgb_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+        with Image.open(BytesIO(image_bytes)) as im:
+            rgb_image = im.convert("RGB")
 
 
         depthmap = np.nan_to_num(depthmap, nan=0.0, posinf=0.0, neginf=0.0)
@@ -256,16 +241,18 @@ class GTASfMDataset(BaseDataset):
         }
 
         views = []
-        for fid in idxs:
-            views.append(
-                self._load_one_view(
-                    h5_path=h5_path,
-                    scene_name=scene,
-                    fid=fid,
-                    resolution=resolution,
-                    rng=rng,
+        with h5py.File(h5_path, "r") as f:
+            for fid in idxs:
+                views.append(
+                    self._load_one_view(
+                        f=f,
+                        h5_path=h5_path,
+                        scene_name=scene,
+                        fid=fid,
+                        resolution=resolution,
+                        rng=rng,
+                    )
                 )
-            )
 
         return views
 

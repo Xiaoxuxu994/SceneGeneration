@@ -376,7 +376,7 @@ def _find_all_resolutions(
 
     return list(valid_resolutions)
 
-def sample_resolutions(aspect_ratio_range=(0.5, 2.0), pixel_count_range=(250000, 500000), patch_size=1, num_resolutions=5, seed=None, base_resolution=[]):
+def sample_resolutions(aspect_ratio_range=(0.5, 2.0), pixel_count_range=(250000, 500000), patch_size=1, num_resolutions=5, seed=None, base_resolution=[], width_range=None):
     """
     Sample a list of random resolutions based on aspect ratio, pixel count constraints, 
     and ensure the width and height are divisible by patch_size.
@@ -395,6 +395,8 @@ def sample_resolutions(aspect_ratio_range=(0.5, 2.0), pixel_count_range=(250000,
 
     if num_resolutions == -1:
         all_res = _find_all_resolutions(aspect_ratio_range, pixel_count_range, patch_size)
+        if width_range is not None:
+            all_res = [r for r in all_res if width_range[0] <= r[0] <= width_range[1]]
         resolutions.update(all_res)
         return sorted(list(resolutions))
 
@@ -412,6 +414,9 @@ def sample_resolutions(aspect_ratio_range=(0.5, 2.0), pixel_count_range=(250000,
         # Round height and width to the nearest integers that are divisible by patch_size
         height = int(round(height / patch_size) * patch_size)
         width = int(round(width / patch_size) * patch_size)
+
+        if width_range is not None and not (width_range[0] <= width <= width_range[1]):
+            continue
 
         # Add the resolution to the set (duplicates are automatically ignored)
         resolutions.add((width, height))

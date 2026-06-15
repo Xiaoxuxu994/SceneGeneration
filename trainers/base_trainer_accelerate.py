@@ -868,7 +868,9 @@ class BaseTrainer:
             if "checkpoint_" in path:
                 # Extract epoch from "checkpoint_N" format
                 checkpoint_name = path.rstrip('/').split('/')[-1]
-                start_epoch = int(checkpoint_name.split("checkpoint_")[-1])
+                ckpt_epoch = int(checkpoint_name.split("checkpoint_")[-1])
+                start_epoch = ckpt_epoch + 1
+                self.log_info(f"Resume from checkpoint epoch {ckpt_epoch}, start from epoch {start_epoch}")
             else:
                 # For "best_model" or other formats, start from epoch 0
                 # This is correct for stage transitions where we want to reset the epoch counter

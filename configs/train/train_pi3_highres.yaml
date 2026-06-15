@@ -6,16 +6,17 @@ train:
   image_num_range: [2, 16]     # hres
   max_img_per_gpu: 36             # hres
 
-  # # dynamic resolution and 
-  # random_reslution: true
-  # aspect_ratio_range: [0.5, 2.0]
-  # pixel_count_range: [100000, 255000] 
-  # patch_size: 16 #14 for dinov2 # 16 for dinov3
-  # num_resolution: -1
+  # dynamic resolution and 
+  random_reslution: true
+  aspect_ratio_range: [0.5, 2.0]
+  pixel_count_range: [100000, 255000] 
+  patch_size: 16 #14 for dinov2 # 16 for dinov3
+  num_resolution: -1
+  width_range: [400,600]
 
-  random_reslution: false
-  resolution:
-    - [512, 336]
+  # random_reslution: false
+  # resolution:
+  #   - [512, 336]
 
 model:
   ckpt: null # <path-to-your-pretrain-checkpoint>

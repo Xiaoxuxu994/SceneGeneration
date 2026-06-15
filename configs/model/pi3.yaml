@@ -18,13 +18,17 @@ loss:
         train_conf: false
         w_unproj_global: 0.0
         w_normalized_loss: 0.0
+        normalize_use_local: False
+        normalize_penalize_zero: False
 
     test_loss:
         _target_: pi3.models.loss.Pi3Loss
         train_conf: false
         w_unproj_global: 0.0
         w_normalized_loss: 0.0
-        
+        normalize_use_local: False
+        normalize_penalize_zero: False
+                
 train:
     num_workers: 16
     batch_size: 1              # not use, dynamic batch size
