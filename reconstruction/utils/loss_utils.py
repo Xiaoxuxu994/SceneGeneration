@@ -332,8 +332,7 @@ def matching_error_3D_dist(points: torch.Tensor,
         self_filtered_mask = ((points_offset / normalize_factor) < 2e-2) # bv k
         mask = mask * self_filtered_mask.detach()
     
-    # dist_loss = points_offset.norm(dim=-1).square() # bv k
-    dist_loss = points_offset
+    dist_loss = points_offset # bv k
     dist_loss = ((dist_loss * mask).sum(dim=-1) / (mask.sum(dim=-1) + 1e-8)).mean()
     
     return dist_loss.mean(), self_filtered_mask
@@ -599,20 +598,17 @@ class LossFunction(torch.nn.Module):
     def normalize_loss(self, output_dict, data):
         ## Access local points
         pr_local_points = rearrange(output_dict["local_points"], "b v c h w -> b v h w c") # b v h w c
-        # pr_local_points = rearrange(output_dict["local_points_detach_xy"], "b v c h w -> b v h w c") # b v h w c
-        # pr_local_points = rearrange(output_dict["local_points_detach_z"], "b v c h w -> b v h w c") # b v h w c
         B, N = pr_local_points.shape[:2]
         ## Transform local points to global points
-        pr_global_points = localpoint2global(pr_local_points, output_dict["camera_extrs"]) # b v h w c
-        # ## Transform global points to the coordinate of first frame
-        # pred_trans_to_firstF = torch.cat([output_dict['camera_extrs'][:, :1] for _ in range(N)], dim=1) # b v 4 4
-        # pr_global_points = mat_mul_vec_by_conv(pad_one(pr_global_points, dim=-1), pred_trans_to_firstF)[..., :3] # b v h w 3
+        # pr_global_points = localpoint2global(pr_local_points, output_dict["camera_extrs"]) # b v h w c
+        pr_global_points = pr_local_points # b v h w c
         ## Calculate the overall scale.
         valid_mask = data["input_depth_masks"].reshape(B, -1)
         pr_global_points_dist = pr_global_points.norm(dim=-1).reshape(B, -1)
         point_scale = (pr_global_points_dist * 
                        valid_mask / (valid_mask.sum(dim=-1, keepdim=True) + 1e-8)).sum(dim=-1).mean()
-        return ((point_scale - 1).abs().mean() + (point_scale + 1 / (point_scale + 1e-8)).mean()) * 0.5
+        # return ((point_scale - 1).abs().mean() + (point_scale + 1 / (point_scale + 1e-8) - 2).mean()) * 0.5
+        return (point_scale - 1).abs().mean()
     
     
     def forward(self, output_dict, data):
