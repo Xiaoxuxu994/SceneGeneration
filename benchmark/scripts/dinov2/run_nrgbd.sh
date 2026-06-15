@@ -33,19 +33,19 @@ source ./scripts/config/nrgbd/518x392.sh
 # CKPT="./ckpts/VGGT-1B/model.pt"
 # PREFIX="vggt_official"
 
-# MODEL="vggt" # ['vggt','pi3','reliev3r']
-# CONFIG=""
-# MODEL_SIZE=""
-# CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
-# PREFIX="vggt_sz_final"
-
-MODEL="da3" # ['vggt','pi3','reliev3r']
+MODEL="vggt" # ['vggt','pi3','reliev3r']
+CONFIG=""
 MODEL_SIZE=""
-CONFIG="./ckpts/depthanything3/config.json"
-CKPT="./ckpts/depthanything3"
-PREFIX="depthanything3"
+CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
+PREFIX="vggt_sz_final"
 
-NPU_ID="2"
+# MODEL="da3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE=""
+# CONFIG="./ckpts/depthanything3/config.json"
+# CKPT="./ckpts/depthanything3"
+# PREFIX="depthanything3"
+
+NPU_ID="0"
 DEVICE="npu:0"
 DTYPE="fp32"
 

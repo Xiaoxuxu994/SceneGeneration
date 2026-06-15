@@ -21,11 +21,11 @@ source ./scripts/config/ase/512x512.sh
 # CONFIG="experiments/Reliev3R-3B_260525_subv6ckpt79_womix_puresub/config.json"
 # PREFIX="Reliev3R-3B_260525_subv6ckpt79_womix_puresub_ckpt0"
 
-# MODEL="pi3" # ['vggt','pi3','reliev3r']
-# MODEL_SIZE="dinov3_huge+_3Bv2"
-# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02/ckpts/model_ckpt3" 
-# PREFIX="exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02_ckpt3"
-# CONFIG=""
+MODEL="pi3" # ['vggt','pi3','reliev3r']
+MODEL_SIZE="dinov3_huge+_3Bv2" #"dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
+CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0604_pi3_3B_datamix_all_v9-5_randresNew_scratch_uploss_pinmemTrue/ckpts/model_ckpt78" 
+PREFIX="exp0604_pi3_3B_datamix_all_v9-5_randresNew_scratch_uploss_pinmemTrue_ckpt78"
+CONFIG=""
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE="dinov3_huge+_3Bv2"
@@ -33,11 +33,11 @@ source ./scripts/config/ase/512x512.sh
 # CONFIG="experiments/Reliev3R-3B_260519_subPi3-3B_v6ckpt63/config.json"
 # PREFIX="Reliev3R-3B_260519_subPi3-3B_v6ckpt63_ckpt5000"
 
-MODEL="vggt_omega"
-CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
-PREFIX="vggt_omega_1B_official"
-CONFIG=""
-MODEL_SIZE=""
+# MODEL="vggt_omega"
+# CKPT="/efs-mi-east4-2/w60114355/checkpoints/modelscope.cn/models/sanqilu376/VGGT-Omega/resolve/master/vggt_omega_1b_512.pt"
+# PREFIX="vggt_omega_1B_official"
+# CONFIG=""
+# MODEL_SIZE=""
 
 ## ------ 224x224 --------
 # source ./scripts/config/ase/224x224.sh
@@ -53,7 +53,7 @@ MODEL_SIZE=""
 # PREFIX="pi3_official"
 # CONFIG=""
 
-NPU_ID="5"
+NPU_ID="4"
 DEVICE="npu:0"
 DTYPE="fp32"
 

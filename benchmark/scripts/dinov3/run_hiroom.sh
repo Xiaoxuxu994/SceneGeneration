@@ -11,14 +11,14 @@ source ./scripts/config/hiroom/512x512.sh
 
 # MODEL="reliev3r" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE=""
-# CKPT="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/ckpt/35000.ckpt"
-# CONFIG="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/config.json"
-# PREFIX="Reliev3R-260512-1B-CamRegFalse-lr1e-5_ckpt35k"
+# CKPT="experiments/VGGT-3B_260603_sub10k/ckpt/100000"
+# CONFIG="experiments/VGGT-3B_260603_sub10k/config.json"
+# PREFIX="VGGT-3B_260603_sub10k_ckpt100000"
 
 MODEL="pi3" # ['vggt','pi3','reliev3r']
 MODEL_SIZE="dinov3_huge+_3Bv2" #"dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
-CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0529_pi3_3B_datamix_all_v9-5_lowres_v8-m8_randres_stage5_100k/ckpts/model_ckpt39" 
-PREFIX="exp0529_pi3_3B_datamix_all_v9-5_lowres_v8-m8_randres_stage5_100k_ckpt39"
+CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0604_pi3_3B_datamix_all_v9-5_randresNew_scratch_uploss_pinmemTrue/ckpts/model_ckpt78" 
+PREFIX="exp0604_pi3_3B_datamix_all_v9-5_randresNew_scratch_uploss_pinmemTrue_ckpt78"
 CONFIG=""
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
@@ -63,13 +63,22 @@ CONFIG=""
 # CONFIG=""
 # MODEL_SIZE=""
 
+## ------ 224x224 --------
+# source ./scripts/config/hiroom/224x224.sh
+
+# MODEL="reliev3r" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE=""
+# CKPT="experiments/VGGT-3B_260603_sub10k/ckpt/100000"
+# CONFIG="experiments/VGGT-3B_260603_sub10k/config.json"
+# PREFIX="VGGT-3B_260603_sub10k_ckpt100000"
+
 USE_GT_POSE=0 # 1 if using GT extrinsics; 0 predicted
 USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 
 SKIP_POINTMAP=0 # 1 if skip pointmap evaluation
 SKIP_NORMAL=1 # 1 if skip point normal evaluation
 
-NPU_ID="5"
+NPU_ID="4"
 DEVICE="npu:0"
 DTYPE="fp32"
 
