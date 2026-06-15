@@ -236,7 +236,7 @@ class MemEffCrossAttentionRope(CrossAttentionRope):
         return x
 
 class FlashCrossAttentionRope(CrossAttentionRope):
-    def forward(self, query: Tensor, key: Tensor, value: Tensor, attn_bias=None, qpos=None, kpos=None) -> Tensor:
+    def forward(self, query: Tensor, key: Tensor, value: Tensor, attn_bias=None, qpos=None, kpos=None, xpos_max=None) -> Tensor:
         B, N, C = query.shape
         _, M, _ = key.shape
 
@@ -247,8 +247,8 @@ class FlashCrossAttentionRope(CrossAttentionRope):
 
         q, k = self.q_norm(q).to(v.dtype), self.k_norm(k).to(v.dtype)
         if self.rope is not None:
-            q = self.rope(q, qpos)
-            k = self.rope(k, kpos)
+            q = self.rope(q, qpos, xpos_max=xpos_max)
+            k = self.rope(k, kpos, xpos_max=xpos_max)
         
         dropout_p = self.attn_drop.p if self.training else 0.0
         

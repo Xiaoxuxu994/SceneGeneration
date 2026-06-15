@@ -111,10 +111,18 @@ except ImportError:
 
     class RoPE2D(torch.nn.Module):
         
-        def __init__(self, freq=100.0, F0=1.0):
+        def __init__(self, freq=100.0, F0=1.0, dim=32, max_seq_len=100):
             super().__init__()
             self.base = freq 
             self.F0 = F0
+            inv_freq = 1.0 / (self.base ** (torch.arange(0, dim, 2).float() / dim))
+            t = torch.arange(max_seq_len, dtype=inv_freq.dtype)
+            freqs = torch.einsum("i,j->ij", t, inv_freq).to(inv_freq.dtype)
+            freqs = torch.cat((freqs, freqs), dim=-1)
+            cos = freqs.cos() # (Seq, Dim)
+            sin = freqs.sin()
+            self.register_buffer('cos', cos)
+            self.register_buffer('sin', sin)
             self.cache = {}
 
         def get_cos_sin(self, D, seq_len, device, dtype):
@@ -153,7 +161,9 @@ except ImportError:
             # cos, sin = self.get_cos_sin(D, int(positions.max())+1, tokens.device, tokens.dtype)
             if xpos_max is None:
                 xpos_max = int(positions.max())
-            cos, sin = self.get_cos_sin(D, xpos_max+1, tokens.device, tokens.dtype)
+            cos = self.cos[:xpos_max+1].to(tokens.dtype)
+            sin = self.sin[:xpos_max+1].to(tokens.dtype)
+            # cos, sin = self.get_cos_sin(D, xpos_max+1, tokens.device, tokens.dtype)
             # split features into two along the feature dimension, and apply rope1d on each half
             y, x = tokens.chunk(2, dim=-1)
             y = self.apply_rope1d(y, positions[:,:,0], cos, sin)

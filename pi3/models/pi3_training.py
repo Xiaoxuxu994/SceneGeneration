@@ -79,18 +79,6 @@ class Pi3(nn.Module):
             del self.encoder.mask_token
         if enc_type == 'dinov3' and hasattr(self.encoder,'mask_token'):
             del self.encoder.mask_token
-        # ----------------------
-        #  Positional Encoding
-        # ----------------------
-        self.pos_type = pos_type if pos_type is not None else 'none'
-        self.rope=None
-        if self.pos_type.startswith('rope'): # eg rope100 
-            if RoPE2D is None: raise ImportError("Cannot find cuRoPE2D, please install it following the README instructions")
-            freq = float(self.pos_type[len('rope'):])
-            self.rope = RoPE2D(freq=freq)
-            self.position_getter = PositionGetter()
-        else:
-            raise NotImplementedError
 
         # -------------------------------------------
         #        Decoder Spec
@@ -115,7 +103,28 @@ class Pi3(nn.Module):
         dec_num_heads = dec_cfg['dec_num_heads']
         mlp_ratio =  dec_cfg['mlp_ratio']
         dec_depth = dec_cfg['dec_depth']     
-        head_depth = dec_cfg['head_depth']   
+        head_depth = dec_cfg['head_depth']  
+
+        # head arct
+        head_dec_embed_dim = 1024
+        head_dec_num_heads = 16
+
+        # ----------------------
+        #  Positonal Encoding
+        # ----------------------
+        self.pos_type = pos_type if pos_type is not None else 'none'
+        self.rope=None
+        if self.pos_type.startswith('rope'): # eg rope100 
+            if RoPE2D is None: raise ImportError("Cannot find cuRoPE2D, please install it following the README instructions")
+            freq = float(self.pos_type[len('rope'):])
+            self.rope = RoPE2D(freq=freq, dim=dec_embed_dim // dec_num_heads // 2) # for decoder
+            if head_dec_embed_dim//head_dec_num_heads != dec_embed_dim // dec_num_heads: # for conf,camera,point decoder
+                self.rope_head = RoPE2D(freq=freq, dim=head_dec_embed_dim//head_dec_num_heads//2) 
+            else:
+                self.rope_head = self.rope
+            self.position_getter = PositionGetter()
+        else:
+            raise NotImplementedError
 
         # -----------------------------------
         #        Projec & Norm Layer
@@ -165,10 +174,10 @@ class Pi3(nn.Module):
         # ----------------------
         self.point_decoder = TransformerDecoder(
             in_dim=2*self.dec_embed_dim, 
-            dec_embed_dim=1024,
-            dec_num_heads=16,
+            dec_embed_dim=head_dec_embed_dim,
+            dec_num_heads=head_dec_num_heads,
             out_dim=1024,
-            rope=self.rope,
+            rope=self.rope_head,
             depth=head_depth,
             use_checkpoint=True
         )
@@ -179,10 +188,10 @@ class Pi3(nn.Module):
         # ----------------------
         self.camera_decoder = TransformerDecoder(
             in_dim=2*self.dec_embed_dim, 
-            dec_embed_dim=1024,
-            dec_num_heads=16,                # 8
+            dec_embed_dim=head_dec_embed_dim,
+            dec_num_heads=head_dec_num_heads,               # 8
             out_dim=512,
-            rope=self.rope,
+            rope=self.rope_head,
             depth=head_depth,
             use_checkpoint=True
         )
@@ -196,10 +205,10 @@ class Pi3(nn.Module):
         if use_global_points:
             self.global_points_decoder = ContextTransformerDecoder(
                 in_dim=2*self.dec_embed_dim, 
-                dec_embed_dim=1024,
-                dec_num_heads=16,
+                dec_embed_dim=head_dec_embed_dim,
+                dec_num_heads=head_dec_num_heads,
                 out_dim=1024,
-                rope=self.rope,
+                rope=self.rope_head,
                 depth=head_depth,
             )
             self.global_point_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=3)
@@ -566,7 +575,7 @@ class Pi3(nn.Module):
         camera_hidden = self.camera_decoder(hidden, xpos=pos,xpos_max=xpos_max)
         if self.use_global_points:
             context = hidden.reshape(B, N, patch_h*patch_w+self.patch_start_idx, -1)[:, 0:1].repeat(1, N, 1, 1).reshape(B*N, patch_h*patch_w+self.patch_start_idx, -1)
-            global_point_hidden = self.global_points_decoder(hidden, context, xpos=pos, ypos=pos) ## no xpos_max
+            global_point_hidden = self.global_points_decoder(hidden, context, xpos=pos, ypos=pos,xpos_max=xpos_max) ## no xpos_max
 
         with torch.amp.autocast(device_type='cuda', enabled=False):
             # local points

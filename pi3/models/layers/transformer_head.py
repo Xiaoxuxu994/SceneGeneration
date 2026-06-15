@@ -119,12 +119,12 @@ class ContextTransformerDecoder(nn.Module):
 
         self.linear_out = nn.Linear(dec_embed_dim, out_dim)
 
-    def forward(self, hidden, context, xpos=None, ypos=None):
+    def forward(self, hidden, context, xpos=None, ypos=None, xpos_max=None):
         hidden = self.projects_x(hidden)
         context = self.projects_y(context)
 
         for i, blk in enumerate(self.blocks):
-            hidden = blk(hidden, context, xpos=xpos, ypos=ypos)
+            hidden = blk(hidden, context, xpos=xpos, ypos=ypos, xpos_max=xpos_max)
 
         out = self.linear_out(hidden)
 

@@ -102,8 +102,8 @@ def create_dataloader(cfg, mode):
         dataset=dataset,
         batch_sampler=batch_sampler,
         num_workers=num_workers,
-        pin_memory=True,
-        persistent_workers=True,
+        # pin_memory=True,
+        persistent_workers=False,
         prefetch_factor=2,
         collate_fn=unified_collate_fn
     )

@@ -12,10 +12,13 @@ def se3_inverse(T):
         t = T[..., :3, 3].unsqueeze(-1)
         R_inv = R.transpose(-2, -1)
         t_inv = -torch.matmul(R_inv, t)
-        T_inv = torch.cat([
-            torch.cat([R_inv, t_inv], dim=-1),
-            torch.tensor([0, 0, 0, 1], device=T.device, dtype=T.dtype).repeat(*T.shape[:-2], 1, 1)
-        ], dim=-2)
+        T_inv = torch.zeros_like(T)
+        T_inv[..., :3, :] = torch.cat([R_inv, t_inv], dim=-1)
+        T_inv[..., 3, -1] = 1
+        # T_inv = torch.cat([
+        #     torch.cat([R_inv, t_inv], dim=-1),
+        #     torch.tensor([0, 0, 0, 1], device=T.device, dtype=T.dtype).repeat(*T.shape[:-2], 1, 1)
+        # ], dim=-2)
     else:
         R = T[..., :3, :3]
         t = T[..., :3, 3, np.newaxis]

@@ -388,12 +388,12 @@ class CrossBlockRope(nn.Module):
             bias=ffn_bias,
         )
 
-    def forward(self, x: Tensor, y: Tensor, xpos=None, ypos=None) -> Tensor:
+    def forward(self, x: Tensor, y: Tensor, xpos=None, ypos=None, xpos_max=None) -> Tensor:
         def attn_residual_func(x: Tensor) -> Tensor:
-            return self.ls1(self.attn(self.norm1(x), xpos=xpos))
+            return self.ls1(self.attn(self.norm1(x), xpos=xpos, xpos_max=xpos_max))
 
         def cross_attn_residual_func(x: Tensor, y: Tensor) -> Tensor:
-            return self.ls_y(self.cross_attn(self.norm2(x), y, y, qpos=xpos, kpos=ypos))
+            return self.ls_y(self.cross_attn(self.norm2(x), y, y, qpos=xpos, kpos=ypos, xpos_max=xpos_max))
 
         def ffn_residual_func(x: Tensor) -> Tensor:
             return self.ls2(self.mlp(self.norm3(x)))
