@@ -81,6 +81,7 @@ DATA_ROOT_DEFAULTS = {
     "dl3dv":   "/efs-m3ga/z00818731/dl3dv-new/reliev3r_sample_list_c32.npz",
     "ase":     BENCH_ROOT / "data" / "ASE" /"reliev3r_sample_list_c32_s1.npz.update.npz",
     "re10k":   "/efs-m3ga/h00548084/relive3r_dataset/re10k_12.19/reliev3r_sample_list_c32.npz",
+    "sekai":   "/efs-m3ga/c50041401/datasets/sekai/sekai_clips_all/sub_000009/",
     "kitti":   BENCH_ROOT / "data" / "KITTI",
     "sintel": BENCH_ROOT / "data" / "MPI-Sintel",
     "bonn": BENCH_ROOT / "data" / "bonn",

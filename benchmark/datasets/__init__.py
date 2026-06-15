@@ -17,6 +17,7 @@ from .bonn import BonnDataset
 from .tum import TumDataset
 from .spatialvid import SpatialVIDDataset
 from .hiroom import HiRoomDataset
+from .sekai import SekaiDataset
 
 from pathlib import Path
 
@@ -36,7 +37,8 @@ DATASET_REGISTRY = {
     "bonn": BonnDataset,
     "tum": TumDataset,
     "spatialvid": SpatialVIDDataset,
-    "hiroom": HiRoomDataset
+    "hiroom": HiRoomDataset,
+    "sekai": SekaiDataset
 }
 
 def get_dataset(name: str, config: DatasetConfig):
