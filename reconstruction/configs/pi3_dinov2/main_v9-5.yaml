@@ -9,7 +9,7 @@ model:
 training:
   !include run/training.yaml
 
-datasets: !include datasets/default_v9-1.yaml
+datasets: !include datasets/default_v9-5.yaml
   
 loss:
   !include loss/loss.yaml

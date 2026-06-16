@@ -20,6 +20,7 @@ train_dataset:
     weights:
         # synthetic / clean geometry anchor
         ASE:              17500
+        # Kubric:              0
         GTA-sfm:           4300
         MatrixCity:        3800
         Hypersim:          3800
@@ -32,9 +33,13 @@ train_dataset:
         MVSSynth:          1300
         VirtualKitti:       300
         Replica:            500
+        # PointOdyssey:        0
         OmniObject3DNew:   7000
         Matterport3D:      2000
+        # ADT:               1400
         Objaverse:         9000
+        HY3DBench:         9000
+        SAGE10K:           3300
 
         # real / scanned / internet / object
         ScanNet:           4200
@@ -63,7 +68,21 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.008
+
+    # Kubric:
+    #     _target_: dataset.pi3_dataset.kubric_dataset.KubricDataset
+    #     # data_root: /mnt/nvme3/z00533370/dataset/sample_data/Kubric
+    #     data_root: /efs-m3ga/z00533370/reliev3r_data/Kubric
+    #     split_ratio: 0.98
+    #     max_distance: 8
+    #     z_far: 64
+    #     frame_num: 8
+    #     aug_crop: 16
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+    #     aug_focal: 0.9
+    #     mode: 'train'
 
     TarTanAir:
         _target_: dataset.pi3_dataset.tartanair_dataset.TarTanAirDataset
@@ -79,7 +98,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.006
 
     ASE:
         _target_: dataset.pi3_dataset.ase_dataset.ASEDataset
@@ -95,7 +113,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.001
 
     MatrixCity:
         _target_: dataset.pi3_dataset.matrixcity_dataset.MatrixCityDataset
@@ -111,7 +128,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.01
 
     MVSSynth:
         _target_: dataset.pi3_dataset.mvssynth_dataset.MVSSynthDataset
@@ -127,7 +143,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.06
 
     BlendedMVS:
         _target_: dataset.pi3_dataset.blendedmvs_dataset.BlendedMVSDataset
@@ -147,7 +162,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.01
 
     VirtualKitti:
         _target_: dataset.pi3_dataset.vkitti_dataset.VKittiDataset
@@ -163,7 +177,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.01
 
     GTA-sfm:
         _target_: dataset.pi3_dataset.gta_sfm_dataset.GTASfMDataset
@@ -179,7 +192,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.006
 
     MegaDepth:
         _target_: dataset.pi3_dataset.megadepth_dataset.MegaDepthDataset
@@ -195,7 +207,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.01
 
     Scannetpp:
         _target_: dataset.pi3_dataset.scannetpp_dataset.ScannetppDataset
@@ -215,7 +226,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.01
 
     ScanNet:
         _target_: dataset.pi3_dataset.scannet_dataset.ScanNetDataset
@@ -235,7 +245,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.005
 
     CO3D:
         _target_: dataset.pi3_dataset.co3d_dataset.CO3DDataset
@@ -251,7 +260,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.005
 
     Replica:
         _target_: dataset.pi3_dataset.replica_dataset.ReplicaDataset
@@ -266,7 +274,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.001
 
     Taskonomy:
         _target_: dataset.pi3_dataset.taskonomy_dataset.TaskonomyDataset
@@ -282,7 +289,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.004
 
     ARKitScenes:
         _target_: dataset.pi3_dataset.arkitscenes_dataset.ARKitScenesDataset
@@ -298,7 +304,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.003
 
     Mapillary:
         _target_: dataset.pi3_dataset.mapillary_dataset.MapillaryDataset
@@ -314,7 +319,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.01
 
     Spring:
         _target_: dataset.pi3_dataset.spring_dataset.SpringDataset
@@ -329,7 +333,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.003
 
     Unreal4k:
         _target_: dataset.pi3_dataset.unreal4k_dataset.Unreal4KDataset
@@ -344,7 +347,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.004
 
     OmniObject3DNew:
         _target_: dataset.pi3_dataset.omniobject3d_dataset.OmniObject3DNewDataset
@@ -359,7 +361,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.01
 
     Matterport3D:
         _target_: dataset.pi3_dataset.matterport3d_dataset.Matterport3DDataset
@@ -374,7 +375,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.002
 
     Habitat:
         _target_: dataset.pi3_dataset.habitat_dataset.HabitatDataset
@@ -389,7 +389,20 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.003
+
+    # PointOdyssey:
+    #     _target_: dataset.pi3_dataset.pointodyssey_dataset.PointOdysseyWAIDataset
+    #     data_root: /efs-m3ga/z00533370/reliev3r_data/pointodyssey
+    #     split_ratio: 1.0
+    #     max_distance: 8
+    #     z_far: 80
+    #     frame_num: 8
+    #     aug_crop: 16
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+    #     aug_focal: 0.9
+    #     mode: 'train'
 
     Wildrgbd:
         _target_: dataset.pi3_dataset.wildrgbd_dataset.WildrgbdDataset
@@ -404,7 +417,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.001
 
     DL3DV:
         _target_: dataset.pi3_dataset.dl3dv_dataset.DL3DVDataset
@@ -423,7 +435,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.01
 
     TartanGround:
         _target_: dataset.pi3_dataset.tartanground_dataset.TartanGroundDataset
@@ -438,7 +449,20 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.006
+
+    # ADT:
+    #     _target_: dataset.pi3_dataset.adt_dataset.ADTWAIDataset
+    #     data_root: /efs-m3ga/z00533370/reliev3r_data/ADT_wai
+    #     split_ratio: 1.0
+    #     max_distance: 8
+    #     z_far: 80
+    #     frame_num: 8
+    #     aug_crop: 16
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+    #     aug_focal: 0.9
+    #     mode: 'train'
 
     Objaverse:
         _target_: dataset.pi3_dataset.objaverse_dataset.ObjaverseWAIDataset
@@ -453,7 +477,6 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.008
 
     CO3DV2:
         _target_: dataset.pi3_dataset.co3dv2_dataset.CO3DV2Dataset
@@ -468,7 +491,34 @@ train_dataset:
             _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
         aug_focal: 0.9
         mode: 'train'
-        match_eps: 0.005
+
+    HY3DBench:
+        _target_: dataset.pi3_dataset.hy3dbench_dataset.HY3DBenchDataset
+        data_root: /efs-m3ga/h00548084/relive3r_raw/HY3D-Bench
+        split_ratio: 1.0
+        max_distance: 8
+        z_far: 64
+        frame_num: 8
+        aug_crop: 16
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        aug_focal: 0.9
+        mode: 'train'
+
+    SAGE10K:
+        _target_: dataset.pi3_dataset.sage10k_dataset.SAGE10KDataset
+        data_root: /efs-m3ga/h00548084/relive3r_raw/SAGE-10k/blend
+        split_ratio: 1.0
+        max_distance: 8
+        z_far: 80
+        frame_num: 8
+        aug_crop: 16
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        aug_focal: 0.9
+        mode: 'train'
 
 train_dataloader:
     drop_last: True
@@ -476,7 +526,8 @@ train_dataloader:
 
 test_dataset:
     weights:
-        ASE:               2000
+        ASE:              2000
+        # Kubric:              0
         GTA-sfm:           2000
         MatrixCity:        2000
         Hypersim:          2000
@@ -489,9 +540,13 @@ test_dataset:
         MVSSynth:          2000
         VirtualKitti:      2000
         Replica:           2000
+        # PointOdyssey:        0
         OmniObject3DNew:   2000
         Matterport3D:      2000
+        # ADT:               2000
         Objaverse:         2000
+        HY3DBench:         2000
+        SAGE10K:           2000
 
         ScanNet:           2000
         ARKitScenes:       2000
@@ -519,6 +574,21 @@ test_dataset:
             _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
 
+    # Kubric:
+    #     _target_: dataset.pi3_dataset.kubric_dataset.KubricDataset
+    #     # data_root: /mnt/nvme3/z00533370/dataset/sample_data/Kubric
+    #     data_root: /efs-m3ga/z00533370/reliev3r_data/Kubric
+    #     split_ratio: 0.98
+    #     max_distance: 8
+    #     z_far: 64
+    #     frame_num: 8
+    #     resolution:
+    #       - [512, 336]
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
+    #     mode: 'test'
+
     TarTanAir:
         _target_: dataset.pi3_dataset.tartanair_dataset.TarTanAirDataset
         # data_root: /mnt/nvme3/z00533370/dataset/sample_data/TartanAir
@@ -813,6 +883,20 @@ test_dataset:
             _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
 
+    # PointOdyssey:
+    #     _target_: dataset.pi3_dataset.pointodyssey_dataset.PointOdysseyWAIDataset
+    #     data_root: /efs-m3ga/z00533370/reliev3r_data/pointodyssey
+    #     split_ratio: 0.9
+    #     max_distance: 8
+    #     z_far: 80
+    #     frame_num: 8
+    #     resolution:
+    #       - [512, 336]
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
+    #     mode: 'test'
+
     Wildrgbd:
         _target_: dataset.pi3_dataset.wildrgbd_dataset.WildrgbdDataset
         data_root: /efs-m3ga/z00533370/reliev3r_data/wildrgbd_s3/
@@ -855,6 +939,20 @@ test_dataset:
             _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
         mode: 'test'
 
+    # ADT:
+    #     _target_: dataset.pi3_dataset.adt_dataset.ADTWAIDataset
+    #     data_root: /efs-m3ga/z00533370/reliev3r_data/ADT_wai
+    #     split_ratio: 0.9
+    #     max_distance: 8
+    #     z_far: 80
+    #     frame_num: 8
+    #     resolution:
+    #       - [512, 336]
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
+    #     mode: 'test'
+
     Objaverse:
         _target_: dataset.pi3_dataset.objaverse_dataset.ObjaverseWAIDataset
         data_root: /efs-m3ga/z00533370/reliev3r_data/objaverse_wai
@@ -872,6 +970,34 @@ test_dataset:
     CO3DV2:
         _target_: dataset.pi3_dataset.co3dv2_dataset.CO3DV2Dataset
         data_root: /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode
+        split_ratio: 0.999
+        max_distance: 8
+        z_far: 80
+        frame_num: 8
+        resolution:
+          - [512, 336]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
+        mode: 'test'
+
+    HY3DBench:
+        _target_: dataset.pi3_dataset.hy3dbench_dataset.HY3DBenchDataset
+        data_root: /efs-m3ga/h00548084/relive3r_raw/HY3D-Bench
+        split_ratio: 0.999
+        max_distance: 8
+        z_far: 64
+        frame_num: 8
+        resolution:
+          - [512, 336]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
+        mode: 'test'
+
+    SAGE10K:
+        _target_: dataset.pi3_dataset.sage10k_dataset.SAGE10KDataset
+        data_root: /efs-m3ga/h00548084/relive3r_raw/SAGE-10k/blend
         split_ratio: 0.999
         max_distance: 8
         z_far: 80
