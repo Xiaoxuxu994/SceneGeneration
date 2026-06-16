@@ -10,10 +10,11 @@ ENCODER_TYPE=dinov3  # ['dinov2', 'dinov3']
 SRC_ROOT=/efs-m3ga/y00959808/exp/reliev3r
 DST_ROOT=experiments
 
-STEPS=(5000 10000)
+STEPS=(20000 40000 50000)
 
 DST_EXP_NAMES=(
-    0608_5Bv2_v9-5_enc1e-1x_dec1x
+    0611_5Bv2_v9-5_stage1
+    0611_5Bv2_v9-5_stage1-freeze
 )
 
 DATASETS=(
@@ -29,8 +30,8 @@ DATASETS=(
     scannetpp
 )
 
-NPU_IDS=(2 3 5 6 7)
-MAX_JOBS_PER_NPU=2
+NPU_IDS=(1 7)
+MAX_JOBS_PER_NPU=1
 NUM_NPUS=${#NPU_IDS[@]}
 NUM_WORKERS=$(( NUM_NPUS * MAX_JOBS_PER_NPU ))
 
@@ -72,6 +73,7 @@ run_one_task() {
 
     local DST_DIR="$DST_ROOT/$EXP_NAME"
     local CKPT="$DST_DIR/ckpt/$STEP"
+    # local CKPT=/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0608_pi3_5Bv2_datamix_all_v9-5_randres_stage2_uploss/ckpts/model_ckpt11
     local CONFIG="$DST_DIR/config.json"
     local PREFIX="${EXP_NAME}_step${STEP}"
     local LOG_FILE="$LOG_DIR/${EXP_NAME}_step${STEP}_${DATASET}_npu${NPU_ID}.log"

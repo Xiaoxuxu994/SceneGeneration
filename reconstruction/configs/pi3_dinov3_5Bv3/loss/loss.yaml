@@ -1,7 +1,7 @@
 name: ours
 
 depth_shape:
-  w: 1.0 # 1.0
+  w: 0.0 # 1.0
   norm_depth: true
   detach_depth: false
 geometric:
@@ -10,10 +10,12 @@ dist:
   w: 0.1 # 0.1
   norm_dist: false
   norm_dist_ps: false
+translate:
+  w: 0.5
 camera_intr:
   w: 1.0
 normalize:
-  w: 1.0
+  w: 0.1
   use_local: true
   penalize_zero: false
 camera_extr:

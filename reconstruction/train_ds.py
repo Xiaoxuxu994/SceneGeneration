@@ -174,6 +174,8 @@ def run(rank, cfg):
         lr_scheduler = lr_scheduler,
         config = ds_config,
     )
+    for p in engine.module.parameters():
+        if p.requires_grad: p.register_hook(lambda grad: grad.nan_to_num_(0, 0, 0))
 
     if not safetensors_loaded and cfg.get("ckpt_path") is not None:
         _, client_state = engine.load_checkpoint(

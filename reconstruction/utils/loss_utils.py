@@ -1,4 +1,5 @@
 import torch
+from torch.nn import functional as F
 
 from einops import rearrange
 
@@ -103,7 +104,7 @@ def calc_pixel_grad_map(x: torch.Tensor, w: torch.Tensor, eps=1e-6) -> torch.Ten
 
 
 def depth_shape_loss(x: torch.Tensor, y: torch.Tensor, 
-                     conf_map: torch.Tensor=None, alpha=0.05, calc_grad_loss=True, norm_depth=True) -> torch.Tensor:
+                     conf_map: torch.Tensor=None, alpha=0.05, calc_grad_loss=False, norm_depth=True) -> torch.Tensor:
     """Calculate depth shape loss.
 
     Args:
@@ -471,17 +472,17 @@ class LossFunction(torch.nn.Module):
     def geometric_loss(self, output_dict, data, detach_camera=False, detach_depth=False, use_scaled_points=False):
         B, _, _, H, W = output_dict["depths"].shape
         
-        points_src = output_dict["local_points_detach_xy"] if not use_scaled_points else output_dict["local_points_detach_xy_scaled"]
+        local_src = output_dict["local_points_detach_xy"] if not use_scaled_points else output_dict["local_points_detach_xy_scaled"]
         if output_dict.get("camera_extrs", None) is None:
             extrs_src = data["input_viewmats"]
         else:
             extrs_src = output_dict["camera_extrs"] if not use_scaled_points else output_dict["camera_extrs_scaled"]
             extrs_src = GradBalancerForCamera.apply(extrs_src)
         if detach_depth:
-            points_src = points_src.detach()
+            local_src = local_src.detach()
         if detach_camera:
             extrs_src = extrs_src.detach()
-        points_src = localpoint2global(rearrange(points_src, "b v c h w -> b v h w c"), extrs_src) # b v h w 3
+        points_src = localpoint2global(rearrange(local_src, "b v c h w -> b v h w c"), extrs_src) # b v h w 3
 
         if self.norm_dist_ps_loss:
             normalize_factor = points_src.norm(dim=-1).reshape(B, -1).mean(dim=-1) # B
@@ -501,12 +502,14 @@ class LossFunction(torch.nn.Module):
             matched_views1=data["input_tracks_view_id1"], 
         )
         
-        paired_points, paired_extrs = [], []
-        for points, extrs, pairs_x, pairs_y in zip(
-            points_src, extrs_src, data["input_tracks_view_id0"], data["input_tracks_view_id1"]):
+        paired_points, paired_local, paired_extrs = [], [], []
+        for points, local, extrs, pairs_x, pairs_y in zip(
+            points_src, local_src, extrs_src, data["input_tracks_view_id0"], data["input_tracks_view_id1"]):
             paired_points.append(torch.stack([points[pairs_x], points[pairs_y]], dim=1)) # <- P 2 H W 3
+            paired_local.append(torch.stack([local[pairs_x], local[pairs_y]], dim=1)) # <- P 2 H W 3
             paired_extrs.append(torch.stack([extrs[pairs_x], extrs[pairs_y]], dim=1))    # <- P 2 4 4
         paired_points = torch.stack(paired_points).reshape(-1, 2, H, W, 3)
+        paired_local = torch.stack(paired_local).reshape(-1, 2, H, W, 3)
         paired_extrs = torch.stack(paired_extrs).reshape(-1, 2, 4, 4)
         
         matching_error = matching_error_3D(points=paired_points.reshape(-1, H, W, 3), 
@@ -519,8 +522,17 @@ class LossFunction(torch.nn.Module):
         matching_error_dist = matching_error_3D_dist(points=paired_points.reshape(-1, H, W, 3), 
                                                      matching_info=matching_info, 
                                                      view_per_batch=2)
+        translation_error = translation_error_se3(
+            local_points=paired_local.reshape(-1, H, W, 3),
+            extrs_w2c=paired_extrs.reshape(-1, 4, 4),
+            matching_info=matching_info,
+            view_per_batch=2,
+            conf_map=None,      # 这里先不加，跑稳后再加
+            clip_err=5.0,
+            robust_delta=1.0
+        )
         
-        return matching_error, matching_error_norm, matching_error_dist, [matching_info, ]
+        return matching_error, matching_error_norm, matching_error_dist, translation_error, [matching_info, ]
     
     
     def relative_camera_loss(self, output_dict: dict[str, torch.Tensor], data: dict[str, torch.Tensor], S_opt_local: torch.Tensor):
@@ -597,6 +609,7 @@ class LossFunction(torch.nn.Module):
         w_geometric = self.cfg.geometric.w if self.cfg.get("geometric", None) is not None else 0.0
         w_normal    = self.cfg.normal.w if self.cfg.get("normal", None) is not None else 0.0
         w_dist      = self.cfg.dist.w if self.cfg.get("dist", None) is not None else 0.0
+        w_translate = self.cfg.translate.w if self.cfg.get("translate", None) is not None else 0.0
         w_intr      = self.cfg.camera_intr.w if self.cfg.get("camera_intr", None) is not None else 0.0
         w_extr      = self.cfg.camera_extr.w if self.cfg.get("camera_extr", None) is not None else 0.0
         w_point     = self.cfg.point.w if self.cfg.get("point", None) is not None else 0.0
@@ -633,7 +646,7 @@ class LossFunction(torch.nn.Module):
         detach_camera = self.enable_alternate_geometric_opt and not self.opt_flag or self.cfg.geometric.get("detach_camera", False)
         detach_depth  = self.enable_alternate_geometric_opt and self.opt_flag
         self.scale_points(output_dict, data, S_opt_local)
-        geometric_loss_value, normal_loss_value, dist_loss_value, matching_info = \
+        geometric_loss_value, normal_loss_value, dist_loss_value, translation_loss_value, matching_info = \
             self.geometric_loss(output_dict, data, detach_camera=detach_camera, detach_depth=detach_depth, use_scaled_points=False)
         if self.norm_dist_loss:
             _, _, dist_loss_value, _ = \
@@ -643,6 +656,7 @@ class LossFunction(torch.nn.Module):
                       w_geometric * geometric_loss_value + 
                       w_normal * normal_loss_value + 
                       w_dist * dist_loss_value + 
+                      w_translate * translation_loss_value +
                       w_point * point_loss + 
                       w_intr * intr_loss_value + 
                       w_extr * extr_loss_value + 
@@ -655,6 +669,7 @@ class LossFunction(torch.nn.Module):
             "match_cosine":  geometric_loss_value, 
             "match_normal":  normal_loss_value, 
             "match_dist":    dist_loss_value, 
+            "translation":   translation_loss_value,
             "intr_fov":      intr_loss_value, 
             "extr_rel":      extr_loss_value, 
             "extr_r":        extr_r_loss_value, 

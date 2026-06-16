@@ -19,10 +19,12 @@ from openpyxl.utils import get_column_letter
 # 1. 实验配置：主要改这里
 # ============================================================
 
+MODEL = "reliev3r"
 ENCODER_TYPE = "dinov3"  # "dinov2"
-STEPS = [5000, 10000]
+STEPS = [20000, 40000, 50000]
 EXP_DISPLAY_NAMES = {
-    "0608_5Bv2_v9-5_enc1e-1x_dec1x": "5Bv2",
+    "0611_5Bv2_v9-5_stage1": "5Bv2",
+    "0611_5Bv2_v9-5_stage1-freeze": "5Bv2-freeze",
 }
 DST_EXP_NAMES = list(EXP_DISPLAY_NAMES.keys())
 
@@ -273,7 +275,7 @@ def parse_setting(setting_name: str) -> str:
 
 def expected_xlsx_path(root: Path, dataset: str, exp_name: str, step: int) -> Path:
     setting_dir = DATASET_SETTING_MAP[dataset]
-    return root / dataset / setting_dir / f"metrics_reliev3r_{exp_name}_step{step}.xlsx"
+    return root / dataset / setting_dir / f"metrics_{MODEL}_{exp_name}_step{step}.xlsx"
 
 
 # ============================================================
