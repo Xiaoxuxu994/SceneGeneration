@@ -3,11 +3,11 @@ output_dir: exp/debug
 model:
   depth_model:    !include models/depth_model.yaml
   matching_model: !include models/matching_model.yaml
-  depth_aligner:  !include models/depth_aligner.yaml
+  depth_aligner:  !include models/debug.yaml
   decoder:        !include models/decoders.yaml
 
 training:
-  !include run/training.yaml
+  !include run/debug.yaml
 
 datasets: !include datasets/debug.yaml
   

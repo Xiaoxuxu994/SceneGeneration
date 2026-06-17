@@ -608,20 +608,17 @@ class LossFunction(torch.nn.Module):
         matching_error_norm = matching_error_3D_normal(points=paired_points.reshape(-1, H, W, 3), 
                                                        matching_info=matching_info, 
                                                        view_per_batch=2)
-        matching_error_dist = matching_error_3D_dist(points=paired_points.reshape(-1, H, W, 3), 
-                                                     matching_info=matching_info, 
-                                                     view_per_batch=2)
-        translation_error = translation_error_se3(
-            local_points=paired_local.reshape(-1, H, W, 3),
-            extrs_w2c=paired_extrs.reshape(-1, 4, 4),
-            matching_info=matching_info,
-            view_per_batch=2,
-            conf_map=None,      # 这里先不加，跑稳后再加
-            clip_err=5.0,
-            robust_delta=1.0
-        )
+        # translation_error = translation_error_se3(
+        #     local_points=paired_local.reshape(-1, H, W, 3),
+        #     extrs_w2c=paired_extrs.reshape(-1, 4, 4),
+        #     matching_info=matching_info,
+        #     view_per_batch=2,
+        #     conf_map=None,      # 这里先不加，跑稳后再加
+        #     clip_err=5.0,
+        #     robust_delta=1.0
+        # )
         
-        return matching_error, matching_error_norm, matching_error_dist, translation_error, [matching_info, ]
+        return matching_error, matching_error_norm, matching_error_dist, [matching_info, ]
     
     
     def relative_camera_loss(self, output_dict: dict[str, torch.Tensor], data: dict[str, torch.Tensor], S_opt_local: torch.Tensor):
@@ -707,7 +704,7 @@ class LossFunction(torch.nn.Module):
         w_geometric = self.cfg.geometric.w if self.cfg.get("geometric", None) is not None else 0.0
         w_normal    = self.cfg.normal.w if self.cfg.get("normal", None) is not None else 0.0
         w_dist      = self.cfg.dist.w if self.cfg.get("dist", None) is not None else 0.0
-        w_translate = self.cfg.translate.w if self.cfg.get("translate", None) is not None else 0.0
+        # w_translate = self.cfg.translate.w if self.cfg.get("translate", None) is not None else 0.0
         w_intr      = self.cfg.camera_intr.w if self.cfg.get("camera_intr", None) is not None else 0.0
         w_extr      = self.cfg.camera_extr.w if self.cfg.get("camera_extr", None) is not None else 0.0
         w_point     = self.cfg.point.w if self.cfg.get("point", None) is not None else 0.0
@@ -767,7 +764,6 @@ class LossFunction(torch.nn.Module):
                       w_geometric * geometric_loss_value + 
                       w_normal * normal_loss_value + 
                       w_dist * dist_loss_value + 
-                      w_translate * translation_loss_value +
                       w_point * point_loss + 
                       w_intr * intr_loss_value + 
                       w_extr * extr_loss_value + 
@@ -779,7 +775,7 @@ class LossFunction(torch.nn.Module):
             "match_cosine":  geometric_loss_value, 
             "match_normal":  normal_loss_value, 
             "match_dist":    dist_loss_value, 
-            "translation":   translation_loss_value,
+            # "translation":   translation_loss_value,
             "intr_fov":      intr_loss_value, 
             "extr_rel":      extr_loss_value, 
             "extr_r":        extr_r_loss_value, 

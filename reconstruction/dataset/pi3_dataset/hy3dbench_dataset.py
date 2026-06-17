@@ -22,9 +22,9 @@ PROJECT_ROOT = os.path.dirname(FILE_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from datasets.base.base_dataset import BaseDataset
-from datasets.base.transforms import *
-from datasets.sample_utils.common import threshold_depth_map
+from dataset.pi3_dataset.base.base_dataset import BaseDataset
+from dataset.pi3_dataset.base.transforms import *
+from dataset.pi3_dataset.sample_utils.common import threshold_depth_map
 
 
 # def read_exr_depth(exr_path, channel="R"):
@@ -403,7 +403,7 @@ class HY3DBenchDataset(BaseDataset):
 
         return dict(
             img=rgb_image,
-            depthmap=depthmap,
+            depthmap=depthmap.astype(np.float32),
             camera_pose=camera_pose.astype(np.float32),
             camera_intrinsics=intrinsic_.astype(np.float32),
             dataset=self.dataset_label,
@@ -501,7 +501,7 @@ class HY3DBenchDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
+    from dataset.pi3_dataset.sample_utils.vis_util import visualize_gt
 
     data_root = "/mnt/nvme3/z00533370/dataset/sample_data/HY3D-Bench"
     out_dir = "output_debug/HY3D_Bench"

@@ -19,6 +19,8 @@ train_dataset:
 
     weights:
         Replica:            500
+        HY3DBench:         9000
+        SAGE10K:           3300
 
     Replica:
         _target_: dataset.pi3_dataset.replica_dataset.ReplicaDataset
@@ -34,6 +36,34 @@ train_dataset:
         aug_focal: 0.9
         mode: 'train'
         match_eps: 0.001
+
+    HY3DBench:
+        _target_: dataset.pi3_dataset.hy3dbench_dataset.HY3DBenchDataset
+        data_root: /efs-m3ga/h00548084/relive3r_raw/HY3D-Bench
+        split_ratio: 1.0
+        max_distance: 8
+        z_far: 64
+        frame_num: 8
+        aug_crop: 16
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        aug_focal: 0.9
+        mode: 'train'
+
+    SAGE10K:
+        _target_: dataset.pi3_dataset.sage10k_dataset.SAGE10KDataset
+        data_root: /efs-m3ga/h00548084/relive3r_raw/SAGE-10k/blend
+        split_ratio: 1.0
+        max_distance: 8
+        z_far: 80
+        frame_num: 8
+        aug_crop: 16
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        aug_focal: 0.9
+        mode: 'train'
 
 train_dataloader:
     drop_last: True

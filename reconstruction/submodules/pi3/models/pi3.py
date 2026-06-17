@@ -203,6 +203,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
         # ----------------------
         #     Register_token
         # ----------------------
+        self.vggt_like = cfg.get("vggt_like", False)
         num_register_tokens = 5
         self.patch_start_idx = num_register_tokens
         self.register_token = nn.Parameter(torch.randn(1, 1, num_register_tokens, self.dec_embed_dim))
