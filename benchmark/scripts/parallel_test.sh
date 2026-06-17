@@ -10,11 +10,10 @@ ENCODER_TYPE=dinov3  # ['dinov2', 'dinov3']
 SRC_ROOT=/efs-m3ga/y00959808/exp/reliev3r
 DST_ROOT=experiments
 
-STEPS=(20000 40000 50000)
+STEPS=(5000)
 
 DST_EXP_NAMES=(
-    0611_5Bv2_v9-5_stage1
-    0611_5Bv2_v9-5_stage1-freeze
+    0616_5Bv2_v10-1_stage1
 )
 
 DATASETS=(

@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch_npu  
+import torchvision.transforms as TF
 from tqdm import tqdm
 from omegaconf import OmegaConf
 from safetensors.torch import load_file
@@ -80,11 +81,13 @@ DATA_ROOT_DEFAULTS = {
     "dl3dv":   "/efs-m3ga/z00818731/dl3dv-new/reliev3r_sample_list_c32.npz",
     "ase":     BENCH_ROOT / "data" / "ASE" /"reliev3r_sample_list_c32_s1.npz.update.npz",
     "re10k":   "/efs-m3ga/h00548084/relive3r_dataset/re10k_12.19/reliev3r_sample_list_c32.npz",
+    "sekai":   "/efs-m3ga/c50041401/datasets/sekai/sekai_clips_all/sub_000009/",
     "kitti":   BENCH_ROOT / "data" / "KITTI",
     "sintel": BENCH_ROOT / "data" / "MPI-Sintel",
     "bonn": BENCH_ROOT / "data" / "bonn",
     "tum": BENCH_ROOT / "data" / "tum",
     "spatialvid":   "/efs-m3ga/c50041401/datasets/SpatialVID/reliev3r_clips_all/reliev3r_sample_list_c32.npz",
+    "hiroom": BENCH_ROOT / "data" / "hiroom",
 }
 MODEL_DEFAULTS = {
     "vggt": {
@@ -337,6 +340,7 @@ def load_model_da3(ckpt):
 
 def run_da3_infer(model, images_cpu, depth_masks, device: torch.device, autocast_dtype: torch.dtype):
     images = images_cpu.to(device).unsqueeze(0)  # (B=1,...)
+    images = TF.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(images)
     # depth_masks = torch.from_numpy(depth_masks).to(device=device, dtype=torch.float32)
 
     with torch.autocast(device_type=device.type, dtype=autocast_dtype):        

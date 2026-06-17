@@ -257,8 +257,12 @@ def main() -> None:
             
             if (seq_dir.parent.parent / "gt").exists():
                 maskf = seq_dir.parent.parent / "gt" / seq_dir.stem / "gt_depth_masks.npy"
-            else:
+            elif (seq_dir.parent.parent.parent / "gt").exists():
                 maskf = seq_dir.parent.parent.parent / "gt" / seq_dir.parent.stem / seq_dir.stem / "gt_depth_masks.npy"
+            elif (seq_dir.parent.parent.parent.parent / "gt").exists():
+                maskf = seq_dir.parent.parent.parent.parent / "gt" / seq_dir.parent.parent.stem / seq_dir.parent.stem / seq_dir.stem  / "gt_depth_masks.npy"
+            else:
+                raise NotImplementedError("No such gt mask")
             mask = np.load(maskf).astype(bool)
 
             ## add image

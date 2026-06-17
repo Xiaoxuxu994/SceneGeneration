@@ -15,11 +15,11 @@ source ./scripts/config/tum/512x384.sh
 # CONFIG="experiments/Reliev3R-260512-1B-CamRegFalse-lr1e-5/config.json"
 # PREFIX="Reliev3R-260512-1B-CamRegFalse-lr1e-5_ckpt35k"
 
-# MODEL="pi3" # ['vggt','pi3','reliev3r']
-# MODEL_SIZE="dinov3_huge+_3Bv2" #"dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
-# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5/ckpts/model_ckpt39" 
-# PREFIX="exp0503_pi3_3B_datamix_all_v5_lowres_v8-m8_randres_stage2_lr5e-5_ckpt39"
-# CONFIG=""
+MODEL="pi3" # ['vggt','pi3','reliev3r']
+MODEL_SIZE="dinov3_huge+_3Bv2" #"dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
+CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0604_pi3_3B_datamix_all_v9-5_randresNew_scratch_uploss_pinmemTrue/checkpoint_36/pytorch_model" 
+PREFIX="exp0604_pi3_3B_datamix_all_v9-5_randresNew_scratch_uploss_pinmemTrue_ckpt36"
+CONFIG=""
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE="dinov3_huge+_5Bv2" #"dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
@@ -33,11 +33,11 @@ source ./scripts/config/tum/512x384.sh
 # CONFIG=""
 # PREFIX="exp0513_pi3_3B_datamix_all_v6_lowres_v8-m8_randres_stage2_lr5e-5_ckpt79"
 
-MODEL="pi3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE="dinov3_huge+_3Bv2"
-CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02/ckpts/model_ckpt3" 
-PREFIX="exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02_ckpt3"
-CONFIG=""
+# MODEL="pi3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE="dinov3_huge+_3Bv2"
+# CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02/ckpts/model_ckpt3" 
+# PREFIX="exp0521_pi3_3B_datamix_all_v9-1_lowres_v8-m8_randres_stage3_preexp02_ckpt3"
+# CONFIG=""
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']
 # MODEL_SIZE="dinov2_large_0.95B"
@@ -69,7 +69,7 @@ USE_GT_K=0 # 1 if using GT intrinsics; 0 predicted
 SKIP_POINTMAP=1 # 1 if skip pointmap evaluation
 SKIP_NORMAL=1 # 1 if skip point normal evaluation
 
-NPU_ID="4"
+NPU_ID="1"
 DEVICE="npu:0"
 DTYPE="fp32"
 
