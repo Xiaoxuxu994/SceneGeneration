@@ -75,7 +75,7 @@ def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
     
     export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}".format(step)), 
                                pred_points, data["input_images"], cam_poses, 
-                               conf_thre=thre)  # pred_points_conf
+                               pred_points_conf * data["input_depth_masks"], conf_thre=thre)
     if data.get("input_points", None) is not None:
         export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}_GT".format(step)), 
                                    data["input_points"], data["input_images"], data["input_viewmats"], 

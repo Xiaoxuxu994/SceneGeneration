@@ -14,7 +14,8 @@ from utils.loss_utils import samp_points_by_pixel
 
 VAL_RATIO = 0.02
 # MAX_IMAGE_SIZES = [518, 504, 490, 476, 462, 448, 434, 420]
-MAX_IMAGE_SIZES = [512]
+# MAX_IMAGE_SIZES = [512]
+MAX_IMAGE_SIZES = [512, 496, 480, 464, 448]
 # MAX_IMAGE_SIZES = [252, 238, 224, 210, 196]
 
 
@@ -208,13 +209,14 @@ class Base_Dataset(Dataset):
 
 
 class Realistic_Dataset(Base_Dataset):
-    def __init__(self, overlap_thre_real=0.25, depth_format=".exr", apply_matching_filter=False, **kwargs):
+    def __init__(self, overlap_thre_real=0.25, depth_format=".exr", apply_matching_filter=False, matching_name="romav2", **kwargs):
         super().__init__(**kwargs)
         self.clip_length = 32
-        self.sample_list = self.get_sample_list()
         self.overlap_thre = overlap_thre_real
         self.depth_format = depth_format
         self.apply_matching_filter = apply_matching_filter
+        self.matching_name = matching_name
+        self.sample_list = self.get_sample_list()
         print("[ INFO ] {} samples found for {} as {}.".format(
             len(self), self.__class__.__name__,"training set" if self.is_train else "validation set"))
     
@@ -234,7 +236,7 @@ class Realistic_Dataset(Base_Dataset):
                 if (os.path.exists(os.path.join(sample_folder, "rgb")) and 
                     os.path.exists(os.path.join(sample_folder, "moge_depth")) and 
                     os.path.exists(os.path.join(sample_folder, "moge_depth_mask")) and 
-                    os.path.exists(os.path.join(sample_folder, "romav2"))):
+                    os.path.exists(os.path.join(sample_folder, self.matching_name))):
                     filtered_sample_list.append(sample_folder)
                 # if sample_idx % 384 < 128:
                 #     filtered_sample_list.append(sample_folder)
@@ -308,25 +310,30 @@ class Realistic_Dataset(Base_Dataset):
             depth_list = sorted(glob(os.path.join(sample_folder, "moge_depth", "*{}".format(self.depth_format))))
             depth_mask_list = sorted(glob(os.path.join(sample_folder, "moge_depth_mask", "*.png")))
             # tracking_file = sorted(glob(os.path.join(sample_folder, "cotracker3", "*.npz")))
-            tracking_file = sorted(glob(os.path.join(sample_folder, "romav2", "*.npz")))
+            tracking_file = sorted(glob(os.path.join(sample_folder, self.matching_name, "*.npz")))
             if len(tracking_file) == 0:
+                print("[ DEBUG ] code 0")
                 return None
             tracking_file = tracking_file[0]
             if self.__class__.__name__ == "CO3Dv2_Dataset":
                 camera_file_name = sample_folder.split('/')[-1] + ".npy"
                 camera_file = os.path.join("/efs-mi-east4-3/z00818731/co3dv2-cams", camera_file_name)
             else:
-                camera_file = os.path.join(sample_folder, sample_folder.split('/')[-1] + ".npy")
+                camera_file = os.path.join(sample_folder, "*.npy")
+                camera_file = glob(camera_file)[0]
             if not os.path.exists(camera_file):
+                print("[ DEBUG ] code 1, unfound file: {}".format(camera_file))
                 return None
             
             ## Sample views
             clip_view_num = len(image_list)
             if clip_view_num != len(depth_list) or clip_view_num != len(depth_mask_list):
+                print("[ DEBUG ] code 2")
                 return None
             
             ## Drop last to adapt to batch_size that greater than 1.
             if clip_view_num < self.sample_num:
+                print("[ DEBUG ] code 3")
                 return None
             
             # invert_extr = (self.__class__.__name__ == "ScanNet_Dataset" or self.__class__.__name__ == "ScanNetpp_Dataset")
@@ -348,10 +355,13 @@ class Realistic_Dataset(Base_Dataset):
             ## Filter out scenes with numerical illegal cameras.
             try:
                 if extrs_raw.abs().max() > 1e3:
+                    print("[ DEBUG ] code 4")
                     return None
             except:
+                print("[ DEBUG ] code 5")
                 return None
             if len(extrs_raw) != clip_view_num:
+                print("[ DEBUG ] code 6")
                 return None
             
             all_images = torch.stack([io.read_image_as_tensor(f) for f in image_list])
@@ -400,6 +410,8 @@ class Realistic_Dataset(Base_Dataset):
             while len(batch_data) < batch_size:
                 samp_view_ids = self.view_sampler_iterative(visibs_all, clip_view_num, self.overlap_thre, bidirect=False)
                 if samp_view_ids is None:
+                    print("[ DEBUG ] sampling failed.")
+                    print("[ DEBUG ] code 7")
                     return None
                 
                 ## Load files
@@ -451,7 +463,7 @@ class Realistic_Dataset(Base_Dataset):
                 )
                 
                 timer.record_start("3_MatchCalc")
-                matched_pairs = self.is_visib_valid(data["input_visibs0"].sum(dim=-1) / 625, 
+                matched_pairs = self.is_visib_valid(data["input_visibs0"].sum(dim=-1) / data["input_visibs0"].shape[-1], 
                                                     view_num=len(samp_view_ids), min_thres=0.0, bidirect=False)
                 timer.record_end("3_MatchCalc")
                 if matched_pairs is None:
@@ -477,6 +489,7 @@ class Realistic_Dataset(Base_Dataset):
                 timer.record_end("0_Total")
                 timer.report()
                 return batch_data
+            print("[ DEBUG ] code 8")
             return None
         
         except:
@@ -663,7 +676,7 @@ class Synthetic_Dataset(Base_Dataset):
                 
                 ## Normalize geometrics.
                 data["input_points"], data["input_extrs"], data["input_depths"] = \
-                    trans_geo_to_first_frame_and_norm(data["input_points"], data["input_extrs"], data["input_depths"])
+                    trans_geo_to_first_frame_and_norm(data["input_points"], data["input_extrs"], data["input_depths"], data["input_depth_masks"])
                 data["input_points_local"] = globalpoint2local(data["input_points"], data["input_extrs"])
                 
                 batch_data.append(data)

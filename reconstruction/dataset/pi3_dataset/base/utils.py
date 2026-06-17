@@ -290,6 +290,15 @@ def transform_data_to_reliev3r_format(views, grid_size=100):
         "dataset":           "dataset_name", 
         "pts3d":             "input_points", 
     }
+    def filter_top_depth(data, p=0.02):
+        depths = data["input_depths"] * data["input_depth_masks"]
+        V, _, H, W = depths.shape
+        depths = depths.reshape(V, -1)
+        depth_masks = data["input_depth_masks"].reshape(V, -1)
+        thres = torch.topk(depths, k=int(H * W * p * depth_masks.mean(dim=-1).min()) + 1, dim=-1).values.min(dim=-1).values # V
+        valid_mask = (data["input_depths"] < thres[..., None, None, None]).to(depths.dtype) # V 1 H W
+        data["input_depth_masks"] = data["input_depth_masks"] * valid_mask
+        return data
     view_num = len(views)
     matched_view_i, matched_view_j = [], []
     for i in range(view_num):
@@ -344,9 +353,10 @@ def transform_data_to_reliev3r_format(views, grid_size=100):
             data.update(dict(input_depths=reliev3r_data_cm.zdepth_to_rdepth(data["input_depths"], data["input_intrs"])))
         ### Normalize pointmaps, cameras, depths simultaneously
         data["input_points"], data["input_extrs"], data["input_depths"] = \
-            cm.trans_geo_to_first_frame_and_norm(data["input_points"], data["input_extrs"], data["input_depths"])
+            cm.trans_geo_to_first_frame_and_norm(data["input_points"], data["input_extrs"], data["input_depths"], data["input_depth_masks"])
         data["input_points_local"] = cm.globalpoint2local(data["input_points"], data["input_extrs"])
         data["data_type"] = "synthetic"
+        data = filter_top_depth(data)
         
         batch_data.append(data)
     batch_data = reliev3r_data_cm.customized_collate_fn(batch_data)

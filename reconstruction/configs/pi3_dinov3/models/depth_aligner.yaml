@@ -55,6 +55,7 @@ pi3:
     enabled: false
   enable_camera_register: false
   camera_conversion: c2w
+  vggt_like: false
 
 depth_scaler:
   enabled: false
