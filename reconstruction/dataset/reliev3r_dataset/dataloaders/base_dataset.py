@@ -309,7 +309,6 @@ class Realistic_Dataset(Base_Dataset):
             image_list = sorted(glob(os.path.join(sample_folder, "rgb", "*{}".format(self.image_format))))
             depth_list = sorted(glob(os.path.join(sample_folder, "moge_depth", "*{}".format(self.depth_format))))
             depth_mask_list = sorted(glob(os.path.join(sample_folder, "moge_depth_mask", "*.png")))
-            # tracking_file = sorted(glob(os.path.join(sample_folder, "cotracker3", "*.npz")))
             tracking_file = sorted(glob(os.path.join(sample_folder, self.matching_name, "*.npz")))
             if len(tracking_file) == 0:
                 print("[ DEBUG ] code 0")
@@ -482,6 +481,7 @@ class Realistic_Dataset(Base_Dataset):
                                  ))
                 if not self.pred_z_depth:
                     data.update(dict(input_depths=cm.zdepth_to_rdepth(data["input_depths"], data["input_intrs"])))
+                data.update(dict(input_ray_depths=cm.zdepth_to_rdepth(data["input_depths"], data["input_intrs"])))
                 data["input_extrs"] = normalize_trans(data["input_extrs"])
                 batch_data.append(data)
             
@@ -673,6 +673,7 @@ class Synthetic_Dataset(Base_Dataset):
                                  ))
                 if not self.pred_z_depth:
                     data.update(dict(input_depths=cm.zdepth_to_rdepth(depths, intrs)))
+                data.update(dict(input_ray_depths=cm.zdepth_to_rdepth(depths, intrs)))
                 
                 ## Normalize geometrics.
                 data["input_points"], data["input_extrs"], data["input_depths"] = \

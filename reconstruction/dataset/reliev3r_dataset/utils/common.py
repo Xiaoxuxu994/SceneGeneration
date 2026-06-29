@@ -72,6 +72,7 @@ def deflat_visibility_mat(visibs: torch.Tensor, clip_view_num: int, bidirect=Fal
 def customized_collate_fn(batch_inputs):
     input_images = []
     input_depths = []
+    input_ray_depths = []
     input_depth_masks = []
     input_tracks0 = []
     input_tracks1 = []
@@ -90,6 +91,7 @@ def customized_collate_fn(batch_inputs):
             return None
         input_images.append(batch_input["input_images"])
         input_depths.append(batch_input["input_depths"])
+        input_ray_depths.append(batch_input["input_ray_depths"])
         input_depth_masks.append(batch_input["input_depth_masks"])
         input_tracks0.append(batch_input["input_tracks0"])
         input_tracks1.append(batch_input["input_tracks1"])
@@ -106,6 +108,7 @@ def customized_collate_fn(batch_inputs):
     return dict(
         input_images=torch.stack(input_images), 
         input_depths=torch.stack(input_depths), 
+        input_ray_depths=torch.stack(input_ray_depths), 
         input_depth_masks=torch.stack(input_depth_masks) if input_depth_masks[0] is not None else None, 
         input_tracks0=torch.stack(input_tracks0), 
         input_tracks1=torch.stack(input_tracks1), 
