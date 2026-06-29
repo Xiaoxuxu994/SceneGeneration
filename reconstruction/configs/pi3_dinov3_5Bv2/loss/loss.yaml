@@ -1,14 +1,14 @@
 name: ours
 
 depth_shape:
-  w: 0.0 # 1.0
+  w: 0.0
   norm_depth: true
   detach_depth: true
   conf4grad: true
 geometric:
-  w: 0.0 # 0.5
+  w: 0.5
 dist:
-  w: 0.0 # 0.1
+  w: 0.1
   norm_dist: false
   norm_dist_ps: false
 # translate:
@@ -27,7 +27,7 @@ point:
   is_absolute: false
 
 enable_conf: false
-conf_alpha: 1.0 # 0.1
+conf_alpha: 0.2 # 0.1
 
 enable_alternate_geometric_opt: false
 
@@ -35,3 +35,9 @@ enable_slide: true
 
 full_weak_exclusive: false
 filter_match_by_pred: false
+
+use_weights: false
+
+exclude_datasets_for_reliev3r:
+- Matterport3D
+- Habitat

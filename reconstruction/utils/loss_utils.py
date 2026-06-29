@@ -157,8 +157,8 @@ def depth_shape_loss(x: torch.Tensor, y: torch.Tensor,
     
     ### Regression loss
     # depth_weight = 1 + 1 / (y.clamp(min=0.1*weighted_mean(y, valid_map, dim=(-2, -1), keepdim=True)) + 1e-8)
-    if not norm_depth:
-        detail_info["{}_regression".format(prefix)] = (scale_invariant_loss_map * valid_map / (valid_map.sum() + 1e-8)).sum()
+    # if not norm_depth:
+    detail_info["{}_regression".format(prefix)] = (scale_invariant_loss_map * valid_map / (valid_map.sum() + 1e-8)).sum()
     
     ### Confidence loss
     if conf_map is not None:
@@ -429,6 +429,9 @@ class LossFunction(torch.nn.Module):
         self.norm_dist_loss = cfg.dist.get("norm_dist", False)
         self.norm_dist_ps_loss = cfg.dist.get("norm_dist_ps", False)
         self.filter_match_by_pred = cfg.get("filter_match_by_pred", False)
+        self.use_weights = cfg.get("use_weights", False)
+        self.exclude_datasets_for_reliev3r = cfg.get("exclude_datasets_for_reliev3r", [])
+        self.exclude_datasets_for_reliev3r = set(self.exclude_datasets_for_reliev3r)
     
     def prepare_ROE(self, pts, mask, target_size=4096):
         B, N, H, W, C = pts.shape
@@ -481,9 +484,12 @@ class LossFunction(torch.nn.Module):
 
         B, N, H, W, _ = pred_local_pts.shape
         valid_masks = valid_masks.reshape(B, N, H, W)
-        weights_ = gt_local_pts[..., 2]
-        weights_ = weights_.clamp_min(0.1 * weighted_mean(weights_, valid_masks, dim=(-2, -1), keepdim=True))
-        weights_ = 1 / (weights_ + 1e-6)
+        if self.use_weights:
+            weights_ = gt_local_pts[..., 2]
+            weights_ = weights_.clamp_min(0.1 * weighted_mean(weights_, valid_masks, dim=(-2, -1), keepdim=True))
+            weights_ = 1 / (weights_ + 1e-6)
+        else:
+            weights_ = torch.ones_like(gt_local_pts[..., 2])
         # Compute scales to align prediction to GT.
         with torch.no_grad():
             xyz_pred_local = self.prepare_ROE(pred_local_pts.reshape(B, N, H, W, 3), 
@@ -694,7 +700,7 @@ class LossFunction(torch.nn.Module):
             ## Calculate the overall scale.
             point_scale = pr_global_points.norm(dim=-1).reshape(B, -1).mean(dim=-1) # B
         loss = (point_scale - 1).abs().mean()
-        if self.cfg.normalize.penalize_zero: loss = loss + (point_scale + 1 / (point_scale + 1e-8)).mean()
+        if self.cfg.normalize.penalize_zero: loss = .5 * (loss + (point_scale + 1 / (point_scale + 1e-8)).mean() - 2)
         return loss
     
     
@@ -709,6 +715,10 @@ class LossFunction(torch.nn.Module):
         w_extr      = self.cfg.camera_extr.w if self.cfg.get("camera_extr", None) is not None else 0.0
         w_point     = self.cfg.point.w if self.cfg.get("point", None) is not None else 0.0
         w_normalize = self.cfg.normalize.w if self.cfg.get("normalize", None) is not None else 0.0
+
+        dataset_name = data["dataset_names"][0]
+        if dataset_name in self.exclude_datasets_for_reliev3r:
+            w_geometric = w_normal = w_dist = 0
         
         # output_dict = self.normalize_pred(output_dict, data)
         # Transform camera prediction into the first frame

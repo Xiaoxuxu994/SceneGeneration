@@ -21,10 +21,9 @@ from openpyxl.utils import get_column_letter
 
 MODEL = "reliev3r"
 ENCODER_TYPE = "dinov3"  # "dinov2"
-STEPS = [20000, 40000, 50000]
+STEPS = [5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000]
 EXP_DISPLAY_NAMES = {
-    "0611_5Bv2_v9-5_stage1": "5Bv2",
-    "0611_5Bv2_v9-5_stage1-freeze": "5Bv2-freeze",
+    "0625_5Bv2_v10-1_stage1": "stage 1",
 }
 DST_EXP_NAMES = list(EXP_DISPLAY_NAMES.keys())
 
@@ -40,6 +39,9 @@ DATASETS = [
     "7scenes",
     "eth3d",
     "kitti",
+    "hiroom",
+    "sekai",
+    "bonn"
 ]
 
 # 每个 dataset 只读取这个 setting 目录
@@ -47,47 +49,56 @@ if ENCODER_TYPE == "dinov2":
     DATASET_SETTING_MAP = {
         "7scenes": "test_stride40_maxall_len8_numseq10_518x392",
         "ase": "test_rand_maxall_len8_numseq10_518x518",
+        "bonn": None,
         "dl3dv": "test_stride4_maxall_len8_numseq100_518x294",
         "dtu": "test_stride1_maxall_len8_numseq10_518x392",
         "eth3d": "test_stride1_maxall_len8_numseq10_518x350",
+        "hiroom": None,
         "kitti": "test_stride2_maxall_len8_numseq10_518x154",
         "nrgbd": "test_stride100_maxall_len8_numseq10_518x392",
         "re10k": "test_stride4_maxall_len8_numseq100_518x294",
         "scannet": "test_stride25_maxall_len8_numseq10_518x392",
         "scannetpp": "test_stride25_maxall_len8_numseq10_518x350",
+        "sekai": None,
         # "sintel": "test_stride5_maxall_len8_numseq14_518x224"
     }
 elif ENCODER_TYPE == "dinov3":
     DATASET_SETTING_MAP = {
         "7scenes": "test_stride40_maxall_len8_numseq10_512x384",
         "ase": "test_rand_maxall_len8_numseq10_512x512",
+        "bonn": "test_stride10_maxall_len8_numseq10_512x384",
         "dl3dv": "test_stride4_maxall_len8_numseq100_512x288",
         "dtu": "test_stride1_maxall_len8_numseq10_512x384",
         "eth3d": "test_stride1_maxall_len8_numseq10_512x336",
+        "hiroom": "test_stride1_maxall_len8_numseq30_512x512",
         "kitti": "test_stride2_maxall_len8_numseq10_512x144",
         "nrgbd": "test_stride100_maxall_len8_numseq10_512x384",
         "re10k": "test_stride4_maxall_len8_numseq100_512x288",
         "scannet": "test_stride25_maxall_len8_numseq10_512x384",
         "scannetpp": "test_stride25_maxall_len8_numseq10_512x336",
+        "sekai": "test_stride4_maxall_len8_numseq100_512x288",
         # "sintel": "test_stride5_maxall_len8_numseq14_518x224"
     }
 
 DATASET_DISPLAY = {
     "dl3dv": "DL3DV",
     "ase": "ASE",
+    "bonn": "Bonn",
+    "hiroom": "HiRoom",
     "scannet": "ScanNet",
     "scannetpp": "ScanNet++",
+    "sekai": "Sekai",
     "re10k": "RE10K",
     "nrgbd": "NRGBD",
     "dtu": "DTU",
     "7scenes": "7Scenes",
     "eth3d": "ETH3D",
     "kitti": "KITTI",
-    "sintel": "Sintel"
+    "sintel": "Sintel",
 }
 
-IN_DOMAIN = {"dl3dv", "ase", "scannet", "scannetpp", "kitti"}
-OUT_DOMAIN = {"re10k", "nrgbd", "dtu", "7scenes", "eth3d"}
+IN_DOMAIN = {"dl3dv", "ase", "scannet", "scannetpp"}
+OUT_DOMAIN = {"re10k", "nrgbd", "dtu", "7scenes", "eth3d", "kitti", "hiroom", "sekai", "bonn"}
 
 DOMAIN_ORDER = {
     "In-domain": 0,

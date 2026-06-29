@@ -19,5 +19,7 @@ torchrun \
     --decoder_lr_ratio 0.1 \
     --deepspeed \
     --deepspeed_config ./ds_config/ds_config_z2_ot.json \
-    # --ckpt_path /efs-m3ga/c50041401/exp/pi3sup/outputs/exp0608_pi3_5Bv2_datamix_all_v9-5_randres_stage2_uploss/ckpts/checkpoint_31/ \
+    # --ckpt_path /efs-m3ga/y00959808/exp/reliev3r/0618_5Bv2_v10-1_stage1_wshape/ckpt/ \
     # --no_load_optim \
+    # --ckpt_id 50000 \
+    # --ckpt_path /efs-m3ga/c50041401/exp/pi3sup/outputs/exp0608_pi3_5Bv2_datamix_all_v9-5_randres_stage2_uploss/ckpts/checkpoint_39 \
