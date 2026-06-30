@@ -30,4 +30,4 @@ enable_alternate_geometric_opt: false
 enable_slide: true
 
 full_weak_exclusive: false
-filter_match_by_pred: false
+filter_match_by_pred: true
