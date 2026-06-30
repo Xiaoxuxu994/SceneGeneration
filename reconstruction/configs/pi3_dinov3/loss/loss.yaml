@@ -22,7 +22,7 @@ point:
   w: 1.0
   is_absolute: false
 
-enable_conf: true
+enable_conf: false
 conf_alpha: 0.2 # 0.1
 
 enable_alternate_geometric_opt: false
