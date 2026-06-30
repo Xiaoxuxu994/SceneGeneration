@@ -716,8 +716,7 @@ class LossFunction(torch.nn.Module):
         w_point     = self.cfg.point.w if self.cfg.get("point", None) is not None else 0.0
         w_normalize = self.cfg.normalize.w if self.cfg.get("normalize", None) is not None else 0.0
 
-        dataset_name = data["dataset_names"][0]
-        if dataset_name in self.exclude_datasets_for_reliev3r:
+        if any(n in self.exclude_datasets_for_reliev3r for n in data["dataset_names"]):
             w_geometric = w_normal = w_dist = 0
         
         # output_dict = self.normalize_pred(output_dict, data)

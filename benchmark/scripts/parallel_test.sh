@@ -10,7 +10,7 @@ ENCODER_TYPE=dinov3  # ['dinov2', 'dinov3']
 SRC_ROOT=/efs-m3ga/y00959808/exp/reliev3r
 DST_ROOT=experiments
 
-STEPS=(40000)
+STEPS=(55000 60000)
 
 DST_EXP_NAMES=(
     0626_5Bv2_v10-1_stage2
@@ -32,8 +32,8 @@ DATASETS=(
     sekai
 )
 
-NPU_IDS=(1 2 3 4 5 6 7)
-MAX_JOBS_PER_NPU=1
+NPU_IDS=(3 4 5 6 7)
+MAX_JOBS_PER_NPU=2
 NUM_NPUS=${#NPU_IDS[@]}
 NUM_WORKERS=$(( NUM_NPUS * MAX_JOBS_PER_NPU ))
 

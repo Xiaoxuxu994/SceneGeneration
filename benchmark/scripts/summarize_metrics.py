@@ -21,9 +21,9 @@ from openpyxl.utils import get_column_letter
 
 MODEL = "reliev3r"
 ENCODER_TYPE = "dinov3"  # "dinov2"
-STEPS = [5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000]
+STEPS = [30000, 35000, 40000]
 EXP_DISPLAY_NAMES = {
-    "0625_5Bv2_v10-1_stage1": "stage 1",
+    "0628_5Bv2_v10-1_stage2": "stage 2",
 }
 DST_EXP_NAMES = list(EXP_DISPLAY_NAMES.keys())
 
