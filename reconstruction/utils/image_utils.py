@@ -106,17 +106,20 @@ def visualize_prediction(pred, data, matching_info=None):
     depths_aligned = torch.cat([pr_depths], dim=1).detach().cpu()
     depths_aligned = torch.log10(depths_aligned + 1.0)
     conf_maps      = torch.cat([pred["depths_conf"]], dim=1).detach().cpu().reshape(*depths_mono.shape)
+    valid_maps     = torch.cat([data["input_depth_masks"]], dim=1).detach().cpu().reshape(*depths_mono.shape)
     depths_mono    = gray2hot(depths_mono)
     depths_aligned = gray2hot(depths_aligned)
     conf_maps      = normalize_gray(conf_maps)
+    valid_maps     = normalize_gray(valid_maps)
     
     images         = rearrange(images, "b v c h w -> b c (v h) w")
     tracked_images = rearrange(tracked_images, "b v c h w -> b c (v h) w")
     depths_mono    = rearrange(depths_mono, "b v c h w -> b c (v h) w")
     depths_aligned = rearrange(depths_aligned, "b v c h w -> b c (v h) w")
     conf_maps      = rearrange(conf_maps, "b v c h w -> b c (v h) w")
+    valid_maps     = rearrange(valid_maps, "b v c h w -> b c (v h) w")
     visualized_predictions = []
-    visualized_predictions.extend([images, tracked_images, depths_mono, depths_aligned, conf_maps])
+    visualized_predictions.extend([images, tracked_images, depths_mono, depths_aligned, conf_maps, valid_maps])
     visualize_image = torch.cat(visualized_predictions, dim=-1)
     
     return visualize_image

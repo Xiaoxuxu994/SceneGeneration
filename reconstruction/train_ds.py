@@ -74,7 +74,7 @@ def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
     
     export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}".format(step)), 
                                pred_points, data["input_images"], cam_poses, 
-                               pred_points_conf * data["input_depth_masks"], conf_thre=thre)
+                               data["input_depth_masks"], conf_thre=thre)
     if data.get("input_points", None) is not None:
         export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}_GT".format(step)), 
                                    data["input_points"], data["input_images"], data["input_viewmats"], 
@@ -167,6 +167,8 @@ def run(rank, cfg):
         lr_scheduler = lr_scheduler,
         config = ds_config,
     )
+    for p in engine.module.parameters():
+        if p.requires_grad: p.register_hook(lambda grad: grad.nan_to_num_(0, 0, 0))
 
     if cfg.get("ckpt_path") is not None:
         _, client_state = engine.load_checkpoint(
@@ -177,7 +179,7 @@ def run(rank, cfg):
             load_lr_scheduler_states=not cfg.no_load_optim, 
             load_module_strict=cfg.strict_load, 
         )
-        if not cfg.no_load_optim:
+        if not cfg.no_load_optim and not cfg.not_resume_step:
             step = client_state.get("step", 0)
         print("[ INFO ] Loaded checkpoint from local path: {}".format(cfg.ckpt_path))
 
@@ -325,7 +327,7 @@ def run(rank, cfg):
                 for loss_name, loss_value in loss_dict.items():
                     if loss_name == "matching_info":
                         continue
-                    tb_writer.add_scalar("loss/{}".format(loss_name), loss_value.item(), step)
+                    tb_writer.add_scalar("loss_{}/{}".format(data["dataset_names"][0], loss_name), loss_value.item(), step)
                 compute_camera_metrics_and_log(pred, data, step, tb_writer, eval_angle, eval_trajectory, "metric_train")
             
                 if step % cfg.training.verbose_interval == 0:
@@ -415,6 +417,7 @@ if __name__ == '__main__':
     parser.add_argument("--eval", action="store_true", help="Evaluate only.")
     parser.add_argument("--strict_load", action="store_true", help="Load checkpoints strictly.")
     parser.add_argument("--lr_scheduler", type=str, default=None, help="Set scheduler type if set.")
+    parser.add_argument("--not_resume_step", action="store_true", help="Set to not resume training step in optimizer")
     parser = deepspeed.add_config_arguments(parser)
     args = parser.parse_args()
     
@@ -447,5 +450,6 @@ if __name__ == '__main__':
     cfg.eval = args.eval
     cfg.no_load_optim = args.no_load_optim
     cfg.strict_load = args.strict_load
+    cfg.not_resume_step = args.not_resume_step
     
     main(cfg)
