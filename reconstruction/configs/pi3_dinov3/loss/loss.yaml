@@ -3,7 +3,7 @@ name: ours
 depth_shape:
   w: 1.0 # 1.0
   norm_depth: true
-  detach_depth: true
+  detach_depth: false
   conf4grad: true
 geometric:
   w: 0.5 # 0.5
@@ -22,7 +22,7 @@ point:
   w: 1.0
   is_absolute: false
 
-enable_conf: true
+enable_conf: false
 conf_alpha: 0.2 # 0.1
 
 enable_alternate_geometric_opt: false
@@ -30,4 +30,4 @@ enable_alternate_geometric_opt: false
 enable_slide: true
 
 full_weak_exclusive: false
-filter_match_by_pred: false
+filter_match_by_pred: true

@@ -660,12 +660,13 @@ class LossFunction(torch.nn.Module):
             w_extr = 0.0
             w_point = 0.0
             w_normalize = 0.0
+            w_intr = 0.0
             # w_ds = 0.0
             # loss_scale = 0.1 # unsupervised data
             loss_scale = 1.0 # unsupervised data
             with_sq = False
             detach_camera = False
-            detach_depth = False
+            detach_depth = True
         
         ## Intrinsic loss
         intr_loss_value = self.intr_loss(output_dict, data)
