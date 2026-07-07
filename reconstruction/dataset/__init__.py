@@ -36,10 +36,10 @@ class Reliev3R_MixDataLoader:
         
         self.rng = np.random.default_rng(seed=888)
     
-    def set_epoch(self, epoch=0):
+    def set_epoch(self, epoch=0, start_epoch=0):
         if self.dataloaders.get("pi3", None) is None:
             return
-        epoch = epoch + 20
+        epoch = epoch + start_epoch
         # ---------- train ----------
         if hasattr(self.dataloaders["pi3"], 'dataset') and hasattr(self.dataloaders["pi3"].dataset, 'set_epoch'):
             # custom dataset, can pass base_seed

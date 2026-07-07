@@ -241,7 +241,7 @@ def run(rank, cfg):
                 data_start.record()
             
             if step % EPOCH_STEP == 0:
-                dataloader.set_epoch(step // EPOCH_STEP)
+                dataloader.set_epoch(step // EPOCH_STEP, cfg.training.start_epoch)
             data = dataloader.sample(step)
             step += 1
             if dataset_count.get(data["dataset_names"][0], None) is None:
