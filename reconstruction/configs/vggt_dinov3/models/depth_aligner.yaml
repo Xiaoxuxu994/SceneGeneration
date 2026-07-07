@@ -56,6 +56,7 @@ pi3:
   enable_camera_register: false
   camera_conversion: c2w
   vggt_like: true
+  specialize_first_frame: true
 
 depth_scaler:
   enabled: false

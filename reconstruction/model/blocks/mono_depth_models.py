@@ -32,6 +32,7 @@ class MonoDepthModel(nn.Module):
     def infer(self, imgs, f_px=None):
         B, V, C, H, W = imgs.shape
         depth_model_input = imgs.reshape(-1, C, H, W)
+        depth_model_output, depth_model_output_mask, intrinsics = None, None, None
         if self.cfg.name == "DepthAnythingV2":
             depth_model_input = (depth_model_input - torch.tensor([0.485, 0.456, 0.406], device=imgs.device)[None, :, None, None]) / \
                 torch.tensor([0.229, 0.224, 0.225], device=imgs.device)[None, :, None, None]
@@ -49,7 +50,9 @@ class MonoDepthModel(nn.Module):
         elif self.cfg.name == "MoGe2":
             predictions = [self.depth_model.infer(ipt) for ipt in depth_model_input]
             depth_model_output = torch.stack([pred["depth"].unsqueeze(0) for pred in predictions], dim=0)
+            depth_model_output_mask = torch.stack([pred["mask"].unsqueeze(0) for pred in predictions], dim=0)
+            intrinsics = torch.stack([pred["intrinsics"] for pred in predictions], dim=0)
         else:
             raise NotImplementedError(f"Depth model type {self.ckpt_depth_model.name} is not implemented.")
-        return depth_model_output
+        return depth_model_output, depth_model_output_mask, intrinsics
         

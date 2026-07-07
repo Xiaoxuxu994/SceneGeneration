@@ -26,17 +26,20 @@ class Reliev3R_MixDataLoader:
         self.dataloader_iters = dict()
         self.pi3_epoch_count = 0
         for dataloader_name in DATALOADER_FUNC.keys():
-            # if self.dataset_weights[dataloader_name] > 0:
-            self.dataloaders[dataloader_name] = DATALOADER_FUNC[dataloader_name](cfg=cfg.dataloaders[dataloader_name], 
-                                                                                mode=mode, batch_size=reliev3r_batch_size)
+            if self.dataset_weights[dataloader_name] > 0:
+                self.dataloaders[dataloader_name] = DATALOADER_FUNC[dataloader_name](cfg=cfg.dataloaders[dataloader_name], 
+                                                                                     mode=mode, batch_size=reliev3r_batch_size)
         self.set_epoch(self.pi3_epoch_count)
         for dataloader_name in DATALOADER_FUNC.keys():
-            # if self.dataset_weights[dataloader_name] > 0:
-            self.dataloader_iters[dataloader_name] = iter(self.dataloaders[dataloader_name])
+            if self.dataset_weights[dataloader_name] > 0:
+                self.dataloader_iters[dataloader_name] = iter(self.dataloaders[dataloader_name])
         
         self.rng = np.random.default_rng(seed=888)
     
     def set_epoch(self, epoch=0):
+        if self.dataloaders.get("pi3", None) is None:
+            return
+        epoch = epoch + 20
         # ---------- train ----------
         if hasattr(self.dataloaders["pi3"], 'dataset') and hasattr(self.dataloaders["pi3"].dataset, 'set_epoch'):
             # custom dataset, can pass base_seed

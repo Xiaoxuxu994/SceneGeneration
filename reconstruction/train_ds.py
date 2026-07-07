@@ -75,6 +75,7 @@ def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
     export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}".format(step)), 
                                pred_points, data["input_images"], cam_poses, 
                                data["input_depth_masks"], conf_thre=thre)
+                            #    pred_points_conf * data["input_depth_masks"], conf_thre=thre)
     if data.get("input_points", None) is not None:
         export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}_GT".format(step)), 
                                    data["input_points"], data["input_images"], data["input_viewmats"], 
@@ -156,7 +157,7 @@ def run(rank, cfg):
     step = 0
 
     """Create optimizers from scratch. """
-    optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate)
+    optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.training.optim_camera_only)
     lr_scheduler = create_lr_scheduler(optimizer, cfg.training.iterations, cfg.training.warm_up_iterations, 
                                         scheduler_type=cfg.training.get("lr_scheduler", "cosine"))
     

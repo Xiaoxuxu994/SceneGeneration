@@ -18,7 +18,7 @@ def format_number(num):
     return str(num)
 
 
-def create_optimizer(model: nn.Module, weight_decay, learning_rate) -> torch.optim.Optimizer:
+def create_optimizer(model: nn.Module, weight_decay, learning_rate, optim_camera_only: False) -> torch.optim.Optimizer:
     """Create optimizer. 
     
     Reference to https://github.com/Haian-Jin/LVSM/blob/main/utils/training_utils.py#L33.
@@ -33,49 +33,34 @@ def create_optimizer(model: nn.Module, weight_decay, learning_rate) -> torch.opt
     
     decay_params, decay_params_small_lr, camera_params, nodecay_params = [], [], [], []
     for name, param in optimized_param_dict.items():
+        if "camera" in name:
+            camera_params.append(param)
+            continue
         if param.dim() == 1 or getattr(param, '_no_weight_decay', False):
             nodecay_params.append(param)
         else:
             if name.startswith("image_tokenizer") or name.startswith("encoder") or name.startswith("depth_aligner.image_tokenizer") or name.startswith("depth_aligner.encoder"):
                 decay_params_small_lr.append(param)
-            # elif name.startswith("depth_aligner.camera_head") or name.startswith("depth_aligner.camera_decoder"):
-            #     camera_params.append(param)
             else:
                 decay_params.append(param)
-    optim_groups = [
-        {'params': decay_params, 'weight_decay': weight_decay, 'lr': learning_rate},
-        {'params': decay_params_small_lr, 'weight_decay': weight_decay, 'lr': learning_rate * 1e-1}, 
-        # {'params': camera_params, 'weight_decay': weight_decay, 'lr': learning_rate * 0.2}, 
-        {'params': nodecay_params, 'weight_decay': 0.0, 'lr': learning_rate}, 
-    ]
-    
-    # specified_param_group_dicts = {
-    #     learning_rate * 1e-2: ["depth_aligner.image_tokenizer", "depth_aligner.encoder"], 
-    #     learning_rate * 5e-1: ["depth_aligner.decoder", ], 
-    # }
-    # params_collected = {}
-    # for name, param in optimized_param_dict.items():
-    #     registered = False
-    #     for lr, name_list in specified_param_group_dicts.items():
-    #         for module_name in name_list:
-    #             if name.startswith(module_name):
-    #                 if params_collected.get(lr, None) is None:
-    #                     params_collected[lr] = []
-    #                 params_collected[lr].append(param)
-    #                 registered = True
-    #                 break
-    #         if registered:
-    #             break
-    #     if not registered:
-    #         if params_collected.get(learning_rate, None) is None:
-    #             params_collected[learning_rate] = []
-    #         params_collected[learning_rate].append(param)
-    # optim_groups = []
-    # for lr, params in params_collected.items():
-    #     optim_groups.append({'params': params, 'weight_decay': weight_decay, 'lr': lr})
+    if not optim_camera_only:
+        print("[ ATTENTION ] optim_camera_only: False")
+        optim_groups = [
+            {'params': decay_params, 'weight_decay': weight_decay, 'lr': learning_rate},
+            {'params': decay_params_small_lr, 'weight_decay': weight_decay, 'lr': learning_rate * 1e-1}, 
+            {'params': camera_params, 'weight_decay': weight_decay, 'lr': learning_rate}, 
+            {'params': nodecay_params, 'weight_decay': 0.0, 'lr': learning_rate}, 
+        ]
+    else:
+        print("[ ATTENTION ] optim_camera_only: True")
+        optim_groups = [
+            {'params': decay_params, 'weight_decay': weight_decay, 'lr': 0.0},
+            {'params': decay_params_small_lr, 'weight_decay': weight_decay, 'lr': 0.0}, 
+            {'params': camera_params, 'weight_decay': weight_decay, 'lr': learning_rate}, 
+            {'params': nodecay_params, 'weight_decay': 0.0, 'lr': 0.0}, 
+        ]
     
     # use fused AdamW optimizer by default. 
-    # optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate)
     optimizer = torch.optim.AdamW(optim_groups)
     
     def get_module_name(name):

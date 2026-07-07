@@ -67,7 +67,7 @@ DATASET_SAMPLES_PER_EPOCH_TRAIN = {
     "scannetv2":  20  * EPOCH_SCALE, 
     "scannetpp":  20  * EPOCH_SCALE, 
     "wildrgbd":   25  * EPOCH_SCALE, 
-    "spatialvid": 100 * EPOCH_SCALE, 
+    "spatialvid": 200 * EPOCH_SCALE, 
     "sekai":      100 * EPOCH_SCALE, 
 }
 DATASET_SAMPLES_PER_EPOCH_EVAL = {
