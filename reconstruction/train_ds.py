@@ -175,7 +175,7 @@ def run(rank, cfg):
         _, client_state = engine.load_checkpoint(
             load_dir=cfg.get("ckpt_path"), 
             tag=cfg.get("ckpt_id"),
-            load_module_only=True, 
+            load_module_only=False, 
             load_optimizer_states=not cfg.no_load_optim,
             load_lr_scheduler_states=not cfg.no_load_optim, 
             load_module_strict=cfg.strict_load, 
