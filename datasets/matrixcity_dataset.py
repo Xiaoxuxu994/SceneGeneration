@@ -346,7 +346,7 @@ class MatrixCityDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
+    from datasets.sample_utils.vis_util import visualize_gt,visualize_gt_norm_compare
 
     data_root = "/mnt/nvme3/z00533370/dataset/sample_data/MatrixCity"
     out_dir = "output_debug/MatrixCity/"
@@ -383,3 +383,4 @@ if __name__ == "__main__":
         print(msg)
 
     visualize_gt(views, out_dir, prefix="MatrixCity_GT")
+    visualize_gt_norm_compare(views, out_dir, prefix="MatrixCity_GT")

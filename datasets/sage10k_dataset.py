@@ -540,7 +540,7 @@ if __name__ == "__main__":
         data_root=data_root,
         mode="train",
         resolution=[[224, 224]],
-        frame_num=48,
+        frame_num=8,
         max_distance=4,
         min_num_images=8,
         split_ratio=0.9,
@@ -554,7 +554,7 @@ if __name__ == "__main__":
     if len(dataset) == 0:
         raise RuntimeError("Dataset is empty. Please check data_root and folder structure.")
 
-    views = dataset[0]
+    views = dataset[10]
 
     print(f"[dataset] number of views = {len(views)}")
     print(f"[dataset] this_views_info = {dataset.this_views_info}")

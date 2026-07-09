@@ -3,8 +3,8 @@
 trainer: trainers.pi3_trainer.Pi3Trainer
 
 train:
-  image_num_range: [2, 16]     # hres
-  max_img_per_gpu: 36             # hres
+  image_num_range: [2, 2]     # hres
+  max_img_per_gpu: 2             # hres
 
   # # dynamic resolution and 
   # random_reslution: true

@@ -47,6 +47,175 @@ def huber_loss(pred, target, delta=1.0, reduction='mean'):
         return loss
     else:
         raise ValueError(f"Unsupported reduction: {reduction}")
+
+
+# ---------------------------------------------------------------------------
+# DepthShapeLoss: scale-invariant depth shape / gradient supervision
+# ---------------------------------------------------------------------------
+
+class WeightedMAD(torch.nn.Module):
+    
+    def __init__(self, eps=1e-8):
+        super().__init__()
+        self.eps = eps
+    
+    def weighted_median(self, x: torch.Tensor, weights: torch.Tensor, q: float=0.5):
+        """Calculate the weighted median.
+        
+        Args:
+            x (torch.Tensor): Tensor of shape [..., D].
+            weights (torch.Tensor) Tensor of shape [..., D].
+            q (float): Target pencertage of median.
+        """
+        
+        orig_shape = x.shape
+        flat_x = x.reshape(-1, orig_shape[-1])
+        flat_weights = weights.reshape(-1, orig_shape[-1])
+        
+        sorted_x, sorted_idx = flat_x.sort(dim=-1)
+        sorted_weights = torch.gather(flat_weights, -1, sorted_idx)
+        
+        cum_weights = sorted_weights.cumsum(dim=-1)
+        total_weights = cum_weights[..., -1].unsqueeze(-1)
+        
+        target = q * total_weights
+        med_idx = (cum_weights <= target).sum(dim=-1, keepdim=True).long()
+        
+        lower_bound = torch.gather(sorted_x, -1, med_idx.clamp(max=orig_shape[-1] - 1))
+        upper_bound = torch.gather(sorted_x, -1, (med_idx + 1).clamp(max=orig_shape[-1] - 1))
+        
+        median = (lower_bound + upper_bound) / 2
+        return median.reshape(*orig_shape[:-1], 1)
+    
+    def forward(self, x: torch.Tensor, weights: torch.Tensor=None) -> torch.Tensor:
+        """A apply weighted MAD to x.
+
+        Args:
+            x (torch.Tensor): Tensor of shape [..., D].
+            weights (torch.Tensor, optional): Tensor of shape [..., D]. Defaults to None.
+
+        Returns:
+            torch.Tensor: MAD normalized x.
+        """
+        if weights is None:
+            weights = torch.ones_like(x)
+        assert x.shape == weights.shape
+        
+        t_w = self.weighted_median(x, weights) # [..., 1]
+        s_w = (torch.abs(x - t_w) * weights).sum(dim=-1, keepdim=True) / (weights.sum(dim=-1, keepdim=True) + self.eps) # [..., 1]
+        
+        normalized_x = (x - t_w) / (s_w + self.eps) # [..., D]
+        
+        return normalized_x
+
+
+def calc_pixel_grad_map(x: torch.Tensor, w: torch.Tensor, eps=1e-6, mode="vert", max_layer=4) -> torch.Tensor:
+    assert x.shape[-3] == 1, "The input of pixel gradient calculation should be a depth map."
+    assert mode in ["vert", "hori"]
+    H, W = x.shape[-2:]
+    step = 1
+    maps, weights = [], []
+    # while step < H and step < W:
+    #     _x = x[..., ::step, ::step]
+    #     hori_grad = _x[..., :-1, :-1] - _x[..., :-1, 1:] # ..., 1, H-1, W-1
+    #     vert_grad = _x[..., :-1, :-1] - _x[..., 1:, :-1] # ..., 1, H-1, W-1
+    #     norm_grad = (hori_grad.square() + vert_grad.square() + eps).sqrt() + eps # ..., 1, H-1, W-1
+    #     maps.append(torch.cat([hori_grad / norm_grad, vert_grad / norm_grad], dim=-3)) # Concatinate by channel.
+    #     _w = w[..., ::step, ::step]
+    #     total_grad_w = _w[..., :-1, :-1] * _w[..., :-1, 1:] * _w[..., 1:, :-1]
+    #     weights.append(total_grad_w)
+    #     step *= 2
+    while step < H and step < W and step < 2**max_layer:
+        _x = x[..., ::step, ::step]
+        if mode == "hori":
+            grad = _x[..., :-1, :-1] - _x[..., :-1, 1:] # ..., 1, H-1, W-1
+        else:
+            grad = _x[..., :-1, :-1] - _x[..., 1:, :-1] # ..., 1, H-1, W-1
+        maps.append(grad)
+        _w = w[..., ::step, ::step]
+        if mode == "hori":
+            grad_w = _w[..., :-1, :-1] * _w[..., :-1, 1:]
+        else:
+            grad_w = _w[..., :-1, :-1] * _w[..., 1:, :-1]
+        weights.append(grad_w)
+        step *= 2
+    return maps, weights
+
+
+def depth_shape_loss(x: torch.Tensor, y: torch.Tensor, 
+                     conf_map: torch.Tensor=None, valid_map: torch.Tensor=None, 
+                     alpha=0.05, calc_grad_loss=True, norm_depth=True, prefix="depth", conf4grad=False) -> torch.Tensor:
+    """Calculate depth shape loss.
+
+    Args:
+        x (torch.Tensor): Depth map of prediction, tensor of shape (N, C, H, W).
+        y (torch.Tensor): Depth map of ground truth, tensor of shape (N, C, H, W).
+        conf_map (torch.Tensor): Predicted confidence map of depth maps, tensor of shape (N, C, H, W).
+
+    Returns:
+        torch.Tensor: Loss value.
+    """
+    assert x.shape == y.shape, "The shape of two input tensors must be equivalent, receiving x {} and y {}.".format(x.shape, y.shape)
+    if x.ndim == 5:
+        B, V = x.shape[:2]
+        x = x.reshape(B * V, *x.shape[2:])
+        y = y.reshape(B * V, *y.shape[2:])
+        if conf_map is not None:
+            conf_map = conf_map.reshape(B * V, *conf_map.shape[2:])
+        if valid_map is not None:
+            valid_map = valid_map.reshape(B * V, *valid_map.shape[2:])
+    
+    detail_info = {}
+    if norm_depth:
+        weighted_mad = WeightedMAD()
+        x = weighted_mad(x.reshape(*x.shape[:-3], -1), 
+                        conf_map.reshape(*x.shape[:-3], -1).detach() if conf_map is not None else None).reshape(*x.shape)
+        y = weighted_mad(y.reshape(*y.shape[:-3], -1), 
+                        conf_map.reshape(*x.shape[:-3], -1).detach() if conf_map is not None else None).reshape(*y.shape)
+    scale_invariant_loss_map = (x - y).abs().mean(dim=-3, keepdim=True)
+    
+    ### Regression loss
+    # depth_weight = 1 + 1 / (y.clamp(min=0.1*weighted_mean(y, valid_map, dim=(-2, -1), keepdim=True)) + 1e-8)
+    # if not norm_depth:
+    detail_info["{}_regression".format(prefix)] = (scale_invariant_loss_map * valid_map / (valid_map.sum() + 1e-8)).sum()
+    
+    ### Confidence loss
+    if conf_map is not None:
+        scale_invariant_loss_value = ((conf_map * scale_invariant_loss_map - alpha * torch.log(conf_map)) 
+                                      * valid_map / (valid_map.sum() + 1e-8)
+                                      ).sum()
+        detail_info["{}_confidence".format(prefix)] = scale_invariant_loss_value
+    
+    ### Gradient loss
+    if calc_grad_loss:
+        # x_grad_maps, grad_weights = calc_pixel_grad_map(x, conf_map)
+        # y_grad_maps, grad_weights = calc_pixel_grad_map(y, conf_map)
+        # depth_grad_loss_maps = [(x_grad_map - y_grad_map).abs().mean(dim=-3, keepdim=True) * weight / (weight.sum() + 1e-8)
+        #                         for x_grad_map, y_grad_map, weight in zip(x_grad_maps, y_grad_maps, grad_weights)]
+        # depth_grad_loss_value = torch.cat([loss_map.sum()[None] for loss_map in depth_grad_loss_maps]).mean()
+        # depth_shape_loss_value = (scale_invariant_loss_value + depth_grad_loss_value) / 2
+        grad_weight = valid_map * conf_map if conf4grad and conf_map is not None else valid_map
+        x_hori_grad_maps, hori_grad_weights = calc_pixel_grad_map(x, grad_weight, mode="hori")
+        x_vert_grad_maps, vert_grad_weights = calc_pixel_grad_map(x, grad_weight, mode="vert")
+        y_hori_grad_maps, hori_grad_weights = calc_pixel_grad_map(y, grad_weight, mode="hori")
+        y_vert_grad_maps, vert_grad_weights = calc_pixel_grad_map(y, grad_weight, mode="vert")
+        layer_cnt = len(x_hori_grad_maps)
+        depth_grad_loss_values = []
+        for layer_idx in range(layer_cnt):
+            hori_grad_loss_map = (x_hori_grad_maps[layer_idx] - y_hori_grad_maps[layer_idx]).abs().mean(dim=-3, keepdim=True) \
+                * hori_grad_weights[layer_idx] / (hori_grad_weights[layer_idx].sum() + 1e-8)
+            vert_grad_loss_map = (x_vert_grad_maps[layer_idx] - y_vert_grad_maps[layer_idx]).abs().mean(dim=-3, keepdim=True) \
+                * vert_grad_weights[layer_idx] / (vert_grad_weights[layer_idx].sum() + 1e-8)
+            depth_grad_loss_values.append(hori_grad_loss_map.sum()[None] + vert_grad_loss_map.sum()[None])
+        depth_grad_loss_value = torch.cat(depth_grad_loss_values).mean()
+        detail_info["{}_grad".format(prefix)] = depth_grad_loss_value
+    
+    final_value = 0.0
+    for k in detail_info.keys():
+        final_value = final_value + detail_info[k]
+    
+    return final_value, detail_info
+
 # ---------------------------------------------------------------------------
 # PointLoss: Scale-invariant Local Pointmap
 # ---------------------------------------------------------------------------
@@ -403,6 +572,7 @@ class Pi3Loss(nn.Module):
         w_normalized_loss=0.0,
         normalize_use_local=False,
         normalize_penalize_zero=False,
+        w_depth_shape_loss=0.0,
 
     ):
         super().__init__()
@@ -416,6 +586,7 @@ class Pi3Loss(nn.Module):
         )
 
         self.camera_loss = CameraLoss()
+        self.w_depth_shape_loss = w_depth_shape_loss
 
     def prepare_gt(self, gt, device):
         gt_pts = torch.stack([view['pts3d'] for view in gt], dim=1).to(device, non_blocking=True)
@@ -501,6 +672,23 @@ class Pi3Loss(nn.Module):
         point_loss, point_loss_details, scale = self.point_loss(pred, gt)
         final_loss += point_loss
         details.update(point_loss_details)
+
+        # Optional Depth Shape Loss
+        if self.w_depth_shape_loss != 0.0:
+            pred_depth = pred['local_points'][..., 2].unsqueeze(2)  # B,V,1,H,W
+            gt_depth = gt['local_points'][..., 2].unsqueeze(2)      # B,V,1,H,W
+            valid_map = gt['valid_masks'].unsqueeze(2)              # B,V,1,H,W
+
+            d_loss, d_details = depth_shape_loss(
+                pred_depth,
+                gt_depth,
+                valid_map=valid_map,
+                norm_depth=True,
+                calc_grad_loss=True,
+                prefix="depth_shape",
+            )
+            final_loss += self.w_depth_shape_loss * d_loss
+            details.update(d_details)
 
         # Camera Loss
         camera_loss, camera_loss_details = self.camera_loss(pred, gt, scale)

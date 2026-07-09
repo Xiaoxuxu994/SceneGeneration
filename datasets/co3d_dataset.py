@@ -279,9 +279,9 @@ class CO3DDataset(BaseDataset):
         return views
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/CO3D"
-    out_dir = "output_debug/CO3D/"
+    from datasets.sample_utils.vis_util import visualize_gt,visualize_gt_norm_compare
+    data_root = "/efs-m3ga/z00533370/reliev3r_data/co3d"
+    out_dir = "output_debug/CO3D/005"
     os.makedirs(out_dir, exist_ok=True)
 
     dataset = CO3DDataset(
@@ -297,7 +297,7 @@ if __name__ == "__main__":
 
     print(f"len(dataset) = {len(dataset)}")
 
-    views = dataset[1]
+    views = dataset[5]
     print(f"[dataset] number of views = {len(views)}")
     for i, v in enumerate(views):
         print(
@@ -312,3 +312,4 @@ if __name__ == "__main__":
 
     """Visualize gt data. """
     visualize_gt(views, out_dir, prefix="CO3D_GT")
+    visualize_gt_norm_compare(views, out_dir, prefix="CO3D_GT")

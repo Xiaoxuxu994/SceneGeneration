@@ -18,6 +18,7 @@ loss:
         train_conf: false
         w_unproj_global: 0.0
         w_normalized_loss: 0.0
+        w_depth_shape_loss: 0.0
         normalize_use_local: False
         normalize_penalize_zero: False
 
@@ -26,6 +27,7 @@ loss:
         train_conf: false
         w_unproj_global: 0.0
         w_normalized_loss: 0.0
+        w_depth_shape_loss: 0.0
         normalize_use_local: False
         normalize_penalize_zero: False
                 

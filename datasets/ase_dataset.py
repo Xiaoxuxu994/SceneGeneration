@@ -289,16 +289,16 @@ class ASEDataset(BaseDataset):
         return views
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/ASE"
-    out_dir = "output_debug/ASE/"
+    from datasets.sample_utils.vis_util import visualize_gt,visualize_gt_norm_compare
+    data_root = "/efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE"
+    out_dir = "output_debug/ASE/080"
     os.makedirs(out_dir, exist_ok=True)
 
     dataset = ASEDataset(
         data_root=data_root,
         mode="train",
-        resolution=[[518, 336]],
-        frame_num=8,
+        resolution=[[224, 224]],
+        frame_num=24,
         max_distance=24,
         split_ratio=0.9,
         verbose=False,
@@ -307,7 +307,7 @@ if __name__ == "__main__":
 
     print(f"len(dataset) = {len(dataset)}")
 
-    views = dataset[0]
+    views = dataset[80]
     print(f"[dataset] number of views = {len(views)}")
     for i, v in enumerate(views):
         print(
@@ -322,3 +322,4 @@ if __name__ == "__main__":
 
     """Visualize gt data. """
     visualize_gt(views, out_dir, prefix="ASE_GT")
+    visualize_gt_norm_compare(views, out_dir, prefix="ASE_GT")

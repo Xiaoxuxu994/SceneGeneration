@@ -246,7 +246,8 @@ class BaseDataset(EasyDataset):
         end = min(n, ref + max_dist + 1)
 
         pool = np.arange(start, end)
-
+        pool = pool[pool != ref]
+        
         extra = rng.choice(
             pool,
             size=f - 1,

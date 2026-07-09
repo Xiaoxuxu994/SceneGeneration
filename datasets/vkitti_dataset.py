@@ -305,15 +305,15 @@ class VKittiDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/vkitti2"
+    from datasets.sample_utils.vis_util import visualize_gt,visualize_gt_norm_compare
+    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/vKitti2"
     out_dir = "output_debug/vKitti2/"
     os.makedirs(out_dir, exist_ok=True)
 
     dataset = VKittiDataset(
         data_root=data_root,
         mode="train",
-        resolution=[[512, 336]],
+        resolution=[[224, 224]],
         frame_num=8,
         min_num_images=24,
         split_ratio=0.9,
@@ -336,3 +336,4 @@ if __name__ == "__main__":
             f"valid={v['valid_mask'].sum()}"
         )
     visualize_gt(views, out_dir, prefix="vKitti_GT")
+    visualize_gt_norm_compare(views, out_dir, prefix="vKitti_GT")
