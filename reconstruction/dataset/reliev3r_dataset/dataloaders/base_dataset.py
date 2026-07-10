@@ -13,11 +13,15 @@ from utils.common import calc_extr_inv, calc_intr_inv, normalize_trans, depth2po
 from utils.loss_utils import samp_points_by_pixel
 
 VAL_RATIO = 0.02
-# MAX_IMAGE_SIZES = [518, 504, 490, 476, 462, 448, 434, 420]
-# MAX_IMAGE_SIZES = [512]
-MAX_IMAGE_SIZES = [512, 496, 480, 464, 448]
-# MAX_IMAGE_SIZES = [252, 238, 224, 210, 196]
+# # MAX_IMAGE_SIZES = [518, 504, 490, 476, 462, 448, 434, 420]
+# # MAX_IMAGE_SIZES = [512]
+# MAX_IMAGE_SIZES = [512, 496, 480, 464, 448]
+# # MAX_IMAGE_SIZES = [252, 238, 224, 210, 196]
 
+MAX_IMAGE_SIZES_BY_PATCH = {
+    14: [518, 504, 490, 476, 462, 448, 434, 420],
+    16: [512, 496, 480, 464, 448],
+}
 
 class Base_Dataset(Dataset):
     def __init__(self, 
@@ -57,6 +61,8 @@ class Base_Dataset(Dataset):
         self.crop_lowerbound = crop_lowerbound
         self.crop_upperbound = crop_upperbound
         self.patch_size = patch_size
+
+        self.MAX_IMAGE_SIZES = MAX_IMAGE_SIZES_BY_PATCH[self.patch_size]
     
     def __len__(self):
         raise NotImplementedError()
@@ -254,6 +260,7 @@ class Realistic_Dataset(Base_Dataset):
         valid_sample_num = max(int(len(filtered_sample_list) * VAL_RATIO), 1)
         if self.is_train is not None and valid_sample_num > 0:
             filtered_sample_list = filtered_sample_list[:-valid_sample_num] if self.is_train else filtered_sample_list[-valid_sample_num:]
+        filtered_sample_list = filtered_sample_list[:10] # TODO only for debug, remeber comment. NOTE
         return filtered_sample_list
     
     def __len__(self):
@@ -406,7 +413,7 @@ class Realistic_Dataset(Base_Dataset):
             )
             if crop_ratio is not None:
                 all_data = self.aug_by_crop(all_data, crop_ratio=crop_ratio)
-            max_image_size = MAX_IMAGE_SIZES[np.random.randint(0, len(MAX_IMAGE_SIZES))]
+            max_image_size = self.MAX_IMAGE_SIZES[np.random.randint(0, len(self.MAX_IMAGE_SIZES))]
             all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size, patch_size=self.patch_size)
             all_data = self.filter_top_depth(all_data, p=0.1)
             all_images = all_data["input_images"]
@@ -617,7 +624,7 @@ class Synthetic_Dataset(Base_Dataset):
             )
             if crop_ratio is not None:
                 all_data = self.aug_by_crop(all_data, crop_ratio=crop_ratio)
-            max_image_size = MAX_IMAGE_SIZES[np.random.randint(0, len(MAX_IMAGE_SIZES))]
+            max_image_size = self.MAX_IMAGE_SIZES[np.random.randint(0, len(self.MAX_IMAGE_SIZES))]
             all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size, patch_size=self.patch_size)
             all_data = self.filter_top_depth(all_data, p=0.003)
             all_images = all_data["input_images"]

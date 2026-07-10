@@ -19,6 +19,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from torch.utils.tensorboard import SummaryWriter
 from einops import rearrange
+from safetensors.torch import load_model
 
 from utils.config_loader import LoadConfig
 from utils.image_utils import visualize_prediction
@@ -54,15 +55,15 @@ def create_dataloaders(rank, global_rank, cfg):
     return dataloader, dataloader_eval
 
 
-def export_image_samples(cfg, step, subfolder, data, pred, loss_dict):
+def export_image_samples(cfg, step, subfolder, data, pred, loss_dict, dataset_name='None'):
     """Visualize images and depths. """
     os.makedirs(os.path.join(cfg.output_dir, subfolder), exist_ok=True)
     verbose_image = visualize_prediction(pred, data, loss_dict["matching_info"][-1])
-    torchvision.utils.save_image(verbose_image, os.path.join(cfg.output_dir, subfolder, "iter_{:06d}.png").format(step))
+    torchvision.utils.save_image(verbose_image, os.path.join(cfg.output_dir, subfolder, dataset_name+"iter_{:06d}.png").format(step))
     print("[ INFO ] Images saved successfully.")
 
 
-def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
+def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5, dataset_name='None'):
     """Visualize point maps. """
     os.makedirs(os.path.join(cfg.output_dir, subfolder), exist_ok=True)
     
@@ -72,12 +73,12 @@ def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
         pred_points = localpoint2global(rearrange(pred["local_points"], "b v c h w -> b v h w c"), cam_poses)
         pred_points_conf = pred["depths_conf"]
     
-    export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}".format(step)), 
+    export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, dataset_name+"step{:07d}".format(step)), 
                                pred_points, data["input_images"], cam_poses, 
                                data["input_depth_masks"], conf_thre=thre)
                             #    pred_points_conf * data["input_depth_masks"], conf_thre=thre)
     if data.get("input_points", None) is not None:
-        export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}_GT".format(step)), 
+        export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, dataset_name+"step{:07d}_GT".format(step)), 
                                    data["input_points"], data["input_images"], data["input_viewmats"], 
                                    data["input_depth_masks"], conf_thre=thre)
     print("[ INFO ] Point maps saved successfully.")
@@ -155,6 +156,12 @@ def run(rank, cfg):
     
     """Load model checkpoint. """
     step = 0
+    safetensors_loaded = False
+    if cfg.get("ckpt_path") is not None and cfg.ckpt_path.endswith("safetensors"):
+        load_model(model, cfg.ckpt_path)
+        safetensors_loaded = True
+        print("[ INFO ] Loading checkpoint from local path: {}".format(cfg.ckpt_path))
+    model = model.to(device=DEVICE_NAME)
 
     """Create optimizers from scratch. """
     optimizer = create_optimizer(model, 0.05, cfg.training.learning_rate, cfg.training.optim_camera_only)
@@ -171,7 +178,7 @@ def run(rank, cfg):
     for p in engine.module.parameters():
         if p.requires_grad: p.register_hook(lambda grad: grad.nan_to_num_(0, 0, 0))
 
-    if cfg.get("ckpt_path") is not None:
+    if not safetensors_loaded and cfg.get("ckpt_path") is not None:
         _, client_state = engine.load_checkpoint(
             load_dir=cfg.get("ckpt_path"), 
             tag=cfg.get("ckpt_id"),
@@ -333,9 +340,9 @@ def run(rank, cfg):
             
                 if step % cfg.training.verbose_interval == 0:
                     """Visualize image, tracking, depth maps and confidence maps"""
-                    export_image_samples(cfg, step, "vis_img_train", data, pred, loss_dict)
+                    export_image_samples(cfg, step, "vis_img_train", data, pred, loss_dict, dataset_name=data["dataset_names"][0])
                     """Visualize point cloud"""
-                    export_point_cloud(cfg, step, "vis_pcd_train", data, pred, thre=TRAIN_PCD_VISUALIZE_THRE)
+                    export_point_cloud(cfg, step, "vis_pcd_train", data, pred, thre=TRAIN_PCD_VISUALIZE_THRE, dataset_name=data["dataset_names"][0])
                 
                 """Validation, only performed on global rank 0"""
                 if step % cfg.training.eval_interval == 0:
@@ -344,12 +351,13 @@ def run(rank, cfg):
                     with torch.no_grad():
                         pred = engine(data)
                         loss_dict = loss_func(pred, data)
-                    print("[ INFO - val ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]".format(
+                    print("[ INFO - val ] Step {}; Loss: {:.5f}; XY range: [{:.3f}, {:.3f}]; Z range: [{:.3f}, {:.3f}]; Conf range: [{:.3f}, {:.3f}]; Cam coord range: [{:.3f}, {:.3f}]; Dataset: {}".format(
                         step, loss_dict["total"].item(), 
                         pred["local_points"][..., :2, :, :].min().item(), pred["local_points"][..., :2, :, :].max().item(), 
                         pred["local_points"][..., -1:, :, :].min().item(), pred["local_points"][..., -1:, :, :].max().item(), 
                         pred["depths_conf"].min().item(), pred["depths_conf"].max().item(), 
-                        pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item()))
+                        pred["camera_extrs"][..., :3, 3].min().item(), pred["camera_extrs"][..., :3, 3].max().item(), 
+                        data["dataset_names"][0]))
                     for loss_name, loss_value in loss_dict.items():
                         if loss_name == "matching_info":
                             continue
@@ -357,6 +365,12 @@ def run(rank, cfg):
                     """Report camera metrics of a single sample."""
                     compute_camera_metrics_and_log(pred, data, step, tb_writer, eval_angle, eval_trajectory, "metric_val")
                     compute_depth_metrics_and_log(pred, data, step, tb_writer, eval_depth_map, "metric_val")
+
+                    if step % cfg.training.verbose_interval == 0:
+                        """Visualize image, tracking, depth maps and confidence maps"""
+                        export_image_samples(cfg, step, "vis_img_eval", data, pred, loss_dict, dataset_name=data["dataset_names"][0])
+                        """Visualize point cloud"""
+                        export_point_cloud(cfg, step, "vis_pcd_eval", data, pred, thre=TRAIN_PCD_VISUALIZE_THRE, dataset_name=data["dataset_names"][0])
                 
             """Save model checkpoint. """
             if step % cfg.training.ckpt_interval == 0 or step == cfg.training.iterations:

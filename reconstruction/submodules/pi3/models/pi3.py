@@ -210,7 +210,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             nn.init.normal_(self.camera_token, std=1e-3)
             nn.init.normal_(self.register_token, std=1e-3)
         pos_special = torch.zeros(1, self.patch_start_idx, 2, dtype=torch.int64)
-        self.register_buffer('pos_special', pos_special)
+        self.register_buffer('pos_special', pos_special, persistent=False)
 
         assert not (cfg.point_head.enabled and cfg.depth_head.enabled), "Only one of point head and depth head can be enabled, not both."
         assert cfg.point_head.enabled or cfg.depth_head.enabled, "Must enabled one of point head and depth head."

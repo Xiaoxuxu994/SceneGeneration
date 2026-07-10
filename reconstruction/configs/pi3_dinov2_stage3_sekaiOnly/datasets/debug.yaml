@@ -1,0 +1,11 @@
+weights:
+  pi3:      9 # supervised
+  reliev3r: 1 # weakly-supervised
+
+dataloaders:
+  pi3: !include pi3/debug.yaml
+  # pi3: !include pi3/datamix_all_v10-1.yaml
+  reliev3r:
+    default:    !include reliev3r/default.yaml
+    spatialvid: !include reliev3r/spatialvid.yaml
+    # sekai:      !include reliev3r/sekai.yaml
