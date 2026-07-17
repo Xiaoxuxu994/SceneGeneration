@@ -19,8 +19,8 @@ train_dataset:
 
     weights:
         Replica:            500
-        Matterport3D:      2000
-        Habitat:           3700
+        # Matterport3D:      2000
+        # Habitat:           3700
 
     Replica:
         _target_: dataset.pi3_dataset.replica_dataset.ReplicaDataset
@@ -37,33 +37,33 @@ train_dataset:
         mode: 'train'
         match_eps: 0.001
 
-    Matterport3D:
-        _target_: dataset.pi3_dataset.matterport3d_dataset.Matterport3DDataset
-        data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
-        split_ratio: 1.0
-        max_distance: 8
-        z_far: 40
-        frame_num: 8
-        aug_crop: 16
-        transform:
-            _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
-        aug_focal: 0.9
-        mode: 'train'
+    # Matterport3D:
+    #     _target_: dataset.pi3_dataset.matterport3d_dataset.Matterport3DDataset
+    #     data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
+    #     split_ratio: 1.0
+    #     max_distance: 8
+    #     z_far: 40
+    #     frame_num: 8
+    #     aug_crop: 16
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+    #     aug_focal: 0.9
+    #     mode: 'train'
 
-    Habitat:
-        _target_: dataset.pi3_dataset.habitat_dataset.HabitatDataset
-        data_root: /efs-m3ga/z00533370/reliev3r_data/habitat/
-        split_ratio: 0.999
-        max_distance: 16
-        z_far: 80
-        frame_num: 8
-        aug_crop: 16
-        transform:
-            _partial_: true
-            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
-        aug_focal: 0.9
-        mode: 'train'
+    # Habitat:
+    #     _target_: dataset.pi3_dataset.habitat_dataset.HabitatDataset
+    #     data_root: /efs-m3ga/z00533370/reliev3r_data/habitat/
+    #     split_ratio: 0.999
+    #     max_distance: 16
+    #     z_far: 80
+    #     frame_num: 8
+    #     aug_crop: 16
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+    #     aug_focal: 0.9
+    #     mode: 'train'
 
 train_dataloader:
     drop_last: True

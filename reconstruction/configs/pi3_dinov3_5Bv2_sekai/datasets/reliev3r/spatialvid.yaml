@@ -1,0 +1,9 @@
+data_root: /efs-m3ga/c50041401/datasets/SpatialVID/reliev3r_clips_all
+
+image_format: .jpg
+depth_format: .png
+
+## Length of data clip
+clip_length: 32
+## Interval of frame sampling
+samp_interval: 1

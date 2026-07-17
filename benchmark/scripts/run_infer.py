@@ -390,8 +390,8 @@ def load_model_reliev3r(config_path: str, ckpt_path: str, device: torch.device, 
                 state_dict = checkpoint['model']
             else:
                 state_dict = checkpoint
-            # model.load_state_dict(state_dict, strict=False)
-            model.load_state_dict(state_dict)
+            model.load_state_dict(state_dict, strict=False)
+            # model.load_state_dict(state_dict)
         else:
             # print('================ Pi3 Model ================================')
             # print(model)

@@ -21,9 +21,12 @@ from openpyxl.utils import get_column_letter
 
 MODEL = "reliev3r"
 ENCODER_TYPE = "dinov3"  # "dinov2"
-STEPS = [30000, 35000, 40000]
+STEPS = [5000, 10000, 15000, 20000, 25000, 30000]
 EXP_DISPLAY_NAMES = {
-    "0628_5Bv2_v10-1_stage2": "stage 2",
+    "0711_5Bv2_v10-1_stage3_wshape_wgeo": "stage 3 wds wgeo",
+    "0711_5Bv2_v10-1_stage3_wshape_wogeo": "stage 3 wds wogeo",
+    "0711_5Bv2_v10-1_stage3_woshape_wgeo": "stage 3 wods wgeo",
+    "0711_5Bv2_v10-1_stage3_woshape_wogeo": "stage 3 wods wogeo"
 }
 DST_EXP_NAMES = list(EXP_DISPLAY_NAMES.keys())
 
@@ -41,7 +44,8 @@ DATASETS = [
     "kitti",
     "hiroom",
     "sekai",
-    "bonn"
+    "bonn",
+    "spatialvid"
 ]
 
 # 每个 dataset 只读取这个 setting 目录
@@ -49,18 +53,18 @@ if ENCODER_TYPE == "dinov2":
     DATASET_SETTING_MAP = {
         "7scenes": "test_stride40_maxall_len8_numseq10_518x392",
         "ase": "test_rand_maxall_len8_numseq10_518x518",
-        "bonn": None,
+        "bonn": "test_stride10_maxall_len8_numseq10_518x392",
         "dl3dv": "test_stride4_maxall_len8_numseq100_518x294",
         "dtu": "test_stride1_maxall_len8_numseq10_518x392",
         "eth3d": "test_stride1_maxall_len8_numseq10_518x350",
-        "hiroom": None,
+        "hiroom": "test_stride1_maxall_len8_numseq30_518x518",
         "kitti": "test_stride2_maxall_len8_numseq10_518x154",
         "nrgbd": "test_stride100_maxall_len8_numseq10_518x392",
         "re10k": "test_stride4_maxall_len8_numseq100_518x294",
         "scannet": "test_stride25_maxall_len8_numseq10_518x392",
         "scannetpp": "test_stride25_maxall_len8_numseq10_518x350",
-        "sekai": None,
-        # "sintel": "test_stride5_maxall_len8_numseq14_518x224"
+        "sekai": "test_stride4_maxall_len8_numseq100_518x294",
+        "spatialvid": "test_stride4_maxall_len8_numseq100_518x294"
     }
 elif ENCODER_TYPE == "dinov3":
     DATASET_SETTING_MAP = {
@@ -77,7 +81,7 @@ elif ENCODER_TYPE == "dinov3":
         "scannet": "test_stride25_maxall_len8_numseq10_512x384",
         "scannetpp": "test_stride25_maxall_len8_numseq10_512x336",
         "sekai": "test_stride4_maxall_len8_numseq100_512x288",
-        # "sintel": "test_stride5_maxall_len8_numseq14_518x224"
+        "spatialvid": "test_stride4_maxall_len8_numseq100_512x288"
     }
 
 DATASET_DISPLAY = {
@@ -95,10 +99,11 @@ DATASET_DISPLAY = {
     "eth3d": "ETH3D",
     "kitti": "KITTI",
     "sintel": "Sintel",
+    "spatialvid": "SpatialVID"
 }
 
 IN_DOMAIN = {"dl3dv", "ase", "scannet", "scannetpp"}
-OUT_DOMAIN = {"re10k", "nrgbd", "dtu", "7scenes", "eth3d", "kitti", "hiroom", "sekai", "bonn"}
+OUT_DOMAIN = {"re10k", "nrgbd", "dtu", "7scenes", "eth3d", "kitti", "hiroom", "sekai", "bonn", "spatialvid"}
 
 DOMAIN_ORDER = {
     "In-domain": 0,

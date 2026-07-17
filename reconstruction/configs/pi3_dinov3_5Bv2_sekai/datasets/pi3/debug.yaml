@@ -1,0 +1,92 @@
+# @package _global_
+
+train:
+    num_workers: 4
+    num_resolution: -1
+    random_reslution: true
+    image_num_range: [2, 16]
+    max_img_per_gpu: 16
+    aspect_ratio_range: [0.5, 2.0]
+    pixel_count_range: [100000, 173000]
+    patch_size: 16 #14 for dinov2 # 16 for dinov3
+    base_seed: 666
+
+test:
+    num_workers: 4
+
+train_dataset:
+    length: 10000000         # dummy
+
+    weights:
+        Replica:            500
+        # Matterport3D:      2000
+        # Habitat:           3700
+
+    Replica:
+        _target_: dataset.pi3_dataset.replica_dataset.ReplicaDataset
+        data_root: /efs-m3ga/z00533370/reliev3r_data/Replica
+        split_ratio: 1.0
+        max_distance: 8
+        z_far: 40
+        frame_num: 8
+        aug_crop: 16
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+        aug_focal: 0.9
+        mode: 'train'
+        match_eps: 0.001
+
+    # Matterport3D:
+    #     _target_: dataset.pi3_dataset.matterport3d_dataset.Matterport3DDataset
+    #     data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
+    #     split_ratio: 1.0
+    #     max_distance: 8
+    #     z_far: 40
+    #     frame_num: 8
+    #     aug_crop: 16
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+    #     aug_focal: 0.9
+    #     mode: 'train'
+
+    # Habitat:
+    #     _target_: dataset.pi3_dataset.habitat_dataset.HabitatDataset
+    #     data_root: /efs-m3ga/z00533370/reliev3r_data/habitat/
+    #     split_ratio: 0.999
+    #     max_distance: 16
+    #     z_far: 80
+    #     frame_num: 8
+    #     aug_crop: 16
+    #     transform:
+    #         _partial_: true
+    #         _target_: dataset.pi3_dataset.base.transforms.JitterJpegLossBlurring
+    #     aug_focal: 0.9
+    #     mode: 'train'
+
+train_dataloader:
+    drop_last: True
+    shuffle: True
+
+test_dataset:
+    weights:
+        Replica:           2000
+
+    Replica:
+        _target_: dataset.pi3_dataset.replica_dataset.ReplicaDataset
+        data_root: /efs-m3ga/z00533370/reliev3r_data/Replica
+        split_ratio: 0.9
+        max_distance: 8
+        z_far: 40
+        frame_num: 8
+        resolution:
+          - [512, 336]
+        transform:
+            _partial_: true
+            _target_: dataset.pi3_dataset.base.transforms.ImgToTensor
+        mode: 'test'
+
+test_dataloader:
+    drop_last: False
+    shuffle: True

@@ -67,7 +67,7 @@ DATASET_SAMPLES_PER_EPOCH_TRAIN = {
     "scannetv2":  20  * EPOCH_SCALE, 
     "scannetpp":  20  * EPOCH_SCALE, 
     "wildrgbd":   25  * EPOCH_SCALE, 
-    "spatialvid": 100 * EPOCH_SCALE, 
+    "spatialvid": 200 * EPOCH_SCALE, 
     "sekai":      100 * EPOCH_SCALE, 
 }
 DATASET_SAMPLES_PER_EPOCH_EVAL = {
@@ -108,7 +108,7 @@ def create_mixed_dataloader(cfg: DottedDict, mode="train", batch_size=1, num_wor
                                                                         shuffle=True, 
                                                                         drop_last=True) \
                                     if mode == "train" else torch.utils.data.RandomSampler(mixed_dataset), 
-                            num_workers=num_workers, 
+                            num_workers=32, 
                             persistent_workers=True, 
                             multiprocessing_context="fork", 
                             )

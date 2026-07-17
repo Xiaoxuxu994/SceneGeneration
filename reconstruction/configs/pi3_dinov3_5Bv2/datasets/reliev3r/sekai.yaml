@@ -1,5 +1,4 @@
-data_root: /efs-m3ga-hpc/c50041401/datasets/sekai/sekai_clips_all
-
+data_root: /efs-m3ga-hpc/c50041401/datasets/sekai/sekai_clips_all_dense
 image_format: .jpg
 depth_format: .png
 

@@ -85,6 +85,7 @@ def customized_collate_fn(batch_inputs):
     input_points_local = []
     dataset_names = []
     data_type = None
+    view_ids = []
     for batch_input in batch_inputs:
         if batch_input is None:
             return None
@@ -103,6 +104,7 @@ def customized_collate_fn(batch_inputs):
         input_points_local.append(batch_input["input_points_local"])
         dataset_names.append(batch_input["dataset_name"])
         data_type = batch_input["data_type"]
+        view_ids.append(batch_input["view_ids"])
     return dict(
         input_images=torch.stack(input_images), 
         input_depths=torch.stack(input_depths), 
@@ -119,6 +121,7 @@ def customized_collate_fn(batch_inputs):
         input_points_local=torch.stack(input_points_local) if input_points_local[0] is not None else None, 
         dataset_names=dataset_names, 
         data_type=data_type, 
+        view_ids=torch.stack(view_ids)
     )
 
 

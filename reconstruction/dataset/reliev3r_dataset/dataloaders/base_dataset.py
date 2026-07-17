@@ -14,8 +14,8 @@ from utils.loss_utils import samp_points_by_pixel
 
 VAL_RATIO = 0.02
 # MAX_IMAGE_SIZES = [518, 504, 490, 476, 462, 448, 434, 420]
-# MAX_IMAGE_SIZES = [512]
-MAX_IMAGE_SIZES = [512, 496, 480, 464, 448]
+MAX_IMAGE_SIZES = [512]
+# MAX_IMAGE_SIZES = [512, 496, 480, 464, 448]
 # MAX_IMAGE_SIZES = [252, 238, 224, 210, 196]
 
 
@@ -180,6 +180,15 @@ class Base_Dataset(Dataset):
         except:
             return None
         
+    def filter_top_depth(self, data, p=0.1):
+        depths = data["input_depths"] * data["input_depth_masks"]
+        V, _, H, W = depths.shape
+        depths = depths.reshape(V, -1)
+        thres = torch.topk(depths, k=int(H * W * p * data["input_depth_masks"].mean()) + 1, dim=-1).values.min(dim=-1).values # V
+        valid_mask = (data["input_depths"] < thres[..., None, None, None]).to(depths.dtype) # V 1 H W
+        data["input_depth_masks"] = data["input_depth_masks"] * valid_mask
+        return data
+    
     def is_visib_valid(self, visib: torch.Tensor, view_num: int, min_thres=6.25e-3, bidirect=False):
         """Validate visiblity of a data as if it composes a minimal_spanning_tree with its maximum covisibility above min_thres.
         Args:
@@ -245,6 +254,7 @@ class Realistic_Dataset(Base_Dataset):
         valid_sample_num = max(int(len(filtered_sample_list) * VAL_RATIO), 1)
         if self.is_train is not None and valid_sample_num > 0:
             filtered_sample_list = filtered_sample_list[:-valid_sample_num] if self.is_train else filtered_sample_list[-valid_sample_num:]
+        filtered_sample_list = filtered_sample_list[7000:7001]
         return filtered_sample_list
     
     def __len__(self):
@@ -299,7 +309,7 @@ class Realistic_Dataset(Base_Dataset):
         return valid_track
 
     def _getitem_fn(self, sample_idx, crop_ratio=None, batch_size=1):
-        try:
+        # try:
             timer = cm.MyTimer()
             timer.record_start("0_Total")
             timer.record_start("1_IO")
@@ -309,18 +319,20 @@ class Realistic_Dataset(Base_Dataset):
             image_list = sorted(glob(os.path.join(sample_folder, "rgb", "*{}".format(self.image_format))))
             depth_list = sorted(glob(os.path.join(sample_folder, "moge_depth", "*{}".format(self.depth_format))))
             depth_mask_list = sorted(glob(os.path.join(sample_folder, "moge_depth_mask", "*.png")))
-            # tracking_file = sorted(glob(os.path.join(sample_folder, "cotracker3", "*.npz")))
             tracking_file = sorted(glob(os.path.join(sample_folder, self.matching_name, "*.npz")))
+            # tracking_file_dense = sorted(glob(os.path.join(sample_folder, self.matching_name + "_dense", "*.npz")))
             if len(tracking_file) == 0:
                 print("[ DEBUG ] code 0")
                 return None
             tracking_file = tracking_file[0]
+            # tracking_file_dense = tracking_file_dense[0]
             if self.__class__.__name__ == "CO3Dv2_Dataset":
                 camera_file_name = sample_folder.split('/')[-1] + ".npy"
                 camera_file = os.path.join("/efs-mi-east4-3/z00818731/co3dv2-cams", camera_file_name)
             else:
                 camera_file = os.path.join(sample_folder, "*.npy")
                 camera_file = glob(camera_file)[0]
+                # camera_file = os.path.join(sample_folder, sample_folder.split('/')[-1] + ".npy")
             if not os.path.exists(camera_file):
                 print("[ DEBUG ] code 1, unfound file: {}".format(camera_file))
                 return None
@@ -346,6 +358,11 @@ class Realistic_Dataset(Base_Dataset):
             if invert_extr:
                 extrs_raw = calc_extr_inv(extrs_raw)
             tracking_info_raw = io.read_cotracker_info_as_tensor(tracking_file)
+            # tracking_info_dense_raw = io.read_cotracker_info_as_tensor(tracking_file_dense)
+            # tracking_info_raw['track0'] = torch.cat([tracking_info_raw['track0'], tracking_info_dense_raw['track0']], dim=1)
+            # tracking_info_raw['track1'] = torch.cat([tracking_info_raw['track1'], tracking_info_dense_raw['track1']], dim=1)
+            # tracking_info_raw['visib0'] = torch.cat([tracking_info_raw['visib0'], tracking_info_dense_raw['visib0']], dim=1)
+            # tracking_info_raw['visib1'] = torch.cat([tracking_info_raw['visib1'], tracking_info_dense_raw['visib1']], dim=1)
             if self.__class__.__name__ == "WildRGBD_Dataset":
                 intrs_raw[..., 0, 2] = 0.5
                 intrs_raw[..., 1, 2] = 0.5
@@ -392,6 +409,7 @@ class Realistic_Dataset(Base_Dataset):
                 all_data = self.aug_by_crop(all_data, crop_ratio=crop_ratio)
             max_image_size = MAX_IMAGE_SIZES[np.random.randint(0, len(MAX_IMAGE_SIZES))]
             all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size, patch_size=self.patch_size)
+            all_data = self.filter_top_depth(all_data, p=0.1)
             all_images = all_data["input_images"]
             all_depths = all_data["input_depths"]
             all_depth_masks = all_data["input_depth_masks"]
@@ -458,6 +476,7 @@ class Realistic_Dataset(Base_Dataset):
                     input_intrs=intrs, # v 3 3
                     input_points=None, 
                     input_points_local=None, 
+                    view_ids=samp_view_ids_tensor,
                     dataset_name=self.__class__.__name__, 
                     data_type="realistic"
                 )
@@ -492,8 +511,8 @@ class Realistic_Dataset(Base_Dataset):
             print("[ DEBUG ] code 8")
             return None
         
-        except:
-            return None
+        # except:
+        #     return None
 
 
 class Synthetic_Dataset(Base_Dataset):
@@ -550,15 +569,6 @@ class Synthetic_Dataset(Base_Dataset):
             return self.data_list[self.sample_list[sample_idx]].item()
         else:
             return self.sample_list[sample_idx]
-    
-    def filter_top_depth(self, data, p=0.04):
-        depths = data["input_depths"] * data["input_depth_masks"]
-        V, _, H, W = depths.shape
-        depths = depths.reshape(V, -1)
-        thres = torch.topk(depths, k=int(H * W * p * data["input_depth_masks"].mean()) + 1, dim=-1).values.min(dim=-1).values # V
-        valid_mask = (data["input_depths"] < thres[..., None, None, None]).to(depths.dtype) # V 1 H W
-        data["input_depth_masks"] = data["input_depth_masks"] * valid_mask
-        return data
     
     def _getitem_fn(self, sample_idx, crop_ratio=None, batch_size=1):
         try:

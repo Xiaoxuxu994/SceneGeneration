@@ -26,17 +26,20 @@ class Reliev3R_MixDataLoader:
         self.dataloader_iters = dict()
         self.pi3_epoch_count = 0
         for dataloader_name in DATALOADER_FUNC.keys():
-            # if self.dataset_weights[dataloader_name] > 0:
-            self.dataloaders[dataloader_name] = DATALOADER_FUNC[dataloader_name](cfg=cfg.dataloaders[dataloader_name], 
-                                                                                mode=mode, batch_size=reliev3r_batch_size)
+            if self.dataset_weights[dataloader_name] > 0:
+                self.dataloaders[dataloader_name] = DATALOADER_FUNC[dataloader_name](cfg=cfg.dataloaders[dataloader_name], 
+                                                                                     mode=mode, batch_size=reliev3r_batch_size)
         self.set_epoch(self.pi3_epoch_count)
         for dataloader_name in DATALOADER_FUNC.keys():
-            # if self.dataset_weights[dataloader_name] > 0:
-            self.dataloader_iters[dataloader_name] = iter(self.dataloaders[dataloader_name])
+            if self.dataset_weights[dataloader_name] > 0:
+                self.dataloader_iters[dataloader_name] = iter(self.dataloaders[dataloader_name])
         
         self.rng = np.random.default_rng(seed=888)
     
-    def set_epoch(self, epoch=0):
+    def set_epoch(self, epoch=0, start_epoch=0):
+        if self.dataloaders.get("pi3", None) is None:
+            return
+        epoch = epoch + start_epoch
         # ---------- train ----------
         if hasattr(self.dataloaders["pi3"], 'dataset') and hasattr(self.dataloaders["pi3"].dataset, 'set_epoch'):
             # custom dataset, can pass base_seed
@@ -80,7 +83,7 @@ class Reliev3R_MixDataLoader:
         
         data_iter = self.dataloader_iters[this_step_dataset_name]
         while True:
-            try:
+            # try:
                 data = next(data_iter)
                 if this_step_dataset_name == "reliev3r":
                     if data is not None:
@@ -93,11 +96,11 @@ class Reliev3R_MixDataLoader:
                     print("[ WARNING ] Error data found at step {} with pi3 dataloader!".format(step))
                 else:
                     raise NotImplementedError("Dataset class {} is not implemented.".format(this_step_dataset_name))
-            except StopIteration:
-                # if this_step_dataset_name == "pi3":
-                #     self.pi3_epoch_count += 1
-                #     self.set_epoch(self.pi3_epoch_count)
-                data_iter = iter(self.dataloaders[this_step_dataset_name])
+            # except StopIteration:
+            #     # if this_step_dataset_name == "pi3":
+            #     #     self.pi3_epoch_count += 1
+            #     #     self.set_epoch(self.pi3_epoch_count)
+            #     data_iter = iter(self.dataloaders[this_step_dataset_name])
         self.dataloader_iters[this_step_dataset_name] = data_iter
         
         return data

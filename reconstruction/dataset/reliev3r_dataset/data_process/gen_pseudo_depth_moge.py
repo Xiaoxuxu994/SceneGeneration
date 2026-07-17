@@ -46,11 +46,12 @@ def main(args):
         os.makedirs(depth_output_folder, exist_ok=True)
         os.makedirs(depth_mask_output_folder, exist_ok=True)
         start_time = time.time()
+        intrinsics = []
         for image_file in clip_image_list:
             image_base_name = os.path.basename(image_file).split(".")[0]
             image = read_image_as_tensor(image_file).to(device=DEVICE_NAME) # 3 h w
             image = image.unsqueeze(0).unsqueeze(0) # 1 1 3 h w
-            mono_depth, mono_depth_mask = depth_model.infer(image)
+            mono_depth, mono_depth_mask, intrinsic = depth_model.infer(image)
             mono_depth = mono_depth[0].permute(1, 2, 0)
             mono_depth = mono_depth * 100
             mono_depth[mono_depth.isinf()] = 65535
@@ -62,12 +63,21 @@ def main(args):
             mono_depth_mask = (mono_depth_mask.cpu().to(dtype=torch.uint8) * 255).numpy()
             cv2.imwrite(os.path.join(depth_output_folder, image_base_name + ".png"), mono_depth)
             cv2.imwrite(os.path.join(depth_mask_output_folder, image_base_name + ".png"), mono_depth_mask)
+            intrinsics.append(intrinsic)
+        if intrinsics[0] is not None and args.store_intr:
+            camera_file_name = os.path.join(clip_folder, clip_folder.split('/')[-1] + ".npy")
+            intrinsics = torch.cat(intrinsics, dim=0)
+            intrinsics = intrinsics.mean(dim=0, keepdim=True)
+            intrinsics = torch.cat([intrinsics for _ in range(len(clip_image_list))], dim=0)
+            camera_data = dict(extr_mat=None, intr_mat=intrinsics.cpu().numpy())
+            np.save(camera_file_name, camera_data, allow_pickle=True)
         end_time = time.time()
         total_time += end_time - start_time
         processed_clip_count += 1
-        print("[ INFO - PROC:{} ] clip {}/{}, {:.2f}%, about {:.2f} hours left.".format(
+        print("[ INFO - PROC:{} ] clip {}/{}, {:.2f}% processed, {:.2f} mins/clip, about {:.2f} hours left.".format(
             args.proc_id, 
             clip_idx + 1, len(clip_folders), (clip_idx + 1) / len(clip_folders) * 100, 
+            total_time / 60 / (processed_clip_count + 1), 
             total_time / processed_clip_count / 3600 * (len(clip_folders) - (clip_idx + 1))
         ))
     print("[ INFO - PROC:{} ] Complete.".format(args.proc_id))
@@ -77,5 +87,6 @@ if __name__ == '__main__':
     parser.add_argument("--root", type=str, required=True)
     parser.add_argument("--proc_id", type=int, default=None)
     parser.add_argument("--total_proc", type=int, default=None)
+    parser.add_argument("--store_intr", action="store_true")
     args = parser.parse_args()
     main(args)

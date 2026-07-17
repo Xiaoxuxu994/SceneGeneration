@@ -12,6 +12,6 @@ training:
 datasets: !include datasets/default.yaml
   
 loss:
-  !include loss/loss.yaml
+  !include loss/stage3.yaml
 
 train_pi3: true

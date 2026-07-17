@@ -10,8 +10,8 @@ import time
 from ..utils.io import read_image_as_tensor
 from utils.platform import DEVICE_NAME
 
-BATCH_SIZE = 512
-DS_RATE = 1
+BATCH_SIZE = 256
+MATHING_DIR = "romav2"
 
 def main(args):
     clip_folders = sorted(glob(os.path.join(args.root, "sub_*", "*_*")))
@@ -23,8 +23,8 @@ def main(args):
     model = RoMaV2()
     total_time = 0.0
     for idx, clip_folder in enumerate(clip_folders):
-        # if os.path.exists(os.path.join(clip_folder, "romav2")):
-        #     continue
+        if os.path.exists(os.path.join(clip_folder, MATHING_DIR)):
+            continue
         start_time = time.time()
         image_files = sorted(glob(os.path.join(clip_folder, "rgb", "*.*")))
         clip_matching_infos = []
@@ -54,9 +54,9 @@ def main(args):
                     "visibility": ((overlaps[batch_idx: batch_idx+1] > 0.5).cpu().numpy(), (overlaps[batch_idx: batch_idx+1] > 0.5).cpu().numpy()), 
                 }
                 clip_matching_infos.append(matching_info)
-        os.makedirs(os.path.join(clip_folder, "romav2"), exist_ok=True)
+        os.makedirs(os.path.join(clip_folder, MATHING_DIR), exist_ok=True)
         file_name = image_files[0].split("/")[-1].split(".")[0] + "_" + image_files[-1].split("/")[-1].split(".")[0] + ".npz"
-        np.savez(os.path.join(clip_folder, "romav2", file_name), data=clip_matching_infos)
+        np.savez(os.path.join(clip_folder, MATHING_DIR, file_name), data=clip_matching_infos)
         end_time = time.time()
         total_time += (end_time - start_time) / 3600
         print("[ INFO - PROC:{} ] {}/{}, {:.2f}% processed, {:.2f} mins/clip, about {:.2f} hours left.".format(

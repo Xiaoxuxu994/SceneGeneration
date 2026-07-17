@@ -1,5 +1,5 @@
 weights:
-  pi3:      1 # supervised
+  pi3:      4 # supervised
   reliev3r: 0 # weakly-supervised
 
 dataloaders:
@@ -7,3 +7,4 @@ dataloaders:
   reliev3r:
     default:    !include reliev3r/default.yaml
     spatialvid: !include reliev3r/spatialvid.yaml
+    # sekai:      !include reliev3r/sekai.yaml

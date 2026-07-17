@@ -7,13 +7,22 @@ MODEL=reliev3r  # ['vggt', 'pi3', 'reliev3r']
 MODEL_SIZE=""
 ENCODER_TYPE=dinov3  # ['dinov2', 'dinov3']
 
+# SRC_ROOT=/efs-m3ga/c50041401/exp/ssff3d
 SRC_ROOT=/efs-m3ga/y00959808/exp/reliev3r
 DST_ROOT=experiments
 
-STEPS=(55000 60000)
+STEPS=(25000 30000)
 
 DST_EXP_NAMES=(
-    0626_5Bv2_v10-1_stage2
+    # 0711_5Bv2_v10-1_stage3_wshape_wgeo
+    # 0711_5Bv2_v10-1_stage3_wshape_wogeo
+    0711_5Bv2_v10-1_stage3_woshape_wgeo
+    0711_5Bv2_v10-1_stage3_woshape_wogeo
+    # 0710_5Bv2_v10-1_stage3
+    # 0709_5Bv2_v10-1_stage3
+    # 0708_5Bv2_v10-1_stage3
+    # 0706_5Bv2_v10-1_stage3_wshape_9-1
+    # 0706_5Bv2_v10-1_stage3_wshape
 )
 
 DATASETS=(
@@ -30,9 +39,10 @@ DATASETS=(
     scannet
     scannetpp
     sekai
+    spatialvid
 )
 
-NPU_IDS=(3 4 5 6 7)
+NPU_IDS=(2 3 4 5 6 7)
 MAX_JOBS_PER_NPU=2
 NUM_NPUS=${#NPU_IDS[@]}
 NUM_WORKERS=$(( NUM_NPUS * MAX_JOBS_PER_NPU ))

@@ -30,6 +30,7 @@ from utils.common import normalize_trans, calc_extr_inv, localpoint2global
 from dataset import Reliev3R_MixDataLoader
 
 from model.reliev3r import Reliev3R, Reliev3R_Pi3
+from model.toy import ToyModel
 import numpy as np
 import deepspeed
 import random
@@ -74,8 +75,7 @@ def export_point_cloud(cfg, step, subfolder, data, pred, thre=0.5):
         # pred_points_conf = pred["depths_conf"]
     
     export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}".format(step)), 
-                               pred_points, data["input_images"], cam_poses, 
-                               pred_points_conf * data["input_depth_masks"], conf_thre=thre)
+                               pred_points, data["input_images"], cam_poses, conf_thre=thre)
     if data.get("input_points", None) is not None:
         export_pcds_and_cam_as_ply(os.path.join(cfg.output_dir, subfolder, "step{:07d}_GT".format(step)), 
                                    data["input_points"], data["input_images"], data["input_viewmats"], 
@@ -143,12 +143,13 @@ def run(rank, cfg):
     dataloader, dataloader_eval = create_dataloaders(rank, global_rank, cfg)
     
     """Load models. """
-    if cfg.get("train_pi3", False):
-        print("[ INFO ] Training Pi3")
-        model = Reliev3R_Pi3(cfg.model).to(device=DEVICE_NAME)
-    else:
-        print("[ INFO ] Training Reliev3R")
-        model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
+    model = ToyModel().to(device=DEVICE_NAME)
+    # if cfg.get("train_pi3", False):
+    #     print("[ INFO ] Training Pi3")
+    #     model = Reliev3R_Pi3(cfg.model).to(device=DEVICE_NAME)
+    # else:
+    #     print("[ INFO ] Training Reliev3R")
+    #     model = Reliev3R(cfg.model).to(device=DEVICE_NAME)
     
     """Create loss functions. """
     loss_func = make_loss_func(cfg.loss)
@@ -181,12 +182,12 @@ def run(rank, cfg):
         _, client_state = engine.load_checkpoint(
             load_dir=cfg.get("ckpt_path"), 
             tag=cfg.get("ckpt_id"),
-            load_module_only=True, 
+            load_module_only=cfg.no_load_optim and cfg.no_load_sched, 
             load_optimizer_states=not cfg.no_load_optim,
-            load_lr_scheduler_states=not cfg.no_load_optim, 
+            load_lr_scheduler_states=not cfg.no_load_sched, 
             load_module_strict=cfg.strict_load, 
         )
-        if not cfg.no_load_optim:
+        if not cfg.no_load_sched:
             step = client_state.get("step", 0)
         print("[ INFO ] Loaded checkpoint from local path: {}".format(cfg.ckpt_path))
 
@@ -335,6 +336,7 @@ def run(rank, cfg):
                     if loss_name == "matching_info":
                         continue
                     tb_writer.add_scalar("loss/{}".format(loss_name), loss_value.item(), step)
+                    tb_writer.add_scalar("loss_{}/{}".format(data["dataset_names"][0], loss_name), loss_value.item(), step)
                 compute_camera_metrics_and_log(pred, data, step, tb_writer, eval_angle, eval_trajectory, "metric_train")
             
                 if step % cfg.training.verbose_interval == 0:
@@ -420,6 +422,7 @@ if __name__ == '__main__':
     parser.add_argument("--ckpt_path", type=str, default=None, help="Path to checkpoint.")
     parser.add_argument("--ckpt_id", type=str, default=None, help="Id of checkpoint.")
     parser.add_argument("--no_load_optim", action="store_true", help="Set to disable loading optimizer when ckpt is given.")
+    parser.add_argument("--no_load_sched", action="store_true", help="Set to disable loading scheduler when ckpt is given.")
     parser.add_argument("--learning_rate", type=float, default=None, help="Maximum learning rate.")
     parser.add_argument("--encoder_lr_ratio", type=float, default=None, help="Backbone encoder lr ratio (0~1).")
     parser.add_argument("--decoder_lr_ratio", type=float, default=None, help="Backbone decoder lr ratio (0~1).")
@@ -461,6 +464,7 @@ if __name__ == '__main__':
         cfg.training.lr_scheduler = args.lr_scheduler
     cfg.eval = args.eval
     cfg.no_load_optim = args.no_load_optim
+    cfg.no_load_sched = args.no_load_sched
     cfg.strict_load = args.strict_load
     
     main(cfg)

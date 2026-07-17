@@ -1,5 +1,4 @@
 import torch
-from torch.nn import functional as F
 
 from einops import rearrange
 
@@ -50,10 +49,6 @@ class GradBalancerForCamera(torch.autograd.Function):
     
     @staticmethod
     def backward(ctx, grad_output):
-        # balanced_grad = grad_output.clone()
-        # balanced_grad[..., :3, 3] = grad_output[..., :3, 3] * 1.0
-        # return balanced_grad
-        # return grad_output * 100.0
         return grad_output
 
 
@@ -96,16 +91,6 @@ def calc_pixel_grad_map(x: torch.Tensor, w: torch.Tensor, eps=1e-6, mode="vert",
     H, W = x.shape[-2:]
     step = 1
     maps, weights = [], []
-    # while step < H and step < W:
-    #     _x = x[..., ::step, ::step]
-    #     hori_grad = _x[..., :-1, :-1] - _x[..., :-1, 1:] # ..., 1, H-1, W-1
-    #     vert_grad = _x[..., :-1, :-1] - _x[..., 1:, :-1] # ..., 1, H-1, W-1
-    #     norm_grad = (hori_grad.square() + vert_grad.square() + eps).sqrt() + eps # ..., 1, H-1, W-1
-    #     maps.append(torch.cat([hori_grad / norm_grad, vert_grad / norm_grad], dim=-3)) # Concatinate by channel.
-    #     _w = w[..., ::step, ::step]
-    #     total_grad_w = _w[..., :-1, :-1] * _w[..., :-1, 1:] * _w[..., 1:, :-1]
-    #     weights.append(total_grad_w)
-    #     step *= 2
     while step < H and step < W and step < 2**max_layer:
         _x = x[..., ::step, ::step]
         if mode == "hori":
@@ -149,14 +134,17 @@ def depth_shape_loss(x: torch.Tensor, y: torch.Tensor,
     detail_info = {}
     if norm_depth:
         weighted_mad = WeightedMAD()
+        # x = weighted_mad(x.reshape(*x.shape[:-3], -1), 
+        #                 conf_map.reshape(*x.shape[:-3], -1).detach() if conf_map is not None else None).reshape(*x.shape)
+        # y = weighted_mad(y.reshape(*y.shape[:-3], -1), 
+        #                 conf_map.reshape(*x.shape[:-3], -1).detach() if conf_map is not None else None).reshape(*y.shape)
         x = weighted_mad(x.reshape(*x.shape[:-3], -1), 
-                        conf_map.reshape(*x.shape[:-3], -1).detach() if conf_map is not None else None).reshape(*x.shape)
+                        valid_map.reshape(*x.shape[:-3], -1).detach() if valid_map is not None else None).reshape(*x.shape)
         y = weighted_mad(y.reshape(*y.shape[:-3], -1), 
-                        conf_map.reshape(*x.shape[:-3], -1).detach() if conf_map is not None else None).reshape(*y.shape)
+                        valid_map.reshape(*x.shape[:-3], -1).detach() if valid_map is not None else None).reshape(*y.shape)
     scale_invariant_loss_map = (x - y).abs().mean(dim=-3, keepdim=True)
     
     ### Regression loss
-    # depth_weight = 1 + 1 / (y.clamp(min=0.1*weighted_mean(y, valid_map, dim=(-2, -1), keepdim=True)) + 1e-8)
     # if not norm_depth:
     detail_info["{}_regression".format(prefix)] = (scale_invariant_loss_map * valid_map / (valid_map.sum() + 1e-8)).sum()
     
@@ -169,12 +157,6 @@ def depth_shape_loss(x: torch.Tensor, y: torch.Tensor,
     
     ### Gradient loss
     if calc_grad_loss:
-        # x_grad_maps, grad_weights = calc_pixel_grad_map(x, conf_map)
-        # y_grad_maps, grad_weights = calc_pixel_grad_map(y, conf_map)
-        # depth_grad_loss_maps = [(x_grad_map - y_grad_map).abs().mean(dim=-3, keepdim=True) * weight / (weight.sum() + 1e-8)
-        #                         for x_grad_map, y_grad_map, weight in zip(x_grad_maps, y_grad_maps, grad_weights)]
-        # depth_grad_loss_value = torch.cat([loss_map.sum()[None] for loss_map in depth_grad_loss_maps]).mean()
-        # depth_shape_loss_value = (scale_invariant_loss_value + depth_grad_loss_value) / 2
         grad_weight = valid_map * conf_map if conf4grad and conf_map is not None else valid_map
         x_hori_grad_maps, hori_grad_weights = calc_pixel_grad_map(x, grad_weight, mode="hori")
         x_vert_grad_maps, vert_grad_weights = calc_pixel_grad_map(x, grad_weight, mode="vert")
@@ -231,11 +213,6 @@ def compute_angle_loss(unnormed_points: torch.Tensor, cam_cents: torch.Tensor):
     vec_mat  = unnormed_points.unsqueeze(2) - cam_cents.unsqueeze(1) # b v v k 3, points from view v_i <- center of view v_j
     cent_mat = (unnormed_points - cam_cents).unsqueeze(1).expand_as(vec_mat).detach() # b v v k 3
     
-    # dot_product = (vec_mat * cent_mat).sum(dim=-1)
-    # norm_vec    = vec_mat.norm(dim=-1, p=2)
-    # norm_cent   = cent_mat.norm(dim=-1, p=2)
-    # cossim      = dot_product / (norm_vec * norm_cent + 1e-8)
-    
     vec_mat  = vec_mat / (vec_mat.norm(dim=-1, keepdim=True) + 1e-8)
     cent_mat = cent_mat / (cent_mat.norm(dim=-1, keepdim=True) + 1e-8)
     cossim   = (vec_mat * cent_mat).sum(dim=-1)
@@ -243,74 +220,20 @@ def compute_angle_loss(unnormed_points: torch.Tensor, cam_cents: torch.Tensor):
     return cossim # b v v k
 
 
-def translation_error_se3(local_points: torch.Tensor,
-                          extrs_w2c: torch.Tensor,
-                          matching_info: dict,
-                          view_per_batch: int = 2,
-                          conf_map: torch.Tensor | None = None,
-                          eps: float = 1e-6,
-                          min_points: int = 16,
-                          clip_err: float = 5.0,
-                          robust_delta: float = 1.0):
-
-    assert view_per_batch == 2
-
-    # local_points -> (B*V, 3, H, W)
-    lp = local_points.permute(0, 3, 1, 2).contiguous()
-    BV, _, H, W = lp.shape
-    assert BV % 2 == 0
-    B = BV // 2
-
-    tracks = matching_info["matches"]        # (B,2,K,2)
-    vis    = matching_info["visibilities"]   # (B,2,K)
-    mask   = torch.all(vis, dim=1)           # (B,K)
-
-    # ---- sample Xc0, Xc1 from local pointmaps ----
-    pts = samp_points_by_pixel(lp, tracks.reshape(-1, *tracks.shape[-2:]))  # (B*2,K,3)
-    pts = pts.reshape(B, 2, *pts.shape[-2:])                                 # (B,2,K,3)
-    X0, X1 = pts[:, 0], pts[:, 1]                                            # (B,K,3)
-
-    # ---- compute relative pose T10 = w2c1 * inv(w2c0) ----
-    extrs = extrs_w2c.reshape(B, 2, 4, 4)
-    T0 = extrs[:, 0]  # (B,4,4) w2c0
-    T1 = extrs[:, 1]  # (B,4,4) w2c1
-    T0_inv = calc_extr_inv(T0)  # (B,4,4) c2w0
-
-    T10 = T1 @ T0_inv           # (B,4,4) cam0 -> cam1
-    R10 = T10[:, :3, :3]        # (B,3,3)
-    t10 = T10[:, :3, 3]         # (B,3)
-
-    mask = mask & (X0[..., 2] > 1e-4) & (X1[..., 2] > 1e-4) # Xc0, Xc1 本来 in camera coords -> just check z>0
-
-    X1_hat = torch.einsum("bij,bkj->bki", R10, X0) + t10[:, None, :]  # (B,K,3)  predict X1_hat = R10*X0 + t10
-    resid = X1_hat - X1                                               # (B,K,3)
-
-    # ---- depth normalization ----
-    scale = 0.5 * (X0.norm(dim=-1) + X1.norm(dim=-1)) + 1e-3          # (B,K)     # scale = mean depth magnitude
-    resid_n = resid / scale[..., None]                                # (B,K,3)
-
-    # per-point error smooth_l1_loss
-    err = F.smooth_l1_loss(resid_n, torch.zeros_like(resid_n),
-                           beta=robust_delta, reduction="none").sum(dim=-1)  # (B,K)
-
-    if clip_err is not None:
-        err = err.clamp(max=clip_err)
-
-    if conf_map is not None:
-        # conf_map: (B*V, H, W) -> sample to (B,2,K)
-        conf_chw = conf_map.unsqueeze(1)  # (B*V,1,H,W)
-        conf = samp_points_by_pixel(conf_chw, tracks.reshape(-1, *tracks.shape[-2:]))  # (B*2,K,1)
-        conf = conf.squeeze(-1).reshape(B, 2, -1)                                      # (B,2,K)
-        w = (conf[:, 0] * conf[:, 1]).clamp(0.0, 1.0).detach()                         # detach
-    else:
-        w = torch.ones_like(err)
-
-    denom = (w * mask).sum(dim=-1).add(eps)
-    loss_per_batch = (err * w * mask).sum(dim=-1) / denom  # (B,)
-
-    valid_batch = mask.sum(dim=-1) > min_points
-    loss = (loss_per_batch * valid_batch).sum() / (valid_batch.sum().add(eps))
-    return loss
+def compute_dist_loss(unnormed_points: torch.Tensor, cam_cents: torch.Tensor):
+    """Compute matching angle loss as 3d correspondence loss.
+    Args:
+        unnormed_points (torch.Tensor): Tensor of shape (B, V, K, 3)
+        cam_cents (torch.Tensor): Tensor of shape (B, V, 1, 3)
+    Returns:
+        Tensor of shape (B, V, V, K), the exhaustive angle loss map.
+    """
+    vec_mat  = unnormed_points.unsqueeze(2) - cam_cents.unsqueeze(1) # b v v k 3, points from view v_i <- center of view v_j
+    cent_mat = (unnormed_points - cam_cents).unsqueeze(1).expand_as(vec_mat) # b v v k 3
+    
+    dist_loss = (vec_mat - cent_mat).norm(dim=-1) / (cent_mat.norm(dim=-1) + 1e-8) # b v v k
+    
+    return dist_loss # b v v k
 
 
 def matching_error_3D(points: torch.Tensor, 
@@ -352,7 +275,7 @@ def matching_error_3D(points: torch.Tensor,
 
 
 def matching_error_3D_normal(points: torch.Tensor,
-                             matching_info: dict,  view_per_batch: int):
+                             matching_info: dict,  view_per_batch: int, filter_mask=None):
     """Compute 3d error between two group of (depths, cameras).
 
     Args:
@@ -366,16 +289,22 @@ def matching_error_3D_normal(points: torch.Tensor,
     norms = get_norm_map(points) # b 3 h w    
     
     assert len(points) % view_per_batch == 0
-    tracks = matching_info["matches"] # b*v 2 k 2
+    tracks = matching_info["matches"] # b*v 2 k 2    
+    vis = matching_info["visibilities"] # b*v 2 k
+    mask = torch.all(vis, dim=1) # b*v k
+    if filter_mask is not None:
+        mask = mask * filter_mask
     norms = samp_points_by_pixel(norms, tracks.reshape(-1, *tracks.shape[-2:]), mode="nearest") # bv k c
     norms = norms.reshape(-1, view_per_batch, *norms.shape[-2:]) # b v k c
-    norm_loss = (1 - (norms[..., 0, :, :] * norms[..., 1, :, :]).sum(dim=-1).mean()) / 2
+    norm_cos = (norms[..., 0, :, :] * norms[..., 1, :, :]).sum(dim=-1) # b k
+    norm_ang = torch.acos(BoundForArcCos.apply(norm_cos)) # b k
+    norm_loss = (norm_ang * mask).sum(dim=-1) / (mask.sum(dim=-1) + 1e-8) # b*v
     
-    return norm_loss
+    return norm_loss.mean()
 
 
 def matching_error_3D_dist(points: torch.Tensor, 
-                           matching_info: dict,  view_per_batch: int, normalize_factor: torch.Tensor=None):
+                           matching_info: dict,  view_per_batch: int, normalize_factor: torch.Tensor=None, with_sq=False):
     """Compute 3d error between two group of (depths, cameras).
 
     Args:
@@ -393,17 +322,20 @@ def matching_error_3D_dist(points: torch.Tensor,
     mask = torch.all(vis, dim=1) # b*v k
     points = samp_points_by_pixel(points, tracks.reshape(-1, *tracks.shape[-2:])) # bv k c
     points = points.reshape(-1, view_per_batch, *points.shape[-2:]) # bv 2 k c
-    points_offset = (points[..., 0, :, :] - points[..., 1, :, :]).abs().norm(dim=-1) # bv k
+    points_offset = (points[..., 0, :, :] - points[..., 1, :, :]).norm(dim=-1) # bv k
     self_filtered_mask = None
     if normalize_factor is not None:
         # normalize_factor is a tensor of shape B
         v = points_offset.shape[0] // normalize_factor.shape[0]
         k = points_offset.shape[-1]
-        normalize_factor = normalize_factor.reshape(-1, 1, 1).expand(-1, v, k).reshape(-1, k) + 1e-4 # bv k
-        self_filtered_mask = ((points_offset / normalize_factor) < 2e-2) # bv k
+        normalize_factor = normalize_factor.reshape(-1, 1, 1).expand(-1, v, k).reshape(-1, k) + 1e-8 # bv k
+        self_filtered_mask = ((points_offset / normalize_factor) < 1e-2) # bv k
         mask = mask * self_filtered_mask.detach()
     
-    dist_loss = points_offset # bv k
+    if not with_sq:
+        dist_loss = points_offset # bv k
+    else:
+        dist_loss = points_offset + points_offset.square() # bv k
     dist_loss = ((dist_loss * mask).sum(dim=-1) / (mask.sum(dim=-1) + 1e-8)).mean()
     
     return dist_loss.mean(), self_filtered_mask
@@ -504,7 +436,7 @@ class LossFunction(torch.nn.Module):
         ## Local point loss
         aligned_local_pts = S_opt_local.view(B, 1, 1, 1, 1) * pred_local_pts
         local_pts_loss = self.point_criteria(aligned_local_pts[valid_masks].float(), 
-                                             gt_local_pts[valid_masks].float()) * weights_[valid_masks].float()[..., None]
+                                             gt_local_pts[valid_masks].float())
         final_loss += local_pts_loss.mean()
         details['local_pts_loss'] = local_pts_loss.mean()
         
@@ -516,7 +448,7 @@ class LossFunction(torch.nn.Module):
         pred_global_pts = mat_mul_vec_by_conv(pad_one(pred_global_pts, dim=-1), pred_trans_to_firstF)[..., :3] # b v h w 3
         pred_global_pts = pred_global_pts * S_opt_local.view(B, 1, 1, 1, 1) #.detach()
         global_pts_loss = self.point_criteria(pred_global_pts[valid_masks].float(), 
-                                              gt_pts[valid_masks].float()) * weights_[valid_masks].float()[..., None]
+                                              gt_pts[valid_masks].float())
         final_loss += global_pts_loss.mean()
         details['global_pts_loss'] = global_pts_loss.mean()
 
@@ -532,14 +464,15 @@ class LossFunction(torch.nn.Module):
         return depth_shape_loss(pred_global_pts, gt_global_pts, 
                                 conf_map=conf_map, valid_map=valid_map, alpha=self.conf_alpha, norm_depth=False, calc_grad_loss=False, prefix="point")
     
-    def ds_loss(self, output_dict, data, enable_conf=False, lower=None):
+    def ds_loss(self, output_dict, data, enable_conf=False, sup_rdepth=False):
         depths = output_dict["depths"]
         if self.dl_detach_depth:
             depths = depths.detach()
         input_depths = data["input_depths"].detach()
+        # if sup_rdepth:
+        #     input_depths = data["input_ray_depths"]
+        #     depths = output_dict['local_points'].norm(dim=-3, keepdim=True) # b v 1 h w
         input_masks  = torch.ones_like(output_dict["depths_conf"]) if data["input_depth_masks"] is None else data["input_depth_masks"]
-        if enable_conf:
-            output_dict["depths_conf"] = ClampLower.apply(output_dict["depths_conf"] * input_masks, lower)
         ds_loss = depth_shape_loss(depths, input_depths, 
             conf_map=output_dict["depths_conf"] if enable_conf else None, 
             valid_map=input_masks, 
@@ -559,8 +492,8 @@ class LossFunction(torch.nn.Module):
         output_dict["local_points_detach_xy_scaled"] = points_src.clone()
         output_dict["camera_extrs_scaled"] = extrs_src.clone()
     
-    def geometric_loss(self, output_dict, data, detach_camera=False, detach_depth=False, use_scaled_points=False):
-        B, _, _, H, W = output_dict["depths"].shape
+    def geometric_loss(self, output_dict, data, detach_camera=False, detach_depth=False, use_scaled_points=False, with_sq=False):
+        B, V, _, H, W = output_dict["depths"].shape
         
         local_src = output_dict["local_points_detach_xy"] if not use_scaled_points else output_dict["local_points_detach_xy_scaled"]
         if output_dict.get("camera_extrs", None) is None:
@@ -572,9 +505,9 @@ class LossFunction(torch.nn.Module):
             local_src = local_src.detach()
         if detach_camera:
             extrs_src = extrs_src.detach()
+        normalize_factor = ((local_src.norm(dim=-3) * data["input_depth_masks"].norm(dim=-3)).reshape(B, -1).sum(dim=-1) / 
+                             data["input_depth_masks"].norm(dim=-3).reshape(B, -1).sum(dim=-1)) # B
         points_src = localpoint2global(rearrange(local_src, "b v c h w -> b v h w c"), extrs_src) # b v h w 3
-
-        normalize_factor = points_src.norm(dim=-1).reshape(B, -1).mean(dim=-1) # B
         if self.norm_dist_ps_loss:
             points_src = points_src / (normalize_factor.view(B, 1, 1, 1, 1) + 1e-12)
             extrs_src_temp = extrs_src.clone()
@@ -592,20 +525,20 @@ class LossFunction(torch.nn.Module):
             matched_views1=data["input_tracks_view_id1"], 
         )
         
-        paired_points, paired_local, paired_extrs = [], [], []
-        for points, local, extrs, pairs_x, pairs_y in zip(
-            points_src, local_src, extrs_src, data["input_tracks_view_id0"], data["input_tracks_view_id1"]):
+        paired_points, paired_extrs = [], []
+        for points, extrs, pairs_x, pairs_y in zip(
+            points_src, extrs_src, data["input_tracks_view_id0"], data["input_tracks_view_id1"]):
             paired_points.append(torch.stack([points[pairs_x], points[pairs_y]], dim=1)) # <- P 2 H W 3
-            paired_local.append(torch.stack([local[pairs_x], local[pairs_y]], dim=1)) # <- P 2 H W 3
             paired_extrs.append(torch.stack([extrs[pairs_x], extrs[pairs_y]], dim=1))    # <- P 2 4 4
         paired_points = torch.stack(paired_points).reshape(-1, 2, H, W, 3)
-        paired_local = torch.stack(paired_local).reshape(-1, 2, H, W, 3)
         paired_extrs = torch.stack(paired_extrs).reshape(-1, 2, 4, 4)
         
+        is_weak_sup = data.get("input_points", None) is None
         matching_error_dist, filter_mask = matching_error_3D_dist(points=paired_points.reshape(-1, H, W, 3), 
-                                                     matching_info=matching_info, 
-                                                     view_per_batch=2, 
-                                                     normalize_factor=normalize_factor if self.filter_match_by_pred else None)
+                                                                  matching_info=matching_info, 
+                                                                  view_per_batch=2, 
+                                                                  normalize_factor=normalize_factor if self.filter_match_by_pred and is_weak_sup else None, 
+                                                                  with_sq=with_sq)
         matching_error = matching_error_3D(points=paired_points.reshape(-1, H, W, 3), 
                                            extrs=paired_extrs.reshape(-1, 4, 4), 
                                            matching_info=matching_info, 
@@ -613,16 +546,8 @@ class LossFunction(torch.nn.Module):
                                            filter_mask=filter_mask)
         matching_error_norm = matching_error_3D_normal(points=paired_points.reshape(-1, H, W, 3), 
                                                        matching_info=matching_info, 
-                                                       view_per_batch=2)
-        # translation_error = translation_error_se3(
-        #     local_points=paired_local.reshape(-1, H, W, 3),
-        #     extrs_w2c=paired_extrs.reshape(-1, 4, 4),
-        #     matching_info=matching_info,
-        #     view_per_batch=2,
-        #     conf_map=None,      # 这里先不加，跑稳后再加
-        #     clip_err=5.0,
-        #     robust_delta=1.0
-        # )
+                                                       view_per_batch=2, 
+                                                       filter_mask=filter_mask)
         
         return matching_error, matching_error_norm, matching_error_dist, [matching_info, ]
     
@@ -661,7 +586,7 @@ class LossFunction(torch.nn.Module):
         L_r = torch.acos(BoundForArcCos.apply((trace - 1) / 2)).mean()
         L_t = huber_loss(t_rel_pr, t_rel_gt, delta=0.1)
         
-        return L_r + 100 * L_t, L_r, L_t
+        return 2 * L_r + 100 * L_t, L_r, L_t
     
     def absolute_camera_loss(self, output_dict: dict[str, torch.Tensor], data: dict[str, torch.Tensor]):
         extrs_gt = data["input_viewmats"] # b v 4 4
@@ -689,43 +614,33 @@ class LossFunction(torch.nn.Module):
         ## Access local points
         pr_local_points = rearrange(output_dict["local_points"], "b v c h w -> b v h w c") # b v h w c
         B, N = pr_local_points.shape[:2]
-        if self.cfg.normalize.use_local:
-            point_scale = pr_local_points.norm(dim=-1).reshape(B, -1).mean(dim=-1)
-        else:
-            ## Transform local points to global points
-            pr_global_points = localpoint2global(pr_local_points, output_dict["camera_extrs"]) # b v h w c
-            # ## Transform global points to the coordinate of first frame
-            # pred_trans_to_firstF = torch.cat([output_dict['camera_extrs'][:, :1] for _ in range(N)], dim=1) # b v 4 4
-            # pr_global_points = mat_mul_vec_by_conv(pad_one(pr_global_points, dim=-1), pred_trans_to_firstF)[..., :3] # b v h w 3
-            ## Calculate the overall scale.
-            point_scale = pr_global_points.norm(dim=-1).reshape(B, -1).mean(dim=-1) # B
-        loss = (point_scale - 1).abs().mean()
-        if self.cfg.normalize.penalize_zero: loss = .5 * (loss + (point_scale + 1 / (point_scale + 1e-8)).mean() - 2)
-        return loss
-    
+        ## Calculate the overall scale.
+        pr_local_points_dist = pr_local_points.norm(dim=-1).reshape(B, -1)
+        if self.cfg.normalize.get("use_mask", True):
+            valid_mask = data["input_depth_masks"].reshape(B, -1)
+            point_scale = (pr_local_points_dist * valid_mask / (valid_mask.sum(dim=-1, keepdim=True) + 1e-8)).sum(dim=-1).mean()
+        else: point_scale = pr_local_points.norm(dim=-1).reshape(B, -1).mean(dim=-1) # B
+        # point_scale = ClampLower.apply(point_scale, 0.2)
+        # return ((point_scale - 1).abs().mean() + 
+        #         (point_scale + 1 / (point_scale + 1e-8) - 2).mean()
+        #         ) * 0.5
+        return (point_scale - 1).abs().mean()
     
     def forward(self, output_dict, data):
         ### Compute loss weight
-        w_ds        = self.cfg.depth_shape.w if self.cfg.get("depth_shape", None) is not None else 0.0
-        w_geometric = self.cfg.geometric.w if self.cfg.get("geometric", None) is not None else 0.0
-        w_normal    = self.cfg.normal.w if self.cfg.get("normal", None) is not None else 0.0
-        w_dist      = self.cfg.dist.w if self.cfg.get("dist", None) is not None else 0.0
-        # w_translate = self.cfg.translate.w if self.cfg.get("translate", None) is not None else 0.0
-        w_intr      = self.cfg.camera_intr.w if self.cfg.get("camera_intr", None) is not None else 0.0
-        w_extr      = self.cfg.camera_extr.w if self.cfg.get("camera_extr", None) is not None else 0.0
-        w_point     = self.cfg.point.w if self.cfg.get("point", None) is not None else 0.0
-        w_normalize = self.cfg.normalize.w if self.cfg.get("normalize", None) is not None else 0.0
-
-        if any(n in self.exclude_datasets_for_reliev3r for n in data["dataset_names"]):
-            w_geometric = w_normal = w_dist = 0
-        
+        w_ds        = self.cfg.depth_shape.w
+        w_geometric = self.cfg.geometric.w
+        w_normal    = self.cfg.normal.w
+        w_dist      = self.cfg.dist.w
+        w_intr      = self.cfg.camera_intr.w
+        w_extr      = self.cfg.camera_extr.w
+        w_point     = self.cfg.point.w
+        w_normalize = self.cfg.normalize.w
         # output_dict = self.normalize_pred(output_dict, data)
-        # Transform camera prediction into the first frame
-        # output_dict["camera_extrs"] = output_dict["camera_extrs"] @ calc_extr_inv(output_dict["camera_extrs"][:, :1])
         
         ### Compute loss value
         ## Depth shape loss
-        ds_loss_value, depth_loss_details = self.ds_loss(output_dict, data, enable_conf=self.enable_conf, lower=1e-3)
+        ds_loss_value, depth_loss_details = self.ds_loss(output_dict, data, enable_conf=self.enable_conf, sup_rdepth=False)
         
         ## Point loss, disabled for self-sup learning
         if data.get("input_points_local", None) is not None:
@@ -733,17 +648,33 @@ class LossFunction(torch.nn.Module):
                 point_loss, point_loss_details, S_opt_local = self.point_loss(output_dict, data)
             else:
                 point_loss, point_loss_details = self.absolute_point_loss(output_dict, data, enable_conf=self.enable_conf)
-            # if self.full_weak_exclusive or "OmniObject3DNew" in data["dataset_names"] or "Objaverse" in data["dataset_names"]:
-            # if self.full_weak_exclusive or "Objaverse" in data["dataset_names"]:
             if self.full_weak_exclusive:
                 w_geometric = 0.0
-                w_dist = 0.0
+                w_dist      = 0.0
+                w_ds        = 0.0
+                w_intr      = 0.0
+                w_normal    = 0.0
+            # loss_scale    = 1.0 # supervised data
+            with_sq       = self.cfg.full_dist_with_sq
+            detach_camera = self.cfg.full_detach_camera
+            detach_depth  = self.cfg.full_detach_depth
         else:
             point_loss, S_opt_local = torch.tensor(0.0), None
-            w_extr = 0.0
-            w_point = 0.0
-            w_normalize = 0.0
-            # w_dist = 0.0 # Disable distance loss for unlabeled data.
+            w_ds        = self.cfg.depth_shape.w_weak
+            w_geometric = self.cfg.geometric.w_weak
+            w_normal    = self.cfg.normal.w_weak
+            w_dist      = self.cfg.dist.w_weak
+            w_intr      = self.cfg.camera_intr.w_weak
+            w_extr      = self.cfg.camera_extr.w_weak
+            w_point     = self.cfg.point.w_weak
+            w_normalize = self.cfg.normalize.w_weak
+            # loss_scale    = 1.0 # unsupervised data
+            with_sq       = self.cfg.weak_dist_with_sq
+            detach_camera = self.cfg.weak_detach_camera
+            detach_depth  = self.cfg.weak_detach_depth
+
+        if any(n in self.exclude_datasets_for_reliev3r for n in data["dataset_names"]):
+            w_geometric = w_normal = w_dist = 0
         
         ## Intrinsic loss
         intr_loss_value = self.intr_loss(output_dict, data)
@@ -758,25 +689,21 @@ class LossFunction(torch.nn.Module):
         normalize_loss_value = self.normalize_loss(output_dict, data)
         
         ## Geometric matching loss based on triagonal minimization
-        if self.enable_alternate_geometric_opt:
-            self.opt_flag = not self.opt_flag
-        detach_camera = self.enable_alternate_geometric_opt and not self.opt_flag or self.cfg.geometric.get("detach_camera", False)
-        detach_depth  = self.enable_alternate_geometric_opt and self.opt_flag
         geometric_loss_value, normal_loss_value, dist_loss_value, matching_info = \
-            self.geometric_loss(output_dict, data, detach_camera=detach_camera, detach_depth=detach_depth, use_scaled_points=False)
+            self.geometric_loss(output_dict, data, detach_camera=detach_camera, detach_depth=detach_depth, use_scaled_points=False, with_sq=with_sq)
         if self.norm_dist_loss:
             self.scale_points(output_dict, data, S_opt_local)
             _, _, dist_loss_value, _ = \
-                self.geometric_loss(output_dict, data, detach_camera=detach_camera, detach_depth=detach_depth, use_scaled_points=True)
+                self.geometric_loss(output_dict, data, detach_camera=detach_camera, detach_depth=detach_depth, use_scaled_points=True, with_sq=with_sq)
         
-        total_loss = (w_ds * ds_loss_value + 
+        total_loss = (w_ds        * ds_loss_value + 
                       w_geometric * geometric_loss_value + 
-                      w_normal * normal_loss_value + 
-                      w_dist * dist_loss_value + 
-                      w_point * point_loss + 
-                      w_intr * intr_loss_value + 
-                      w_extr * extr_loss_value + 
-                      w_normalize * normalize_loss_value)
+                      w_normal    * normal_loss_value + 
+                      w_dist      * dist_loss_value + 
+                      w_point     * point_loss + 
+                      w_intr      * intr_loss_value + 
+                      w_extr      * extr_loss_value + 
+                      w_normalize * normalize_loss_value)  # * loss_scale
         
         ### Return loss information
         loss_dict = {
@@ -784,7 +711,6 @@ class LossFunction(torch.nn.Module):
             "match_cosine":  geometric_loss_value, 
             "match_normal":  normal_loss_value, 
             "match_dist":    dist_loss_value, 
-            # "translation":   translation_loss_value,
             "intr_fov":      intr_loss_value, 
             "extr_rel":      extr_loss_value, 
             "extr_r":        extr_r_loss_value, 

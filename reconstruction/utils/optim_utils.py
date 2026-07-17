@@ -46,7 +46,7 @@ def create_optimizer(model: nn.Module, weight_decay, learning_rate, encoder_lr_r
 
     for name, param in model.named_parameters():
         if param.requires_grad:
-            if name.startswith('encoder.'):
+            if name.startswith('encoder.'):  # or name.startswith('project_'):
                 if nodecay(name, param): encoder_nodecay_params.append(param)
                 else: encoder_params.append(param)
             elif name == 'register_token' or name.startswith('decoder.'):
