@@ -1,8 +1,8 @@
 name: ours
 
 depth_shape:
-  w: 0.0
-  w_weak: 0.0
+  w: 1.0
+  w_weak: 1.0
   norm_depth: true
   detach_depth: false
   conf4grad: true

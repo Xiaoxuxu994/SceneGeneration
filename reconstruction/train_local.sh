@@ -5,14 +5,14 @@ export HCCL_OP_STATS=1
 export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
 export TASK_QUEUE_ENABLE=2
 export USE_CHECKPOINT=True
-export ASCEND_RT_VISIBLE_DEVICES=6
+export ASCEND_RT_VISIBLE_DEVICES=7
 export HYDRA_FULL_ERROR=1
 export pred_z_depth=True
 torchrun \
     --standalone \
     --nproc_per_node npu \
     train_ds.py \
-    --train_url outputs/toy_gtintr \
+    --train_url outputs/toy_wds_gtintr_32view_wofilter \
     --config configs/toy/stage3.yaml \
     --learning_rate 1e-2 \
     --deepspeed \

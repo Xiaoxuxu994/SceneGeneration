@@ -620,7 +620,8 @@ class Synthetic_Dataset(Base_Dataset):
                 all_data = self.aug_by_crop(all_data, crop_ratio=crop_ratio)
             max_image_size = MAX_IMAGE_SIZES[np.random.randint(0, len(MAX_IMAGE_SIZES))]
             all_data = self.prepare_data_for_dino_encode(all_data, max_size=max_image_size, patch_size=self.patch_size)
-            all_data = self.filter_top_depth(all_data, p=0.003)
+            all_data = self.filter_top_depth(all_data, p=0.)
+            # all_data = self.filter_top_depth(all_data, p=0.003)
             all_images = all_data["input_images"]
             all_depths = all_data["input_depths"]
             all_depth_masks = all_data["input_depth_masks"]
