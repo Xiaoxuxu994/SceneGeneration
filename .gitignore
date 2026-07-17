@@ -33,4 +33,4 @@ benchmark/*.json
 
 # models
 benchmark/models/*
-!benchmark/reliev3r
+!benchmark/models/reliev3r
