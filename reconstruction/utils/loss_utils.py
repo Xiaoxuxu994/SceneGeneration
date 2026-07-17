@@ -623,6 +623,7 @@ class LossFunction(torch.nn.Module):
         pr_global_points_dist = pr_global_points.norm(dim=-1).reshape(B, -1)
         point_scale = (pr_global_points_dist * 
                        valid_mask / (valid_mask.sum(dim=-1, keepdim=True) + 1e-8)).sum(dim=-1).mean()
+        # point_scale = pr_global_points_dist.mean(dim=-1)
         # point_scale = ClampLower.apply(point_scale, 0.2)
         # return ((point_scale - 1).abs().mean() + 
         #         (point_scale + 1 / (point_scale + 1e-8) - 2).mean()
@@ -665,8 +666,8 @@ class LossFunction(torch.nn.Module):
         else:
             point_loss, S_opt_local = torch.tensor(0.0), None
             w_normalize = 0.0
-            w_extr      = 0.0
             w_point     = 0.0
+            w_extr      = 0.0
             w_intr      = 0.0
             w_ds        = 0.0
             loss_scale    = 1.0 # unsupervised data

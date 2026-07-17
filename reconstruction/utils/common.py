@@ -6,6 +6,19 @@ from einops import rearrange
 from utils.platform import DEVICE_NAME
 
 
+class GradientMaskHook:
+    def __init__(self, action_type):
+        self.action_type = action_type
+    
+    def __call__(self, grad):
+        if self.action_type == "mask":
+            return torch.zeros_like(grad)
+        elif self.action_type == "pass":
+            return grad
+        else:
+            raise NotImplementedError("Not implemented hook type '{}'".format(self.action_type))
+
+
 def cross_prod(x: torch.Tensor, y: torch.Tensor):
     """
     Perform cross product between x and y, where the vector dimension is supposed to be on the last axis.

@@ -1,5 +1,5 @@
 weights:
-  pi3:      4 # supervised
+  pi3:      9 # supervised
   reliev3r: 1 # weakly-supervised
 
 dataloaders:

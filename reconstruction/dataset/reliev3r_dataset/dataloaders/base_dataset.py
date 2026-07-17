@@ -13,9 +13,9 @@ from utils.common import calc_extr_inv, calc_intr_inv, normalize_trans, depth2po
 from utils.loss_utils import samp_points_by_pixel
 
 VAL_RATIO = 0.02
-# MAX_IMAGE_SIZES = [518, 504, 490, 476, 462, 448, 434, 420]
+MAX_IMAGE_SIZES = [518, 504, 490, 476]
 # MAX_IMAGE_SIZES = [512]
-MAX_IMAGE_SIZES = [512, 496, 480, 464, 448]
+# MAX_IMAGE_SIZES = [512, 496, 480, 464, 448]
 # MAX_IMAGE_SIZES = [252, 238, 224, 210, 196]
 
 

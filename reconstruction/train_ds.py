@@ -25,7 +25,7 @@ from utils.image_utils import visualize_prediction
 from utils.optim_utils import create_optimizer, create_lr_scheduler
 from utils.log_utils import export_pcds_and_cam_as_ply
 from utils import make_loss_func
-from utils.common import normalize_trans, calc_extr_inv, localpoint2global
+from utils.common import normalize_trans, calc_extr_inv, localpoint2global, GradientMaskHook
 from dataset import Reliev3R_MixDataLoader
 
 from model import Reliev3R, Reliev3R_Pi3
@@ -175,7 +175,7 @@ def run(rank, cfg):
         _, client_state = engine.load_checkpoint(
             load_dir=cfg.get("ckpt_path"), 
             tag=cfg.get("ckpt_id"),
-            load_module_only=False, 
+            load_module_only=cfg.not_resume_step, 
             load_optimizer_states=not cfg.no_load_optim,
             load_lr_scheduler_states=not cfg.no_load_optim, 
             load_module_strict=cfg.strict_load, 

@@ -1,9 +1,0 @@
-/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/build/CMakeFiles/cnpy.dir
-/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/build/CMakeFiles/cnpy-static.dir
-/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/build/CMakeFiles/example1.dir
-/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/build/CMakeFiles/edit_cache.dir
-/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/build/CMakeFiles/rebuild_cache.dir
-/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/build/CMakeFiles/list_install_components.dir
-/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/build/CMakeFiles/install.dir
-/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/build/CMakeFiles/install/local.dir
-/home/chenzhenyu/03_projects/meta_intelligence/lib/cnpy/build/CMakeFiles/install/strip.dir
