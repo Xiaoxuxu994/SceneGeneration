@@ -45,8 +45,8 @@ ours:
 
 pi3:
   pos_type: rope100
-  model_size: dinov3_huge+_3.00Bv2
-  # model_size: dinov2_large_0.95B
+  model_size: dinov3_huge+_5Bv2
+  # model_size: dinov3_huge+_3.00Bv2
   depth_scaler:
     enabled: false
   point_head:

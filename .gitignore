@@ -10,6 +10,9 @@ __pycache__/
 *.egg-info/
 .vscode/
 
+# training outputs
+reconstruction/outputs/
+
 # benchmark
 # data
 benchmark/data/
@@ -22,8 +25,9 @@ benchmark/outputs*
 benchmark/experiments*
 
 # NPU-related
-benchmark/extra-info/
-benchmark/kernel_meta/
+extra-info/
+kernel_meta/
+fusion_result.json
 
 # cpp
 benchmark/lib/pcd_dist/

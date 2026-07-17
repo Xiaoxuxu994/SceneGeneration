@@ -28,7 +28,7 @@ from utils import make_loss_func
 from utils.common import normalize_trans, calc_extr_inv, localpoint2global, GradientMaskHook
 from dataset import Reliev3R_MixDataLoader
 
-from model import Reliev3R, Reliev3R_Pi3
+from model.reliev3r import Reliev3R, Reliev3R_Pi3
 import numpy as np
 import deepspeed
 import random

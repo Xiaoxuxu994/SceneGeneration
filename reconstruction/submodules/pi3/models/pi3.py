@@ -160,6 +160,12 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
                 mlp_ratio = 4
                 dec_depth = 36
                 head_depth = 6
+            elif model_size == '5Bv2':
+                dec_embed_dim=2560
+                dec_num_heads=32
+                mlp_ratio=4
+                dec_depth=56
+                head_depth=6
             else:
                 raise NotImplementedError
 

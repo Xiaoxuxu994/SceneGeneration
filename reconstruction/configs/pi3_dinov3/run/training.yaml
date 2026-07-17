@@ -6,7 +6,7 @@ warm_up_iterations: 2000
 eval_interval: 50
 learning_rate: 0.0001
 lr_scheduler: "cosine"
-optim_camera_only: true
+optim_camera_only: false
 start_epoch: 20
 
 optimizer:
