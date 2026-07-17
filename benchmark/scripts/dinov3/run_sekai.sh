@@ -23,8 +23,8 @@ source ./scripts/config/sekai/512x288.sh
 
 MODEL="pi3" # ['vggt','pi3','reliev3r']
 MODEL_SIZE="dinov3_huge+_5Bv2" #"dinov3_huge+_5Bv2" #"dinov3_huge+_3Bv2"
-CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0608_pi3_5Bv2_datamix_all_v9-5_randres_stage2_uploss/ckpts/model_ckpt31" 
-PREFIX="exp0608_pi3_5Bv2_datamix_all_v9-5_randres_stage2_uploss_ckpt31"
+CKPT="/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0608_pi3_5Bv2_datamix_all_v9-5_randres_stage2_uploss/ckpts/model_ckpt11" 
+PREFIX="exp0608_pi3_5Bv2_datamix_all_v9-5_randres_stage2_uploss_ckpt11"
 CONFIG=""
 
 # MODEL="pi3" # ['vggt','pi3','reliev3r']

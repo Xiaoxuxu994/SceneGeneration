@@ -1,29 +1,14 @@
 # Python
 __pycache__/
+
 # VScodes
 .vscode/
 .idea/
 
-ckpt/
-kernel_meta/
-extra-info/
-ops/dist/
-ops/build/
+
 */profiling/
-train_code/exp0417*
 *.egg-info/
-fusion_result.json
-__pycache__
 .vscode/
-test_result*
-data-dump
-
-datagen/data
-datagen/lib/AdaptiveSolvers*
-
-# ROMA
-roma/roma/code_upload.sh
-roma/roma/code_download.sh
 
 # benchmark
 # data
@@ -39,3 +24,13 @@ benchmark/experiments*
 # NPU-related
 benchmark/extra-info/
 benchmark/kernel_meta/
+
+# cpp
+benchmark/lib/pcd_dist/
+
+# files
+benchmark/*.json
+
+# models
+benchmark/models/*
+!benchmark/reliev3r

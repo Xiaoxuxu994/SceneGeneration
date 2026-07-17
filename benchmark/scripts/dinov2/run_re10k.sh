@@ -29,11 +29,11 @@ source ./scripts/config/re10k/518x294.sh
 # PREFIX="pi3_official"
 # CONFIG=""
 
-# MODEL="vggt" # ['vggt','pi3','reliev3r']
-# MODEL_SIZE=""
-# CONFIG="./ckpts/VGGT-1B/config.json"
-# CKPT="./ckpts/VGGT-1B/model.pt"
-# PREFIX="vggt_official"
+MODEL="vggt" # ['vggt','pi3','reliev3r']
+MODEL_SIZE=""
+CONFIG="./ckpts/VGGT-1B/config.json"
+CKPT="./ckpts/VGGT-1B/model.pt"
+PREFIX="vggt_official"
 
 # MODEL="vggt" # ['vggt','pi3','reliev3r']
 # CONFIG=""
@@ -41,11 +41,11 @@ source ./scripts/config/re10k/518x294.sh
 # CKPT="/mnt/nvme2/share/chenyouyu/codespace/vggt_sz_ft/epoch021-loss_valid0.1170-metric_valid0.0528.ckpt/pytorch_model.bin"
 # PREFIX="vggt_sz_final"
 
-MODEL="da3" # ['vggt','pi3','reliev3r']
-MODEL_SIZE=""
-CONFIG="./ckpts/depthanything3/config.json"
-CKPT="./ckpts/depthanything3"
-PREFIX="depthanything3"
+# MODEL="da3" # ['vggt','pi3','reliev3r']
+# MODEL_SIZE=""
+# CONFIG="./ckpts/depthanything3/config.json"
+# CKPT="./ckpts/depthanything3"
+# PREFIX="depthanything3"
 
 NPU_ID="7"
 DEVICE="npu:0"

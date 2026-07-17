@@ -5,7 +5,10 @@ samples/
 .vscode/
 checkpoints/
 debug/
+roma/
 outputs/
+outputs_2/
+outputs_3/
 
 # NPU-related
 extra-info/
