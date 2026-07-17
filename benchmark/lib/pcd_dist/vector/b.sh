@@ -1,0 +1,1 @@
+bash ./workspace/build.sh -r npu -v Ascend910B3 -n pcd_dist

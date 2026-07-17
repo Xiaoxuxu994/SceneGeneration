@@ -1,0 +1,8 @@
+dotted-dict
+open3d
+numpy==1.26.4
+evo
+torchvision==0.21.0
+small_gicp
+omegaconf
+deepspeed

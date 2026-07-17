@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_host"
+		},
+		{
+			"file" : "/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_host.rule"
+		},
+		{
+			"file" : "/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_host-complete.rule"
+		},
+		{
+			"file" : "/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-install.rule"
+		},
+		{
+			"file" : "/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-mkdir.rule"
+		},
+		{
+			"file" : "/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-download.rule"
+		},
+		{
+			"file" : "/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-update.rule"
+		},
+		{
+			"file" : "/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-patch.rule"
+		},
+		{
+			"file" : "/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-configure.rule"
+		},
+		{
+			"file" : "/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-build.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"ascendc_kernels_npu_pcd_dist_host"
+		],
+		"name" : "ascendc_kernels_npu_pcd_dist_host"
+	}
+}

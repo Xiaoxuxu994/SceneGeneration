@@ -1,0 +1,16 @@
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/install/strip.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_aiv_device.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_aic_device.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_preprocess.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_precompile.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_interface.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/install.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_host.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/edit_cache.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_host_stub_obj.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/rebuild_cache.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_merge_obj.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_pcd_dist.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/install/local.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist.dir
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/list_install_components.dir

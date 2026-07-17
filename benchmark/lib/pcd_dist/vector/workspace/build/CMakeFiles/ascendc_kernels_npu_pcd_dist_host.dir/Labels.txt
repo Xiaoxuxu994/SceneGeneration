@@ -1,0 +1,13 @@
+# Target labels
+ ascendc_kernels_npu_pcd_dist_host
+# Source files and their labels
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_host
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_host.rule
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/CMakeFiles/ascendc_kernels_npu_pcd_dist_host-complete.rule
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-install.rule
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-mkdir.rule
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-download.rule
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-update.rule
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-patch.rule
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-configure.rule
+/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/vector/workspace/build/ascendc_kernels_npu_pcd_dist_host-prefix/src/ascendc_kernels_npu_pcd_dist_host-stamp/ascendc_kernels_npu_pcd_dist_host-build.rule

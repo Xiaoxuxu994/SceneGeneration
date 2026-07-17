@@ -1,0 +1,4 @@
+# ninja log v7
+1	36356	1761010838408245750	/home/yyx/code/pcd_dist/ops/build/temp.linux-aarch64-cpython-310/kernel_pcd_dist.o	a4875d0943b0bd1d
+4	37911	1771984557241497180	/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/ops/build/temp.linux-aarch64-cpython-310/kernel_pcd_dist.o	7e89abe32f5b0433
+3	35919	1771987468581497180	/home/chenzhenyu/03_projects/SceneGeneration/benchmark/lib/pcd_dist/ops/build/temp.linux-aarch64-cpython-310/kernel_pcd_dist.o	96df71a48084aae0

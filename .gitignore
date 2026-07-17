@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+
+# VScodes
+.vscode/
+.idea/
+
+
+*/profiling/
+*.egg-info/
+.vscode/
+
+# benchmark
+# data
+benchmark/data/
+benchmark/samples/
+
+benchmark/.vscode/
+benchmark/checkpoints/
+benchmark/debug/
+benchmark/outputs*
+benchmark/experiments*
+
+# NPU-related
+benchmark/extra-info/
+benchmark/kernel_meta/
+
+# cpp
+benchmark/lib/pcd_dist/
+
+# files
+benchmark/*.json
+
+# models
+benchmark/models/*
+!benchmark/models/reliev3r

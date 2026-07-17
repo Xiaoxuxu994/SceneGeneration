@@ -41,6 +41,12 @@ This is the codebase of Reliev3R.
         |- dinov3_vith16plus
             |- dinov3_vith16plus_pretrain_lvd1689m-7c1da9a5.pth
     ```
+    > On ROMA, DINOv2 checkpoints will be automatically mounted from `checkpoints` on EFS to `ckpt` via symlink.
+
+### ROMA
+* Syncing up with the ROMA platform can be done by easily run `./roma/code_upload.sh` and `./roma/code_download.sh`. Before that, you should set up the account and bucket path accordingly in those two scripts.
+* Copy `roma/code_download_template.sh` to `roma/code_download.sh`. Change the parameters according to your own info.
+* Copy `roma/code_upload_template.sh` to `roma/code_upload.sh`. Change the parameters according to your own info.
 
 ## Quick Start
 

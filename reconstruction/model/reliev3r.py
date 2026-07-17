@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
-from submodules.pi3.models.pi3 import Pi3
+from ..submodules.pi3.models.pi3 import Pi3
 from utils.common import normalize_trans, pad_one, calc_extr_inv
 
 
@@ -51,13 +51,57 @@ class Reliev3R(nn.Module):
             raise NotImplementedError("Not implemented depth aligner type: {}".format(self.cfg.depth_aligner.type))
         
         return output_dict
+    
+    def _forward_eval(self, data):
+        img       = data["input_images"]
+
+        B, V, C, H, W = img.shape
+        pe_helper_global, pe_helper_local =  (None, None)
+        aligned_depth_dict = self.infer_aligned_depth(img, data["input_depths"], 
+                                                      pe_helper_global, pe_helper_local, f_px=None)
         
+        if self.cfg.get("decoder", None) is not None and self.cfg.decoder.camera_decoder.enabled:
+            if self.cfg.depth_aligner.type == "ours":
+                camera_tokens0 = self.camera_decoder(rearrange(aligned_depth_dict["aligned_depth_tokens"][-1], "b (v l) d -> (b v) l d", v=V))
+                assert H % 14 == 0 and W % 14 == 0
+                cameras0 = self.camera_head(camera_tokens0, patch_h=H//14, patch_w=W//14, v=V).reshape(B, V, 4, 4)
+            elif self.cfg.depth_aligner.type == "pi3":
+                cameras0 = aligned_depth_dict["camera_poses"]
+                camera_fovs = aligned_depth_dict["camera_fovs"]
+            else:
+                raise NotImplementedError("Not implemented depth aligner type '{}'".format(self.cfg.depth_aligner.type))
+            if self.cfg.decoder.camera_decoder.get("normalize_trans", False):
+                # print("before normalization: {}".format(cameras0.norm(dim=-1).mean(dim=-1).mean().item()))
+                cameras0 = normalize_trans(cameras0, detach_norm_factor=False)
+                # print("after normalization: {}".format(cameras0.norm(dim=-1).mean(dim=-1).mean().item()))
+        
+        output_dict = {
+            "mono_depths":      aligned_depth_dict["mono_depth"],         # Pseudo depth label
+            "depths":           aligned_depth_dict["aligned_depth"],      # Depth prediction
+            "depths_conf":      aligned_depth_dict["aligned_depth_conf"], # Predicted depth confidence
+            "scaled_depths":    aligned_depth_dict["scaled_depth"],       # Scaled depth prediction
+            "pred_depth_scale": aligned_depth_dict["depth_scales"],       # Predicted depth scale
+            "pred_depth_trans": aligned_depth_dict["depth_transs"],       # Predicted depth transition
+        }
+        if self.cfg.get("decoder", None) is not None and self.cfg.decoder.camera_decoder.enabled:
+            output_dict.update({
+                "camera_extrs": cameras0, # Camera pose prediction
+                "camera_fovs":  camera_fovs, # Camera field of view along x-axis and y-axis, tensor of shape b,v,2
+            })
+        
+        return output_dict
+    
     def forward(self, data):
         """Training time forward pass.
 
         Args:
             data (dict): Return from dataset.
         """
+        # if self.training:
+        #     return self._forward(data)
+        # else:
+        #     return self._forward_eval(data)
+        
         return self._forward(data)
     
     def infer_aligned_depth(self, imgs, pseudo_depth):
