@@ -3,12 +3,14 @@
 #
 # 用法：
 #   bash tools/run_gt_audit.sh smoke        # 2 个数据集 × 3 个样本，确认环境和数据路径
-#   bash tools/run_gt_audit.sh full         # 正式跑（前台）
-#   bash tools/run_gt_audit.sh full --bg    # 正式跑（后台，总日志写到 ${OUT}.log）
+#   bash tools/run_gt_audit.sh stats        # 只统计全部数据集的场景/序列/图像数，不做体检（快）
+#   bash tools/run_gt_audit.sh full         # 全部数据集：规模统计 + 几何体检（前台）
+#   bash tools/run_gt_audit.sh full --bg    # 同上，后台运行，总日志写到 ${OUT}.log
+# 找不到 data_root 的数据集会标为 PATH_NOT_FOUND 并跳过，不影响其他数据集。
 #
 # 可用环境变量覆盖：
-#   CONFIG=configs/data/datamix_all_v10-1.yaml
-#   DATASETS="Hypersim DL3DV"     # 设为 ALL 则跑 config 里 weights 的全部数据集
+#   CONFIG=configs/data/datamix_all_v9-5.yaml
+#   DATASETS="Hypersim DL3DV"     # 默认 ALL = config 里 weights 的全部数据集
 #   N=30  OUT=gt_audit_out  TAU=0.03
 #   PARALLEL=6                    # 同时跑几个数据集（每个数据集一个进程，日志在 ${OUT}/logs/）；1 = 串行
 set -euo pipefail
@@ -18,10 +20,8 @@ export PYTHONPATH="$(pwd)${PYTHONPATH:+:${PYTHONPATH}}"
 
 STAGE="${1:-smoke}"
 BG="${2:-}"
-CONFIG="${CONFIG:-configs/data/datamix_all_v10-1.yaml}"
+CONFIG="${CONFIG:-configs/data/datamix_all_v9-5.yaml}"
 TAU="${TAU:-0.03}"
-
-DEFAULT_DATASETS="Hypersim MatrixCity Scannetpp DL3DV CO3DV2 OmniObject3DNew ASE Unreal4k MVSSynth HY3DBench SAGE10K ScanNet ARKitScenes MegaDepth"
 
 case "${STAGE}" in
     smoke)
@@ -31,15 +31,22 @@ case "${STAGE}" in
         PARALLEL="${PARALLEL:-1}"
         EXTRA=(--verbose)
         ;;
+    stats)
+        DATASETS="${DATASETS:-ALL}"
+        N="${N:-0}"
+        OUT="${OUT:-gt_audit_stats}"
+        PARALLEL="${PARALLEL:-8}"
+        EXTRA=(--stats-only)
+        ;;
     full)
-        DATASETS="${DATASETS:-${DEFAULT_DATASETS}}"
+        DATASETS="${DATASETS:-ALL}"
         N="${N:-30}"
         OUT="${OUT:-gt_audit_out}"
         PARALLEL="${PARALLEL:-6}"
         EXTRA=(--raw-compare)
         ;;
     *)
-        echo "usage: bash tools/run_gt_audit.sh [smoke|full] [--bg]" >&2
+        echo "usage: bash tools/run_gt_audit.sh [smoke|stats|full] [--bg]" >&2
         exit 1
         ;;
 esac
@@ -69,7 +76,7 @@ else
         while [ "$(jobs -rp | wc -l)" -ge "${PARALLEL}" ]; do sleep 2; done
         echo "==> start ${ds}  (log: ${OUT}/logs/${ds}.log)"
         python tools/gt_audit.py "${COMMON[@]}" --datasets "${ds}" > "${OUT}/logs/${ds}.log" 2>&1 \
-            && echo "==> done  ${ds}: $(grep -m1 'cons=' "${OUT}/logs/${ds}.log" | sed 's/^ *//')" \
+            && echo "==> done  ${ds}: $(grep -m1 'status=' "${OUT}/logs/${ds}.log" | sed 's/^ *//')" \
             || echo "==> FAIL  ${ds}: see ${OUT}/logs/${ds}.log" &
     done
     wait

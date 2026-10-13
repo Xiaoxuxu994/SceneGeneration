@@ -20,10 +20,12 @@ GT 体检：用多视角重投影把"肉眼看着对"变成可比较的数字。
   [量纲]        depth p5/p50/p95、valid_ratio、相机基线/中位深度、R 的正交误差
   [失败率]      _get_views 抛异常的比例和前几条错误信息（训练时这些会被静默重试吞掉）
 
-用法（在 SceneGeneration 根目录）：
-    python tools/gt_audit.py --config configs/data/datamix_all_v10-1.yaml \
-        --datasets Hypersim MatrixCity Scannetpp DL3DV CO3DV2 OmniObject3DNew \
-        --n 30 --raw-compare --out gt_audit_out
+  [规模]        n_sequences / n_scenes / n_images（见 dataset_stats）
+  [状态]        PATH_NOT_FOUND / BUILD_ERROR / EMPTY / ALL_SAMPLES_FAILED / PARTIAL_FAIL / OK，出错不中断其他数据集
+
+用法（在 SceneGeneration 根目录；一键版见 tools/run_gt_audit.sh，计算流程见 tools/GT_AUDIT.md）：
+    python tools/gt_audit.py --stats-only                      # 只统计规模，默认 configs/data/datamix_all_v9-5.yaml
+    python tools/gt_audit.py --n 30 --raw-compare --out gt_audit_out
 不传 --datasets 时跑 config 里 weights 列出的全部数据集。
 """
 import argparse
@@ -198,6 +200,47 @@ def build_dataset(cfg_all, name, resolution, frames, mode, seed):
     return ds, cfg.get("z_far", 0) or getattr(ds, "z_far", 0)
 
 
+FRAME_KEYS = ("frame_ids", "frames_id", "view_ids", "frames_name")
+
+
+def dataset_stats(ds):
+    """
+    统计 loader 实际会用到的规模（已按 split_ratio 切分后的 train 部分）：
+      n_sequences : len(ds.sequences)，即 __len__，采样单位（一条轨迹 / 一个物体 / 一个注视点）
+      n_scenes    : ds.scene_to_path 里不同路径的个数；没有该字段时等于 n_sequences
+      n_images    : sum_seq len(ds.scene_meta[seq][<frame key>])，frame key 按 FRAME_KEYS 顺序取第一个存在的
+    """
+    seqs = list(getattr(ds, "sequences", []) or [])
+    meta = getattr(ds, "scene_meta", None)
+    s2p = getattr(ds, "scene_to_path", None)
+    counts, key_used = [], None
+    if meta is not None:
+        for sq in seqs:
+            try:
+                m = meta[sq]
+            except Exception:
+                continue
+            for k in FRAME_KEYS:
+                if k in m:
+                    counts.append(len(m[k]))
+                    key_used = key_used or k
+                    break
+    n_scenes = len(seqs)
+    if s2p is not None:
+        try:
+            n_scenes = len({str(s2p[sq]) for sq in seqs})
+        except Exception:
+            pass
+    return dict(
+        n_sequences=len(seqs), n_scenes=n_scenes,
+        n_images=int(sum(counts)) if counts else None,
+        frames_per_seq_median=float(np.median(counts)) if counts else None,
+        frames_per_seq_min=int(min(counts)) if counts else None,
+        frames_per_seq_max=int(max(counts)) if counts else None,
+        frame_key=key_used,
+    )
+
+
 _ORIG_THRESHOLD = None
 
 
@@ -253,10 +296,9 @@ def best_scale(depths, valids, Ks, c2ws, tau, stride):
     return best_s
 
 
-def audit_dataset(cfg_all, name, args):
+def audit_dataset(ds, z_far, name, args):
     t0 = time.time()
     resolution = tuple(args.res)
-    ds, z_far = build_dataset(cfg_all, name, resolution, args.frames, args.mode, args.seed)
     n_total = len(ds)
     idxs = np.unique(np.linspace(0, n_total - 1, min(args.n, n_total)).round().astype(int))
 
@@ -365,59 +407,133 @@ def audit_dataset(cfg_all, name, args):
     return out
 
 
+def run_one(cfg_all, name, args, weights):
+    """单个数据集：路径检查 -> 构建 -> 规模统计 -> （可选）几何体检。永不抛异常，结果里带 status。"""
+    t0 = time.time()
+    tot = sum(float(v) for v in weights.values()) or 1.0
+    row = dict(dataset=name, status="OK", error=None,
+               weight=float(weights.get(name, 0)), weight_pct=float(weights.get(name, 0)) / tot)
+    cfg = cfg_all.train_dataset[name]
+    root = cfg.get("data_root", None)
+    row["data_root"] = root
+    if root is None or not os.path.exists(str(root)):
+        row.update(status="PATH_NOT_FOUND", error=f"data_root 不存在: {root}")
+        return row
+    try:
+        ds, z_far = build_dataset(cfg_all, name, tuple(args.res), args.frames, args.mode, args.seed)
+    except Exception as e:
+        row.update(status="BUILD_ERROR", error=f"{type(e).__name__}: {str(e)[:300]}")
+        if args.verbose:
+            traceback.print_exc()
+        return row
+    row.update(dataset_stats(ds))
+    row["z_far"] = z_far
+    if args.stats_only or len(ds) == 0:
+        if len(ds) == 0:
+            row.update(status="EMPTY", error="len(dataset) == 0")
+        row["seconds"] = round(time.time() - t0, 1)
+        return row
+    try:
+        row.update(audit_dataset(ds, z_far, name, args))
+    except Exception as e:
+        row.update(status="AUDIT_ERROR", error=f"{type(e).__name__}: {str(e)[:300]}")
+        if args.verbose:
+            traceback.print_exc()
+    n_s, n_f = row.get("n_sampled", 0), row.get("n_fail", 0)
+    if row["status"] == "OK" and n_s and n_f == n_s:
+        row.update(status="ALL_SAMPLES_FAILED", error=(row.get("failures") or [""])[0])
+    elif row["status"] == "OK" and n_f:
+        row["status"] = f"PARTIAL_FAIL({n_f}/{n_s})"
+    row["seconds"] = round(time.time() - t0, 1)
+    return row
+
+
+def gv(r, k):
+    """nan-safe 取数：缺失或非数值都当 nan。"""
+    v = r.get(k)
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else float("nan")
+
+
 def flags(r):
     """把数字翻译成需要人看的结论。阈值是经验值，只用于排优先级。"""
     msg = []
-    if r["n_sampled"] and r["n_fail"] / r["n_sampled"] > 0.05:
-        msg.append(f"加载失败率 {r['n_fail']}/{r['n_sampled']}")
-    if np.isfinite(r["cons_if_ray2z"]) and r["cons_if_ray2z"] - r["cons"] > 0.05:
+    if gv(r, "n_sampled") > 0 and 0 < gv(r, "n_fail") < gv(r, "n_sampled") and gv(r, "n_fail") / gv(r, "n_sampled") > 0.05:
+        msg.append(f"加载失败率 {int(gv(r, 'n_fail'))}/{int(gv(r, 'n_sampled'))}")
+    if np.isfinite(gv(r, "cons_if_ray2z")) and gv(r, "cons_if_ray2z") - gv(r, "cons") > 0.05:
         msg.append("ray→z 后一致性明显变好：深度很可能是射线距离")
-    if np.isfinite(r["best_scale_median"]) and not (0.75 <= r["best_scale_median"] <= 1.34):
-        msg.append(f"深度与位姿尺度不一致，最佳缩放约 {r['best_scale_median']:.3g}")
-    if np.isfinite(r["viol"]) and r["viol"] > 0.10:
-        msg.append(f"自由空间违例 {r['viol']:.0%}：位姿或深度有系统误差")
-    if np.isfinite(r["edge_viol"]) and np.isfinite(r["flat_viol"]) and r["edge_viol"] > 3 * max(r["flat_viol"], 0.005) and r["edge_viol"] - r["flat_viol"] > 0.08:
-        msg.append(f"边缘飞点：edge viol {r['edge_viol']:.0%} vs flat {r['flat_viol']:.0%}")
-    if np.isfinite(r["mask_out_viol"]) and np.isfinite(r["mask_in_viol"]) and r["mask_out_viol"] > 2 * max(r["mask_in_viol"], 0.005):
-        msg.append(f"loader 自带 depth_mask 排除的像素更差（{r['mask_out_viol']:.0%} vs {r['mask_in_viol']:.0%}），应接入 valid_mask")
-    if np.isfinite(r["pct_removed"]) and r["pct_removed"] > 0.01 and np.isfinite(r["pct_removed_cons"]) and r["pct_removed_cons"] >= 0.8 * r["cons"]:
-        msg.append(f"98 分位截掉 {r['pct_removed']:.1%} 有效像素，且它们和保留像素一样一致：截断在删好数据")
-    if np.isfinite(r["frame_orth_err"]) and r["frame_orth_err"] > 1e-3:
+    if np.isfinite(gv(r, "best_scale_median")) and not (0.75 <= gv(r, "best_scale_median") <= 1.34):
+        msg.append(f"深度与位姿尺度不一致，最佳缩放约 {gv(r, 'best_scale_median'):.3g}")
+    if np.isfinite(gv(r, "viol")) and gv(r, "viol") > 0.10:
+        msg.append(f"自由空间违例 {gv(r, 'viol'):.0%}：位姿或深度有系统误差")
+    if np.isfinite(gv(r, "edge_viol")) and np.isfinite(gv(r, "flat_viol")) and gv(r, "edge_viol") > 3 * max(gv(r, "flat_viol"), 0.005) and gv(r, "edge_viol") - gv(r, "flat_viol") > 0.08:
+        msg.append(f"边缘飞点：edge viol {gv(r, 'edge_viol'):.0%} vs flat {gv(r, 'flat_viol'):.0%}")
+    if np.isfinite(gv(r, "mask_out_viol")) and np.isfinite(gv(r, "mask_in_viol")) and gv(r, "mask_out_viol") > 2 * max(gv(r, "mask_in_viol"), 0.005):
+        msg.append(f"loader 自带 depth_mask 排除的像素更差（{gv(r, 'mask_out_viol'):.0%} vs {gv(r, 'mask_in_viol'):.0%}），应接入 valid_mask")
+    if np.isfinite(gv(r, "pct_removed")) and gv(r, "pct_removed") > 0.01 and np.isfinite(gv(r, "pct_removed_cons")) and gv(r, "pct_removed_cons") >= 0.8 * gv(r, "cons"):
+        msg.append(f"98 分位截掉 {gv(r, 'pct_removed'):.1%} 有效像素，且它们和保留像素一样一致：截断在删好数据")
+    if np.isfinite(gv(r, "frame_orth_err")) and gv(r, "frame_orth_err") > 1e-3:
         msg.append("旋转矩阵非正交")
-    if np.isfinite(r["frame_det"]) and r["frame_det"] < 0:
+    if np.isfinite(gv(r, "frame_det")) and gv(r, "frame_det") < 0:
         msg.append("旋转矩阵行列式为负（镜像坐标系）")
-    if np.isfinite(r["frame_valid_ratio"]) and r["frame_valid_ratio"] < 0.1:
-        msg.append(f"有效像素中位数仅 {r['frame_valid_ratio']:.0%}")
+    if np.isfinite(gv(r, "frame_valid_ratio")) and gv(r, "frame_valid_ratio") < 0.1:
+        msg.append(f"有效像素中位数仅 {gv(r, 'frame_valid_ratio'):.0%}")
     return msg
 
 
+def _fmt(v, fmt, width=7):
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return f"{'-':>{width}}"
+    try:
+        return fmt.format(v)
+    except (ValueError, TypeError):
+        return f"{str(v):>{width}}"
+
+
 def print_table(rows):
-    cols = [("dataset", "{:<16}"), ("cons", "{:>6.1%}"), ("viol", "{:>6.1%}"),
-            ("cons_center", "{:>6.1%}"), ("cons_corner", "{:>6.1%}"), ("cons_if_ray2z", "{:>6.1%}"),
-            ("best_scale_median", "{:>7.3g}"), ("edge_viol", "{:>6.1%}"), ("flat_viol", "{:>6.1%}"),
-            ("pct_removed", "{:>6.1%}"), ("pct_removed_cons", "{:>6.1%}"),
-            ("frame_p50", "{:>7.2f}"), ("frame_valid_ratio", "{:>6.1%}"), ("n_fail", "{:>4d}")]
-    head = ["dataset", "cons", "viol", "ctr", "corner", "ray2z", "scale", "edgeV", "flatV",
-            "pctRm", "pctRmC", "d_p50", "valid", "fail"]
-    print("  ".join(f"{h:>7}" if i else f"{h:<16}" for i, h in enumerate(head)))
+    # 表 1：规模与状态
+    print("## 表 1  数据规模（train 切分后）与状态")
+    h1 = f"{'dataset':<16} {'status':<22} {'weight':>7} {'seqs':>8} {'scenes':>8} {'images':>11} {'img/seq':>8}"
+    print(h1)
     for r in rows:
-        cells = []
-        for (k, fmt), h in zip(cols, head):
-            v = r.get(k)
-            try:
-                cells.append(fmt.format(v) if v is not None and not (isinstance(v, float) and np.isnan(v)) else f"{'-':>7}")
-            except (ValueError, TypeError):
-                cells.append(f"{str(v):>7}")
-        print("  ".join(cells))
+        print(f"{r.get('dataset', ''):<16} {str(r.get('status', '')):<22} "
+              f"{_fmt(r.get('weight_pct'), '{:>7.1%}')} {_fmt(r.get('n_sequences'), '{:>8d}', 8)} "
+              f"{_fmt(r.get('n_scenes'), '{:>8d}', 8)} {_fmt(r.get('n_images'), '{:>11,d}', 11)} "
+              f"{_fmt(r.get('frames_per_seq_median'), '{:>8.0f}', 8)}")
+    ok = [r for r in rows if isinstance(r.get("n_images"), int)]
+    if ok:
+        print(f"{'TOTAL(found)':<16} {'':<22} {_fmt(sum(gv(r, 'weight_pct') for r in ok), '{:>7.1%}')} "
+              f"{sum(r.get('n_sequences') or 0 for r in ok):>8d} {sum(r.get('n_scenes') or 0 for r in ok):>8d} "
+              f"{sum(r['n_images'] for r in ok):>11,d}")
     print()
+
+    # 表 2：几何指标
+    audited = [r for r in rows if "cons" in r]
+    if audited:
+        print("## 表 2  几何体检指标")
+        cols = [("cons", "{:>6.1%}"), ("viol", "{:>6.1%}"),
+                ("cons_center", "{:>6.1%}"), ("cons_corner", "{:>6.1%}"), ("cons_if_ray2z", "{:>6.1%}"),
+                ("best_scale_median", "{:>7.3g}"), ("edge_viol", "{:>6.1%}"), ("flat_viol", "{:>6.1%}"),
+                ("mask_out_viol", "{:>6.1%}"), ("pct_removed", "{:>6.1%}"), ("pct_removed_cons", "{:>6.1%}"),
+                ("frame_p50", "{:>7.2f}"), ("frame_valid_ratio", "{:>6.1%}"), ("frame_det", "{:>6.2f}"), ("n_fail", "{:>4d}")]
+        head = ["cons", "viol", "ctr", "corner", "ray2z", "scale", "edgeV", "flatV", "mOutV",
+                "pctRm", "pctRmC", "d_p50", "valid", "det", "fail"]
+        print(f"{'dataset':<16}  " + "  ".join(f"{h:>7}" for h in head))
+        for r in audited:
+            print(f"{r['dataset']:<16}  " + "  ".join(_fmt(r.get(k), fmt) for k, fmt in cols))
+        print()
+
+    # 告警与错误
     for r in rows:
+        if r.get("status") not in (None, "OK") and r.get("error"):
+            print(f"[ERROR][{r['dataset']}] {r['status']}: {r['error']}")
+    for r in audited:
         for m in flags(r):
             print(f"[{r['dataset']}] {m}")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--config", default="configs/data/datamix_all_v10-1.yaml")
+    ap.add_argument("--config", default="configs/data/datamix_all_v9-5.yaml")
     ap.add_argument("--datasets", nargs="*", default=None, help="config 里 train_dataset 下的名字，默认 weights 全部")
     ap.add_argument("--n", type=int, default=30, help="每个数据集抽多少个样本")
     ap.add_argument("--frames", type=int, default=8)
@@ -430,6 +546,7 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="gt_audit_out")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--stats-only", action="store_true", help="只统计场景/序列/图像数量，不做几何体检（快）")
     ap.add_argument("--summarize", action="store_true", help="不跑数据，只汇总 --out 目录下已有的 <dataset>.json（并行跑完后用）")
     args = ap.parse_args()
 
@@ -445,27 +562,29 @@ def main():
         return
 
     cfg_all = load_cfg(args.config)
-    names = args.datasets or list(cfg_all.train_dataset.weights.keys())
+    weights = dict(cfg_all.train_dataset.weights)
+    names = args.datasets or list(weights.keys())
     os.makedirs(args.out, exist_ok=True)
 
     rows = []
     for name in names:
         if name not in cfg_all.train_dataset:
-            print(f"[skip] {name} 不在 config 的 train_dataset 里")
-            continue
-        print(f"==> {name}", flush=True)
-        try:
-            r = audit_dataset(cfg_all, name, args)
-        except Exception as e:
-            print(f"[{name}] 构建失败: {type(e).__name__}: {e}")
-            if args.verbose:
-                traceback.print_exc()
-            continue
+            r = dict(dataset=name, status="NOT_IN_CONFIG", error=f"{name} 不在 {args.config} 的 train_dataset 里")
+        else:
+            print(f"==> {name}", flush=True)
+            r = run_one(cfg_all, name, args, weights)
         rows.append(r)
         with open(os.path.join(args.out, f"{name}.json"), "w") as f:
             json.dump(r, f, ensure_ascii=False, indent=2, default=str)
-        print(f"    cons={r['cons']:.1%} viol={r['viol']:.1%} ray2z={r['cons_if_ray2z']:.1%} "
-              f"scale={r['best_scale_median']:.3g} fail={r['n_fail']}/{r['n_sampled']} ({r['seconds']}s)", flush=True)
+        line = (f"    status={r['status']} seqs={r.get('n_sequences', '-')} scenes={r.get('n_scenes', '-')} "
+                f"images={r.get('n_images', '-')}")
+        if "cons" in r:
+            line += (f" cons={gv(r, 'cons'):.1%} viol={gv(r, 'viol'):.1%} ray2z={gv(r, 'cons_if_ray2z'):.1%} "
+                     f"scale={gv(r, 'best_scale_median'):.3g} fail={r.get('n_fail')}/{r.get('n_sampled')}")
+        line += f" ({r.get('seconds', 0)}s)"
+        print(line, flush=True)
+        if r.get("error"):
+            print(f"    [ERROR] {r['status']}: {r['error']}", flush=True)
 
     print()
     print_table(rows)
