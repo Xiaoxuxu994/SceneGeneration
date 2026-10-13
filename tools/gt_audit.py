@@ -33,6 +33,7 @@ import os
 import sys
 import time
 import traceback
+import warnings
 
 import numpy as np
 
@@ -71,7 +72,8 @@ def depth_edge_np(depth, valid, rtol=0.03):
     p = np.pad(d, 1, mode="edge")
     H, W = depth.shape
     stack = np.stack([p[i:i + H, j:j + W] for i in range(3) for j in range(3)], axis=0)
-    with np.errstate(invalid="ignore", all="ignore"):
+    with np.errstate(all="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
         mx = np.nanmax(stack, axis=0)
         mn = np.nanmin(stack, axis=0)
         edge = (mx - mn) / np.maximum(depth, 1e-6) > rtol
@@ -428,7 +430,19 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="gt_audit_out")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--summarize", action="store_true", help="不跑数据，只汇总 --out 目录下已有的 <dataset>.json（并行跑完后用）")
     args = ap.parse_args()
+
+    if args.summarize:
+        rows = []
+        for fn in sorted(os.listdir(args.out)):
+            if fn.endswith(".json") and fn != "summary.json":
+                with open(os.path.join(args.out, fn)) as f:
+                    rows.append({k: (float("nan") if v is None else v) for k, v in json.load(f).items()})
+        print_table(rows)
+        with open(os.path.join(args.out, "summary.json"), "w") as f:
+            json.dump(rows, f, ensure_ascii=False, indent=2, default=str)
+        return
 
     cfg_all = load_cfg(args.config)
     names = args.datasets or list(cfg_all.train_dataset.weights.keys())
