@@ -8,7 +8,7 @@ GT 可视化 dump：把每个数据集的若干样本按"过滤前 / 诊断 / �
 和 tools/gt_audit.py 共用取样逻辑：同一 idx、同一 seed（seed·100003 + idx）=> 和体检看到的是同一组帧。
 
 输出目录：默认 <data_root>_vis/（与数据目录并列），每个样本一个子目录：
-    <data_root>_vis/<idx>_<label>/
+    <data_root>_vis/<idx>_<label>_f<帧数>_<W>x<H>/
         current.ply    现在训练用的点：loader 原样输出（含 98 分位截断、z_far），RGB 着色 + 相机
         diag.ply       诊断：关掉 98 分位截断后的全部有效点，按类别着色（见 COLORS）+ 相机
         filtered.ply   建议的过滤结果：去掉 违例 / 边缘 / depth_mask 外 的点，保留被分位截断误删的好点，RGB + 相机
@@ -341,10 +341,13 @@ def run_dataset(cfg_all, name, args):
     for idx in pick_indices(len(ds), args, name):
         t0 = time.time()
         try:
-            tmp = dump_sample(ds, z_far, name, idx, args, os.path.join(vis_root, f"{idx:07d}"))
+            # 临时目录带进程号：两个进程同时跑同一数据集也不会写进同一个目录
+            src = os.path.join(vis_root, f".tmp_{idx:07d}_{os.getpid()}")
+            tmp = dump_sample(ds, z_far, name, idx, args, src)
             label = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tmp["label"])[:60]
-            final = os.path.join(vis_root, f"{idx:07d}_{label}" if label else f"{idx:07d}")
-            src = os.path.join(vis_root, f"{idx:07d}")
+            # 目录名带帧数和分辨率：不同参数的运行互不覆盖
+            tag = f"f{args.frames}_{args.res[0]}x{args.res[1]}"
+            final = os.path.join(vis_root, "_".join(x for x in (f"{idx:07d}", label, tag) if x))
             if final != src:
                 if os.path.exists(final):
                     import shutil
@@ -360,7 +363,9 @@ def run_dataset(cfg_all, name, args):
                 traceback.print_exc()
 
     if rows:
-        keys = ["idx", "label", "baseline_over_depth", "n_zero_baseline_pairs", "n_pairs", "median_depth",
+        for r in rows:
+            r["n_frames"], r["resolution"] = len(r["frames"]), f"{r['resolution'][0]}x{r['resolution'][1]}"
+        keys = ["idx", "label", "n_frames", "resolution", "baseline_over_depth", "n_zero_baseline_pairs", "n_pairs", "median_depth",
                 "frac_viol", "frac_mask_out", "frac_edge", "frac_pct_removed", "valid_pixels_current", "valid_pixels_no_pct"]
         p = os.path.join(vis_root, "index.csv")
         new = not os.path.exists(p)

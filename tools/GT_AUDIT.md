@@ -129,7 +129,7 @@ VIS_OUT_ROOT=./gt_vis_local bash tools/run_gt_audit.sh vis       # 不写到数�
 python tools/gt_vis_dump.py --datasets Hypersim --idx 0 61       # 指定样本
 ```
 
-输出到 `<data_root>_vis/<idx>_<label>/`（没有写权限时退回 `./gt_vis_out/<dataset>_vis/`）：
+输出到 `<data_root>_vis/<idx>_<label>_f<帧数>_<W>x<H>/`（没有写权限时退回 `./gt_vis_out/<dataset>_vis/`）：
 
 | 文件 | 内容 | 用来看什么 |
 |---|---|---|
