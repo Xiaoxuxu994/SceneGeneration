@@ -117,3 +117,28 @@ rel   = (z − d_j) / d_j
 | 加载失败 | 失败率 > 5%（全部失败时状态为 `ALL_SAMPLES_FAILED`） |
 
 在解析渲染的合成场景上做过自测（注入射线距离、深度 ×0.01、位姿错配、边缘飞点）：干净场景不触发告警，每种注入的 bug 都只触发对应的告警。
+
+## 9. 3D 可视化 dump（`tools/gt_vis_dump.py`）
+
+用 MeshLab / CloudCompare / Open3D 打开，肉眼确认上面的指标。和体检用同一 idx、同一 seed，看到的是同一组帧。
+
+```bash
+bash tools/run_gt_audit.sh vis                                   # 全部数据集：体检最差 2 个 + 均匀 2 个样本
+DATASETS="Matterport3D DL3DV Wildrgbd" N=1 bash tools/run_gt_audit.sh vis
+VIS_OUT_ROOT=./gt_vis_local bash tools/run_gt_audit.sh vis       # 不写到数据目录旁
+python tools/gt_vis_dump.py --datasets Hypersim --idx 0 61       # 指定样本
+```
+
+输出到 `<data_root>_vis/<idx>_<label>/`（没有写权限时退回 `./gt_vis_out/<dataset>_vis/`）：
+
+| 文件 | 内容 | 用来看什么 |
+|---|---|---|
+| `current.ply` | 现在训练用的点（含 98 分位截断、z_far），RGB + 相机 | 训练实际看到的几何 |
+| `diag.ply` | 关掉分位截断后的全部有效点，按类别着色 + 相机 | 问题点在哪里 |
+| `filtered.ply` | 去掉违例 / 边缘 / mask 外，保留被截断误删的点，RGB + 相机 | 建议过滤后的效果 |
+| `cameras.ply` | 只有相机视锥（第一帧红 → 最后一帧蓝）+ 相机中心连线（黄） | 基线 / 视差：视锥挤在一起、黄线很短 = 视差不足 |
+| `frames.png` | 每帧一行：RGB \| 当前深度 \| 诊断类别图 | 2D 上快速定位 |
+| `stats.json` / `index.csv` | 基线/深度比、零基线帧对数、各类别像素占比 | 与体检数字对照 |
+
+诊断颜色（互斥，优先级从高到低）：品红 = 自由空间违例（违例次数 ≥ 一致次数）；青 = depth_mask 外；红 = 边缘；黄 = 被 98 分位截掉；其余为原 RGB。
+视锥大小默认 0.08 × 深度中位数（`--cam-scale` 可改），文件太大时用 `--point-stride 2`。
