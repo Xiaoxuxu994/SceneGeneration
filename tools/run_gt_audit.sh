@@ -81,5 +81,5 @@ else
     done
     wait
     echo
-    python tools/gt_audit.py --summarize --out "${OUT}"
+    python tools/gt_audit.py --summarize --config "${CONFIG}" --out "${OUT}"
 fi

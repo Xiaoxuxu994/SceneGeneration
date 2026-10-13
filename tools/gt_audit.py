@@ -551,8 +551,15 @@ def main():
     args = ap.parse_args()
 
     if args.summarize:
+        # 只汇总当前 config 里的数据集，避免同一 --out 目录里残留的旧结果（其他 config 的数据集）混进来
+        try:
+            keep = set(load_cfg(args.config).train_dataset.weights.keys())
+        except Exception:
+            keep = None
         rows = []
         for fn in sorted(os.listdir(args.out)):
+            if keep is not None and fn[:-5] not in keep:
+                continue
             if fn.endswith(".json") and fn != "summary.json":
                 with open(os.path.join(args.out, fn)) as f:
                     rows.append({k: (float("nan") if v is None else v) for k, v in json.load(f).items()})
