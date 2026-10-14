@@ -3,6 +3,10 @@
 脚本：`tools/quality_eval.py`（评估）、`tools/calibrate_thresholds.py`（阈值校准）；指标实现：`utils/quality_metrics.py`；
 一键入口：`tools/run_quality_eval.sh`。指标定义和公式见报告"质量指标定义"一页。
 M1–M7 只用标签自身的深度、内参、位姿，不需要真值；G1（AbsRel_kept、Sel、GTCov）和阈值校准需要真值。
+
+讲解和日常查看用精简口径：**3 个核心指标**（违例率 = M1 FSV、可用率 = M3 VPR、视差 = M5 TRI，决定分档）
+\+ **2 项检查**（尺度 = M4，只报 OK/FAIL；边界 = M6，边界违例率是内部的几倍，> 10 倍需处理）
+\+ **1 个方法**（规则评估 = M7，删掉的像素比保留的脏几倍）。M2 MVC 只放完整表。终端默认打印精简表，`--full` 打印完整表。
 全程只读，不改任何 loader；`dataset` 模式和 `gt_audit.py` 用同一套取样（同一 idx、同一 seed）。
 
 ## 一键运行
@@ -36,7 +40,8 @@ THRESHOLDS=calib.json ROOT=/path/to/pseudo bash tools/run_quality_eval.sh pseudo
 |---|---|---|
 | dataset | `<数据集>.json` | 汇总指标、数据集档位、样本档位分布、M7（`depth_mask` / `percentile98` 两条规则） |
 | dataset | `<数据集>_samples.jsonl` | 逐样本指标、档位、原因 |
-| dataset | `summary.json` | 全部数据集一张表（终端同时打印 TSV，可直接贴 Excel） |
+| dataset | `summary.json` | 全部数据集一张表 |
+| dataset | `summary_compact.tsv` / `summary_full.tsv` | 精简表（终端默认打印）/ 完整表，可直接贴 Excel |
 | pseudo | `sequences.jsonl` | 逐序列指标、档位、原因、G1（有 gt_depth 时）、M7（`CONF_THR` 时） |
 | pseudo | `summary.json` | 档位分布、指标中位数、pooled G1 |
 | pseudo | `masks/<序列>/<帧>.npz` | `SAVE_MASKS=1` 时：verified / viol / boundary 逐像素掩码 |

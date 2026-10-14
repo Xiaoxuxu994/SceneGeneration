@@ -23,7 +23,8 @@
    一键脚本见 tools/run_quality_eval.sh。
 
 输出（--out 目录）：
-  dataset 模式：<数据集>.json（汇总 + 分档统计）、<数据集>_samples.jsonl（逐样本）
+  dataset 模式：<数据集>.json（汇总 + 分档统计）、<数据集>_samples.jsonl（逐样本）、
+               summary.json、summary_compact.tsv（违例率 / 可用率 / 视差 + 尺度 / 边界检查）、summary_full.tsv（全部指标）
   pseudo  模式：sequences.jsonl（逐序列：指标、分档、原因、G1）、summary.json；--save-masks 时 masks/<序列>/<帧>.npz
 """
 import argparse
@@ -174,16 +175,21 @@ def run_dataset_mode(args, cfg, thresholds):
               f"tri={agg.get('tri_angle_median', float('nan')):.2f}° drift={agg.get('drift', float('nan')):.3f} "
               f"bfr={agg.get('bfr', float('nan')):.1f} grade={g} ({row['seconds']}s)", flush=True)
     if not args.no_summary:
-        write_dataset_summary(table, args.out)
+        write_dataset_summary(table, args.out, args.full)
 
 
-def write_dataset_summary(table, out):
-    print_table(table, key="dataset")
+def write_dataset_summary(table, out, full=False):
+    """终端打印精简表（--full 打印完整表）；完整表总是另存为 summary_full.tsv，可直接贴 Excel。"""
+    print_table(table, key="dataset", full=full)
+    with open(os.path.join(out, "summary_full.tsv"), "w") as f:
+        f.write("\n".join(table_lines(table, "dataset", full=True)) + "\n")
+    with open(os.path.join(out, "summary_compact.tsv"), "w") as f:
+        f.write("\n".join(table_lines(table, "dataset", full=False)) + "\n")
     with open(os.path.join(out, "summary.json"), "w") as f:
         json.dump(table, f, ensure_ascii=False, indent=2, default=_json_default)
 
 
-def summarize_dataset_dir(out, names=None):
+def summarize_dataset_dir(out, names=None, full=False):
     """并行跑完（每个数据集一个进程）后，把 <out>/<数据集>.json 合并成一张表。"""
     if not names:
         names = sorted(os.path.splitext(os.path.basename(p))[0] for p in glob.glob(os.path.join(out, "*.json"))
@@ -196,7 +202,7 @@ def summarize_dataset_dir(out, names=None):
                 table.append(json.load(f))
         else:
             table.append(dict(dataset=name, status="NO_RESULT"))
-    write_dataset_summary(table, out)
+    write_dataset_summary(table, out, full)
 
 
 # ---------------------------------------------------------------------------
@@ -331,17 +337,66 @@ def _fmt(v, f):
         return str(v)
 
 
-def print_table(rows, key="dataset"):
-    cols = [("fsv", "{:.2%}"), ("mvc", "{:.1%}"), ("vpr", "{:.1%}"), ("best_scale", "{:.3g}"), ("drift", "{:.3f}"),
-            ("tri_angle_median", "{:.2f}"), ("baseline_over_depth", "{:.3f}"), ("bfr", "{:.1f}"), ("valid_ratio", "{:.1%}")]
-    head = [key, "status", "grade"] + [c for c, _ in cols] + ["A/B/C/rej"]
-    print("\n" + "\t".join(head))
+FULL_COLS = [("fsv", "{:.2%}"), ("mvc", "{:.1%}"), ("vpr", "{:.1%}"), ("best_scale", "{:.3g}"), ("drift", "{:.3f}"),
+             ("tri_angle_median", "{:.2f}"), ("baseline_over_depth", "{:.3f}"), ("bfr", "{:.1f}"), ("valid_ratio", "{:.1%}")]
+
+
+def _grade_dist(r):
+    sg = r.get("sample_grades", {})
+    return "/".join(str(sg.get(g, {}).get("count", 0)) for g in ("A", "B", "C", "reject")) if sg else "-"
+
+
+def scale_check(m, thresholds=None):
+    """尺度检查（M4 合成一项）：s* 在 usable 区间内且 drift 不超过 usable 上限 → OK。"""
+    th = dict(Q.DEFAULT_THRESHOLDS if thresholds is None else thresholds)
+    bs, dr = m.get("best_scale"), m.get("drift")
+    if bs is None and (dr is None or not np.isfinite(dr)):
+        return "-"
+    bad = []
+    if bs is not None and np.isfinite(bs):
+        lo, hi = th["best_scale"][2]
+        if not lo <= bs <= hi:
+            bad.append(f"s*={bs:.3g}")
+    if dr is not None and np.isfinite(dr) and dr > th["drift"][2]:
+        bad.append(f"drift={dr:.2f}")
+    return "OK" if not bad else "FAIL(" + ",".join(bad) + ")"
+
+
+def boundary_check(m):
+    """边界检查（M6）：边界违例率是内部的几倍；> BFR_HANDLE 时需要边界处理。"""
+    b = m.get("bfr")
+    if b is None or not np.isfinite(b):
+        return "-"
+    return f"{b:.1f}x" + (" 需处理" if b > Q.BFR_HANDLE else "")
+
+
+def table_lines(rows, key="dataset", full=False):
+    if full:
+        head = [key, "status", "grade"] + [c for c, _ in FULL_COLS] + ["A/B/C/rej"]
+        lines = ["\t".join(head)]
+        for r in rows:
+            m = r.get("metrics", {}) or {}
+            lines.append("\t".join([str(r.get(key, "")), str(r.get("status", "")),
+                                    str(r.get("dataset_grade", r.get("grade", "")))]
+                                   + [_fmt(m.get(c), f) for c, f in FULL_COLS] + [_grade_dist(r)]))
+        return lines
+    # 精简视图：3 个核心指标（违例率 / 可用率 / 视差）+ 2 项检查（尺度 / 边界）+ 档位
+    head = [key, "status", "档位", "违例率", "可用率", "视差°", "尺度", "边界", "A/B/C/rej", "原因"]
+    lines = ["\t".join(head)]
     for r in rows:
         m = r.get("metrics", {}) or {}
-        sg = r.get("sample_grades", {})
-        dist = "/".join(str(sg.get(g, {}).get("count", 0)) for g in ("A", "B", "C", "reject")) if sg else "-"
-        print("\t".join([str(r.get(key, "")), str(r.get("status", "")), str(r.get("dataset_grade", r.get("grade", "")))]
-                        + [_fmt(m.get(c), f) for c, f in cols] + [dist]))
+        ok = bool(m)
+        lines.append("\t".join([str(r.get(key, "")), str(r.get("status", "")),
+                                str(r.get("dataset_grade", r.get("grade", ""))),
+                                _fmt(m.get("fsv"), "{:.2%}"), _fmt(m.get("vpr"), "{:.1%}"),
+                                _fmt(m.get("tri_angle_median"), "{:.1f}"),
+                                scale_check(m) if ok else "-", boundary_check(m) if ok else "-",
+                                _grade_dist(r), "; ".join(r.get("reasons", []) or [])]))
+    return lines
+
+
+def print_table(rows, key="dataset", full=False):
+    print("\n" + "\n".join(table_lines(rows, key, full)))
 
 
 def main():
@@ -358,6 +413,7 @@ def main():
     common.add_argument("--thresholds", default=None, help="calibrate_thresholds.py 输出的 json")
     common.add_argument("--seed", type=int, default=0)
     common.add_argument("--verbose", action="store_true")
+    common.add_argument("--full", action="store_true", help="终端打印完整指标表（默认只打印 3 个核心指标 + 2 项检查）")
 
     d = sub.add_parser("dataset", parents=[common], help="训练数据集（GT 体检）")
     d.add_argument("--config", default="configs/data/datamix_all_v9-5.yaml")
@@ -371,6 +427,7 @@ def main():
     sm = sub.add_parser("summarize", help="合并 dataset 模式的 <out>/<数据集>.json 为 summary.json")
     sm.add_argument("--out", default="quality_out")
     sm.add_argument("--datasets", nargs="*", default=None, help="按此顺序列出；缺结果的标 NO_RESULT")
+    sm.add_argument("--full", action="store_true", help="打印完整指标表")
 
     p = sub.add_parser("pseudo", parents=[common], help="伪标签目录（每帧一个 npz）")
     p.add_argument("--root", required=True)
@@ -381,7 +438,7 @@ def main():
     p.add_argument("--save-masks", action="store_true", help="保存每帧的 verified / viol / boundary 掩码")
     args = ap.parse_args()
     if args.cmd == "summarize":
-        summarize_dataset_dir(args.out, args.datasets)
+        summarize_dataset_dir(args.out, args.datasets, args.full)
         return
 
     overrides, thresholds = load_thresholds(args.thresholds)
