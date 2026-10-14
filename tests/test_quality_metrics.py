@@ -120,6 +120,21 @@ def test_static_camera_rotation_only():
     assert not np.isfinite(m["tri_angle_median"]) or m["tri_angle_median"] < 0.5
     g, reasons, bands = Q.grade(m)
     assert "best_scale" not in bands          # 视差不足时 s* 不参与判定
+    assert g == "U", (g, reasons)             # 纯旋转：无法验证
+
+
+def test_grade_separates_unverifiable_from_wrong():
+    base = dict(fsv=0.005, vpr=0.8, drift=0.0, tri_angle_median=5.0, valid_ratio=0.9, best_scale=1.0)
+    assert Q.grade(base)[0] == "A"
+    assert Q.grade({**base, "tri_angle_median": 0.5})[0] == "U"          # 视差不足：无法验证，不是错
+    assert Q.grade({**base, "valid_ratio": 0.02})[0] == "U"              # 物体太小
+    assert Q.grade({**base, "vpr": 0.1})[0] == "U"
+    assert Q.grade({**base, "tri_angle_median": 0.5, "fsv": 0.3})[0] == "reject"   # 违例照样判错
+    # s=1 已经自洽时 s* 偏离 1 视为不可观测（远景 / 小基线），不判错
+    g, reasons, bands = Q.grade({**base, "best_scale": 0.3})
+    assert g == "A" and "best_scale" not in bands and any("ill-conditioned" in r for r in reasons)
+    # s=1 时大量违例、s* 明显偏离：真的尺度错
+    assert Q.grade({**base, "best_scale": 0.5, "fsv": 0.18})[0] == "reject"
 
 
 def test_filter_fidelity():

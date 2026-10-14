@@ -62,10 +62,13 @@ def load_thresholds(path):
     return {k: d[k] for k in ("tau", "k_verify", "min_tri_deg") if k in d}, ({**Q.DEFAULT_THRESHOLDS, **th} if th else None)
 
 
+GRADES = ("A", "B", "C", "U", "reject")   # U = 无法验证（视差 / 有效像素 / 可验证像素不足），不等于标签错
+
+
 def summarize_grades(rows):
     c = Counter(r["grade"] for r in rows)
     n = max(len(rows), 1)
-    return {g: {"count": c.get(g, 0), "frac": c.get(g, 0) / n} for g in ("A", "B", "C", "reject")}
+    return {g: {"count": c.get(g, 0), "frac": c.get(g, 0) / n} for g in GRADES}
 
 
 def compact(m):
@@ -187,6 +190,38 @@ def write_dataset_summary(table, out, full=False):
         f.write("\n".join(table_lines(table, "dataset", full=False)) + "\n")
     with open(os.path.join(out, "summary.json"), "w") as f:
         json.dump(table, f, ensure_ascii=False, indent=2, default=_json_default)
+
+
+def regrade_dataset_dir(out, names=None, thresholds=None, full=False):
+    """不重跑数据：用 <数据集>_samples.jsonl 里保存的逐样本指标和 <数据集>.json 里的汇总指标，按当前分档规则重新分档。
+    原档位保存在 grade_prev / dataset_grade_prev。"""
+    if not names:
+        names = sorted(os.path.splitext(os.path.basename(p))[0] for p in glob.glob(os.path.join(out, "*.json"))
+                       if os.path.basename(p) != "summary.json")
+    for name in names:
+        p = os.path.join(out, f"{name}.json")
+        if not os.path.exists(p):
+            continue
+        with open(p) as f:
+            row = json.load(f)
+        if row.get("status") != "OK":
+            continue
+        sp = os.path.join(out, f"{name}_samples.jsonl")
+        samples = []
+        if os.path.exists(sp):
+            with open(sp) as f:
+                samples = [json.loads(l) for l in f if l.strip()]
+            for r in samples:
+                r.setdefault("grade_prev", r["grade"])
+                r["grade"], r["reasons"], _ = Q.grade(r["metrics"], thresholds)
+            with open(sp, "w") as f:
+                for r in samples:
+                    f.write(json.dumps(r, ensure_ascii=False, default=_json_default) + "\n")
+        row.setdefault("dataset_grade_prev", row.get("dataset_grade"))
+        row["dataset_grade"], row["reasons"], _ = Q.grade(row["metrics"], thresholds)
+        row["sample_grades"] = summarize_grades(samples)
+        _dump_row(out, row)
+    summarize_dataset_dir(out, names, full)
 
 
 def summarize_dataset_dir(out, names=None, full=False):
@@ -343,7 +378,7 @@ FULL_COLS = [("fsv", "{:.2%}"), ("mvc", "{:.1%}"), ("vpr", "{:.1%}"), ("best_sca
 
 def _grade_dist(r):
     sg = r.get("sample_grades", {})
-    return "/".join(str(sg.get(g, {}).get("count", 0)) for g in ("A", "B", "C", "reject")) if sg else "-"
+    return "/".join(str(sg.get(g, {}).get("count", 0)) for g in GRADES) if sg else "-"
 
 
 def scale_check(m, thresholds=None):
@@ -355,7 +390,10 @@ def scale_check(m, thresholds=None):
     bad = []
     if bs is not None and np.isfinite(bs):
         lo, hi = th["best_scale"][2]
+        fsv = m.get("fsv")
         if not lo <= bs <= hi:
+            if fsv is not None and np.isfinite(fsv) and fsv <= tuple(th["fsv"])[2]:
+                return f"不可观测(s*={bs:.3g})"   # s=1 已自洽，s* 偏离只说明对尺度不敏感，见 Q.grade
             bad.append(f"s*={bs:.3g}")
     if dr is not None and np.isfinite(dr) and dr > th["drift"][2]:
         bad.append(f"drift={dr:.2f}")
@@ -372,7 +410,7 @@ def boundary_check(m):
 
 def table_lines(rows, key="dataset", full=False):
     if full:
-        head = [key, "status", "grade"] + [c for c, _ in FULL_COLS] + ["A/B/C/rej"]
+        head = [key, "status", "grade"] + [c for c, _ in FULL_COLS] + ["A/B/C/U/rej"]
         lines = ["\t".join(head)]
         for r in rows:
             m = r.get("metrics", {}) or {}
@@ -381,7 +419,7 @@ def table_lines(rows, key="dataset", full=False):
                                    + [_fmt(m.get(c), f) for c, f in FULL_COLS] + [_grade_dist(r)]))
         return lines
     # 精简视图：3 个核心指标（违例率 / 可用率 / 视差）+ 2 项检查（尺度 / 边界）+ 档位
-    head = [key, "status", "档位", "违例率", "可用率", "视差°", "尺度", "边界", "A/B/C/rej", "原因"]
+    head = [key, "status", "档位", "违例率", "可用率", "视差°", "尺度", "边界", "A/B/C/U/rej", "原因"]
     lines = ["\t".join(head)]
     for r in rows:
         m = r.get("metrics", {}) or {}
@@ -429,6 +467,12 @@ def main():
     sm.add_argument("--datasets", nargs="*", default=None, help="按此顺序列出；缺结果的标 NO_RESULT")
     sm.add_argument("--full", action="store_true", help="打印完整指标表")
 
+    rg = sub.add_parser("regrade", help="不重跑数据，按当前分档规则重新给 dataset 模式的结果分档")
+    rg.add_argument("--out", default="quality_out")
+    rg.add_argument("--datasets", nargs="*", default=None)
+    rg.add_argument("--thresholds", default=None)
+    rg.add_argument("--full", action="store_true")
+
     p = sub.add_parser("pseudo", parents=[common], help="伪标签目录（每帧一个 npz）")
     p.add_argument("--root", required=True)
     p.add_argument("--window-stride", type=int, default=None, help="窗口起点间隔，默认 = frames（不重叠）")
@@ -439,6 +483,9 @@ def main():
     args = ap.parse_args()
     if args.cmd == "summarize":
         summarize_dataset_dir(args.out, args.datasets, args.full)
+        return
+    if args.cmd == "regrade":
+        regrade_dataset_dir(args.out, args.datasets, load_thresholds(args.thresholds)[1], args.full)
         return
 
     overrides, thresholds = load_thresholds(args.thresholds)

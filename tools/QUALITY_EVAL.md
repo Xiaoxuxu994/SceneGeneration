@@ -49,8 +49,14 @@ THRESHOLDS=calib.json ROOT=/path/to/pseudo bash tools/run_quality_eval.sh pseudo
 
 ## 分档
 
-每项指标按阈值分为 good / usable / marginal / reject，序列档位：任一项 reject → reject；全部 good → A；
-全部不差于 usable → B；否则 C。`reasons` 列出所有未达 good 的项。视差不足时 `best_scale` 不参与判定。
+每项指标按阈值分为 good / usable / marginal / reject。序列档位：
+- **reject**（标签有错）：违例率、drift，或可观测时的尺度，任一项 reject；
+- **U**（无法验证）：视差、有效像素比例或可用率不足，且没有触发 reject。说明"验证不了"，不等于标签错；
+- **A / B / C**：全部 good / 全部不差于 usable / 其他。
+
+尺度 s\* 在视差不足时不参与判定；s = 1 时已经自洽（违例率 ≤ 5%）而 s\* 偏离 1，也视为不可观测
+（远景、小基线下一致点数对尺度不敏感），不判错。`reasons` 列出所有未达 good 的项。
+改了分档规则后不必重跑数据：`python tools/quality_eval.py regrade --out quality_out` 按新规则重新分档（原档位存在 `grade_prev`）。
 M6 BFR 不参与分档：> 10 时对该数据集开启边界处理（分母设 1% 下限，干净数据约 4–5）。
 
 | 指标 | good | usable | reject |

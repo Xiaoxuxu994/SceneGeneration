@@ -36,6 +36,7 @@ __all__ = [
     "subset_stats", "filter_fidelity", "boundary_mask", "legacy_edge_mask",
     "best_scale", "gt_metrics", "teacher_agreement", "grade",
     "DEFAULT_THRESHOLDS",
+    "UNVERIFIABLE_KEYS",
 ]
 
 
@@ -501,11 +502,18 @@ def _band(value, rule) -> str:
     return "reject" if (value < lo_r or value > hi_r) else "marginal"
 
 
+# 判定"无法验证"的指标：视差不足、有效像素太少、可验证像素太少时，只能说"验证不了"，不能说"标签错"。
+UNVERIFIABLE_KEYS = ("tri_angle_median", "valid_ratio", "vpr")
+
+
 def grade(metrics: Dict, thresholds: Optional[Dict] = None, skip: Sequence[str] = ()) -> Tuple[str, List[str], Dict[str, str]]:
     """
-    序列分档：任一项 reject → "reject"；全部 good → "A"；全部不差于 usable → "B"；否则 "C"。
-    视差不足（tri reject）时 best_scale 不可观测，自动跳过 best_scale。返回 (档位, 原因列表, 各项档位)；
-    原因列表包含所有未达 good 的项，B 档也能看出是哪一项拖了后腿。
+    序列分档，返回 (档位, 原因列表, 各项档位)：
+      reject：违例率 / drift / 尺度（可观测时）任一项 reject —— 标签有错；
+      U     ：无法验证 —— 视差、有效像素或可验证像素不足，且没有触发上面的 reject；
+      A / B / C：全部 good / 全部不差于 usable / 其他。
+    尺度 s* 在两种情况下不可观测、不参与判定：视差不足；或 s = 1 时已经自洽（fsv 不超过 usable 上限）——
+    此时 s* 偏离 1 只说明一致点数对尺度不敏感（远景、小基线），不是尺度错误。原因列表包含所有未达 good 的项。
     """
     th = dict(DEFAULT_THRESHOLDS if thresholds is None else thresholds)
     bands = {}
@@ -513,12 +521,22 @@ def grade(metrics: Dict, thresholds: Optional[Dict] = None, skip: Sequence[str] 
         if k in skip or k not in metrics:
             continue
         bands[k] = _band(metrics[k], tuple(rule) if not isinstance(rule, tuple) else rule)
+    notes = []
     if bands.get("tri_angle_median") in ("reject", "marginal"):
         bands.pop("best_scale", None)
-    reasons = [f"{k}={metrics[k]:.4g} ({b})" for k, b in bands.items() if b in ("reject", "marginal", "usable")]
+    if bands.get("best_scale") in ("reject", "marginal", "usable"):
+        fsv = metrics.get("fsv")
+        if fsv is not None and np.isfinite(fsv) and fsv <= tuple(th["fsv"])[2]:
+            notes.append(f"best_scale={metrics['best_scale']:.4g} (ill-conditioned)")
+            bands.pop("best_scale")
+    unverifiable = [k for k in UNVERIFIABLE_KEYS if bands.get(k) in ("reject", "marginal")]
+    reasons = [f"{k}={metrics[k]:.4g} ({b})" for k, b in bands.items() if b in ("reject", "marginal", "usable")] + notes
+    error_bands = [b for k, b in bands.items() if k not in UNVERIFIABLE_KEYS and b != "na"]
     vals = [b for b in bands.values() if b != "na"]
-    if "reject" in vals:
+    if "reject" in error_bands:
         g = "reject"
+    elif unverifiable:
+        g = "U"
     elif vals and all(b == "good" for b in vals):
         g = "A"
     elif all(b in ("good", "usable") for b in vals):
