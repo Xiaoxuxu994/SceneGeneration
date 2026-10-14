@@ -19,6 +19,9 @@
    每条序列按 F 帧一个窗口切分（--window-stride 默认 = F，不重叠），窗口内算 M1–M6，按计数合并成序列级指标；
    有 gt_depth 时以"已验证像素"为保留集合算 G1。
 
+3) 合并并行结果：python tools/quality_eval.py summarize --out quality_out [--datasets ...]
+   一键脚本见 tools/run_quality_eval.sh。
+
 输出（--out 目录）：
   dataset 模式：<数据集>.json（汇总 + 分档统计）、<数据集>_samples.jsonl（逐样本）
   pseudo  模式：sequences.jsonl（逐序列：指标、分档、原因、G1）、summary.json；--save-masks 时 masks/<序列>/<帧>.npz
@@ -71,6 +74,11 @@ def compact(m):
 # ---------------------------------------------------------------------------
 # dataset mode
 # ---------------------------------------------------------------------------
+def _dump_row(out, row):
+    with open(os.path.join(out, f"{row['dataset']}.json"), "w") as f:
+        json.dump(row, f, ensure_ascii=False, indent=2, default=_json_default)
+
+
 def run_dataset_mode(args, cfg, thresholds):
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import gt_audit as GA  # 复用 loader 构建、取样（同一 seed 公式）与分位截断开关
@@ -84,12 +92,14 @@ def run_dataset_mode(args, cfg, thresholds):
         row = dict(dataset=name, status="OK")
         if name not in cfg_all.train_dataset:
             row.update(status="NOT_IN_CONFIG")
+            _dump_row(args.out, row)
             table.append(row)
             continue
         root = cfg_all.train_dataset[name].get("data_root", None)
         if root is None or not os.path.exists(str(root)):
             print(f"[ERROR][{name}] PATH_NOT_FOUND: data_root 不存在: {root}", flush=True)
             row.update(status="PATH_NOT_FOUND")
+            _dump_row(args.out, row)
             table.append(row)
             continue
         try:
@@ -97,6 +107,7 @@ def run_dataset_mode(args, cfg, thresholds):
         except Exception as e:
             print(f"[ERROR][{name}] BUILD_ERROR: {type(e).__name__}: {e}", flush=True)
             row.update(status="BUILD_ERROR", error=str(e)[:300])
+            _dump_row(args.out, row)
             table.append(row)
             continue
         idxs = np.unique(np.linspace(0, len(ds) - 1, min(args.n, len(ds))).round().astype(int))
@@ -154,8 +165,7 @@ def run_dataset_mode(args, cfg, thresholds):
                    seconds=round(time.time() - t0, 1))
         if fails and not results:
             row["status"] = "ALL_SAMPLES_FAILED"
-        with open(os.path.join(args.out, f"{name}.json"), "w") as f:
-            json.dump(row, f, ensure_ascii=False, indent=2, default=_json_default)
+        _dump_row(args.out, row)
         with open(os.path.join(args.out, f"{name}_samples.jsonl"), "w") as f:
             for srow in samples:
                 f.write(json.dumps(srow, ensure_ascii=False, default=_json_default) + "\n")
@@ -163,9 +173,30 @@ def run_dataset_mode(args, cfg, thresholds):
         print(f"    fsv={agg.get('fsv', float('nan')):.2%} vpr={agg.get('vpr', float('nan')):.2%} "
               f"tri={agg.get('tri_angle_median', float('nan')):.2f}° drift={agg.get('drift', float('nan')):.3f} "
               f"bfr={agg.get('bfr', float('nan')):.1f} grade={g} ({row['seconds']}s)", flush=True)
+    if not args.no_summary:
+        write_dataset_summary(table, args.out)
+
+
+def write_dataset_summary(table, out):
     print_table(table, key="dataset")
-    with open(os.path.join(args.out, "summary.json"), "w") as f:
+    with open(os.path.join(out, "summary.json"), "w") as f:
         json.dump(table, f, ensure_ascii=False, indent=2, default=_json_default)
+
+
+def summarize_dataset_dir(out, names=None):
+    """并行跑完（每个数据集一个进程）后，把 <out>/<数据集>.json 合并成一张表。"""
+    if not names:
+        names = sorted(os.path.splitext(os.path.basename(p))[0] for p in glob.glob(os.path.join(out, "*.json"))
+                       if os.path.basename(p) != "summary.json")
+    table = []
+    for name in names:
+        p = os.path.join(out, f"{name}.json")
+        if os.path.exists(p):
+            with open(p) as f:
+                table.append(json.load(f))
+        else:
+            table.append(dict(dataset=name, status="NO_RESULT"))
+    write_dataset_summary(table, out)
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +366,11 @@ def main():
     d.add_argument("--res", type=int, nargs=2, default=[512, 336], metavar=("W", "H"))
     d.add_argument("--mode", default="train")
     d.add_argument("--raw-compare", action="store_true", help="额外评估 98 分位截断这条规则（M7）")
+    d.add_argument("--no-summary", action="store_true", help="不写 summary.json（并行时每个进程只跑一个数据集，最后用 summarize 合并）")
+
+    sm = sub.add_parser("summarize", help="合并 dataset 模式的 <out>/<数据集>.json 为 summary.json")
+    sm.add_argument("--out", default="quality_out")
+    sm.add_argument("--datasets", nargs="*", default=None, help="按此顺序列出；缺结果的标 NO_RESULT")
 
     p = sub.add_parser("pseudo", parents=[common], help="伪标签目录（每帧一个 npz）")
     p.add_argument("--root", required=True)
@@ -344,6 +380,9 @@ def main():
     p.add_argument("--conf-thr", type=float, default=None, help="评估“conf < 阈值则删除”这条规则（M7）")
     p.add_argument("--save-masks", action="store_true", help="保存每帧的 verified / viol / boundary 掩码")
     args = ap.parse_args()
+    if args.cmd == "summarize":
+        summarize_dataset_dir(args.out, args.datasets)
+        return
 
     overrides, thresholds = load_thresholds(args.thresholds)
     if args.tau is not None:

@@ -504,7 +504,8 @@ def _band(value, rule) -> str:
 def grade(metrics: Dict, thresholds: Optional[Dict] = None, skip: Sequence[str] = ()) -> Tuple[str, List[str], Dict[str, str]]:
     """
     序列分档：任一项 reject → "reject"；全部 good → "A"；全部不差于 usable → "B"；否则 "C"。
-    视差不足（tri reject）时 best_scale 不可观测，自动跳过 best_scale。返回 (档位, 原因列表, 各项档位)。
+    视差不足（tri reject）时 best_scale 不可观测，自动跳过 best_scale。返回 (档位, 原因列表, 各项档位)；
+    原因列表包含所有未达 good 的项，B 档也能看出是哪一项拖了后腿。
     """
     th = dict(DEFAULT_THRESHOLDS if thresholds is None else thresholds)
     bands = {}
@@ -514,7 +515,7 @@ def grade(metrics: Dict, thresholds: Optional[Dict] = None, skip: Sequence[str] 
         bands[k] = _band(metrics[k], tuple(rule) if not isinstance(rule, tuple) else rule)
     if bands.get("tri_angle_median") in ("reject", "marginal"):
         bands.pop("best_scale", None)
-    reasons = [f"{k}={metrics[k]:.4g} ({b})" for k, b in bands.items() if b in ("reject", "marginal")]
+    reasons = [f"{k}={metrics[k]:.4g} ({b})" for k, b in bands.items() if b in ("reject", "marginal", "usable")]
     vals = [b for b in bands.values() if b != "na"]
     if "reject" in vals:
         g = "reject"
