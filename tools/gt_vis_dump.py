@@ -320,7 +320,7 @@ def vis_root_for(name, data_root, args):
 def run_dataset(cfg_all, name, args):
     cfg = cfg_all.train_dataset[name]
     root = cfg.get("data_root", None)
-    if root is None or not os.path.exists(str(root)):
+    if root is None or not G.root_exists(cfg):
         print(f"[ERROR][{name}] PATH_NOT_FOUND: data_root 不存在: {root}", flush=True)
         return
     try:

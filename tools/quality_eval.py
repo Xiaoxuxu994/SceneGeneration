@@ -152,7 +152,7 @@ def run_dataset_mode(args, cfg, thresholds):
             table.append(row)
             continue
         root = cfg_all.train_dataset[name].get("data_root", None)
-        if root is None or not os.path.exists(str(root)):
+        if root is None or not GA.root_exists(cfg_all.train_dataset[name]):
             print(f"[ERROR][{name}] PATH_NOT_FOUND: data_root 不存在: {root}", flush=True)
             row.update(status="PATH_NOT_FOUND")
             _dump_row(args.out, row)

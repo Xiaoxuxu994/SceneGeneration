@@ -20,8 +20,20 @@
 ## 3. 贵阳 OBS 配置
 
 - 路径对照：`configs/data/obs_paths_guiyang.yaml`（来自 Reliev3R_dataset2.xlsx，含每个数据集的 status / note）。
-- 生成的配置：`configs/data/datamix_all_v9-5_obs.yaml`、`configs/data/datamix_all_v9-5_fix_obs.yaml`。
-- 训练前：`export DATASET_CACHE_DIR=<缓存根目录>`，然后 `data=datamix_all_v9-5_obs`。
+- 缓存目录：`obs://bucket-471/z00533370/dataset/data_cache`，已写进每个数据集块的 `cache_dir`。
+- 生成的配置：`configs/data/datamix_all_v9-5_obs.yaml`、`configs/data/datamix_all_v9-5_fix_obs.yaml`；
+  ARKitScenes、ScanNet、DL3DV 暂不使用，已从 weights 去掉（23 个数据集，权重合计 74,200）。
+- 训练：`data=datamix_all_v9-5_obs`。
+
+## 3.1 数据读取与 GT 验证脚本
+
+```bash
+bash run_sh_s3/run_dataset_sh/run_vis_datamix_v9-5_obs.sh                 # 全部数据集：读取检查 + 点云可视化
+STAGE=check bash run_sh_s3/run_dataset_sh/run_vis_datamix_v9-5_obs.sh     # 只做读取检查
+DATASETS="Hypersim CO3DV2" N=3 OBS_OUT=obs://bucket-471/xxx/vis bash run_sh_s3/run_dataset_sh/run_vis_datamix_v9-5_obs.sh
+```
+
+输出 `check/check_summary.tsv`（每个数据集是否读通）和 `vis/<数据集>_vis/<样本>/`（current / diag / filtered / cameras.ply、frames.png）。
 
 ## 4. 每个数据集单独调试
 

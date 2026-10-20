@@ -68,7 +68,8 @@ def _print_views(views, tag):
         print(msg, flush=True)
 
 
-def debug_main(cls, argv=None):
+def debug_main(cls, argv=None, info=None):
+    """info：传入一个 dict 时，把 len / ok / fail / 耗时 写进去（供 tools/check_datasets.py 汇总）。"""
     ap = argparse.ArgumentParser(description=f"debug {cls.__name__}")
     ap.add_argument("--config", default=os.path.join(ROOT, "configs/data/datamix_all_v9-5.yaml"))
     ap.add_argument("--name", default=None)
@@ -129,6 +130,8 @@ def debug_main(cls, argv=None):
     ds.frame_num = args.frames
     ds.convert_attributes()
     print(f"[debug] built in {time.time() - t0:.1f}s, len={len(ds)}, cache_dir={getattr(ds, 'cache_dir', None)}", flush=True)
+    if info is not None:
+        info.update(len=len(ds), build_s=round(time.time() - t0, 1))
     if len(ds) == 0:
         print("[debug] dataset is empty", flush=True)
         return 1
@@ -156,6 +159,8 @@ def debug_main(cls, argv=None):
         except Exception:
             n_fail += 1
             traceback.print_exc()
+    if info is not None:
+        info.update(ok=n_ok, fail=n_fail, get_views_s=round(float(np.mean(times)), 2) if times else None)
     print(f"[debug] done: ok={n_ok} fail={n_fail} mean _get_views time={np.mean(times) if times else float('nan'):.2f}s"
           + (f"  vis -> {args.vis}" if args.vis else ""), flush=True)
     return 0 if n_fail == 0 else 1

@@ -178,6 +178,23 @@ def ratio(a, b):
 # ---------------------------------------------------------------------------
 # dataset construction
 # ---------------------------------------------------------------------------
+
+def root_exists(cfg_block):
+    """data_root 是否存在：支持 obs:// 和配置里的 path_remap（efs 路径映射到 OBS 时，本机上 efs 路径本身并不存在）。"""
+    root = cfg_block.get("data_root", None) if hasattr(cfg_block, "get") else None
+    if root is None:
+        return False
+    try:
+        from omegaconf import OmegaConf
+        from datasets.base import fileio as fio
+        rm = cfg_block.get("path_remap", None)
+        if rm is not None and OmegaConf.is_config(rm):
+            rm = OmegaConf.to_container(rm, resolve=True)
+        fio.set_path_remap(rm)
+        return fio.exists(str(root))
+    except ImportError:
+        return os.path.exists(str(root))
+
 def load_cfg(path):
     from omegaconf import OmegaConf
     return OmegaConf.load(path)
@@ -416,7 +433,7 @@ def run_one(cfg_all, name, args, weights):
     cfg = cfg_all.train_dataset[name]
     root = cfg.get("data_root", None)
     row["data_root"] = root
-    if root is None or not os.path.exists(str(root)):
+    if root is None or not root_exists(cfg):
         row.update(status="PATH_NOT_FOUND", error=f"data_root 不存在: {root}")
         return row
     try:
