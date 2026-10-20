@@ -72,6 +72,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 from datasets.base.utils import read_any_file
@@ -143,11 +144,12 @@ class CO3DV2Dataset(BaseDataset):
         self.scene_meta = {}
 
         # 1) load/save cache
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+        if not fio.exists(cache_path):
             print(f'[Dataset] Constructing cache {cache_path}..')
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_to_path", "scene_meta"],save_path=cache_path)
@@ -181,35 +183,35 @@ class CO3DV2Dataset(BaseDataset):
     # =========================  
     def _scan_scenes(self):
         anno = {}
-        subdir = sorted(os.listdir(self.CO3DV2_DIR)) 
+        subdir = sorted(fio.listdir(self.CO3DV2_DIR)) 
         for subname in tqdm(subdir, desc="Building CO3DV2 cache"):
             obj, idx = subname.split('_')
             # anno["apple"]=anno_obj[(110_13048_23163, frame000199)]="viewpoint"
             if obj in SEEN_CATEGORIES and idx == "000": # first 000
                 anno_path = osp.join(self.CO3DV2_DIR, subname, obj, "frame_annotations.jgz")
                 anno_obj = {}
-                with gzip.open(anno_path, 'rt', encoding='utf-8') as f:
+                with gzip.open(fio.open(anno_path, 'rb'), 'rt', encoding='utf-8') as f:
                     frame_annotations = json.load(f)
                 for frame_anno in frame_annotations:
                     key = (frame_anno["sequence_name"], frame_anno["image"]["path"].split('/')[-1].split('.')[0])
                     anno_obj[key] = frame_anno["viewpoint"]
                 anno[obj] = anno_obj
             if obj in SEEN_CATEGORIES and idx != "000" and obj in anno: # 001->00X
-                subscene = os.listdir(osp.join(self.CO3DV2_DIR, subname, obj))
+                subscene = fio.listdir(osp.join(self.CO3DV2_DIR, subname, obj))
                 for scene in subscene:
                     depthmask_path = osp.join(self.CO3DV2_DIR, subname, obj, scene, 'depth_masks')
                     depth_path = osp.join(self.CO3DV2_DIR, subname, obj, scene, 'depths')
                     image_path = osp.join(self.CO3DV2_DIR, subname, obj, scene, 'images')
                     mask_path = osp.join(self.CO3DV2_DIR, subname, obj, scene, 'masks')
-                    if osp.exists(depthmask_path)  and osp.exists(depth_path) and osp.exists(image_path) and osp.exists(mask_path):
-                        file_list = os.listdir(image_path)
+                    if fio.exists(depthmask_path)  and fio.exists(depth_path) and fio.exists(image_path) and fio.exists(mask_path):
+                        file_list = fio.listdir(image_path)
                         frames_info = {}
                         valid_file_list = []
                         for file in file_list: 
                             prefix = file.split('.')[0]
-                            if osp.exists(osp.join(self.CO3DV2_DIR, subname, obj, scene, 'depth_masks', prefix+'.png')) and \
-                               osp.exists(osp.join(self.CO3DV2_DIR, subname, obj, scene, 'depths', prefix+'.jpg.geometric.png')) and \
-                               osp.exists(osp.join(self.CO3DV2_DIR, subname, obj, scene, 'masks', prefix+'.png')) and \
+                            if fio.exists(osp.join(self.CO3DV2_DIR, subname, obj, scene, 'depth_masks', prefix+'.png')) and \
+                               fio.exists(osp.join(self.CO3DV2_DIR, subname, obj, scene, 'depths', prefix+'.jpg.geometric.png')) and \
+                               fio.exists(osp.join(self.CO3DV2_DIR, subname, obj, scene, 'masks', prefix+'.png')) and \
                                 (scene, prefix) in anno[obj]:
                                 frames_info[prefix] = anno[obj][(scene, prefix)]
                                 valid_file_list.append(file)
@@ -351,39 +353,9 @@ class CO3DV2Dataset(BaseDataset):
 
         return views
 
+
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/CO3Dv2/decode"
-    cam_root = "/mnt/nvme3/z00533370/dataset/sample_data/CO3Dv2/cams"
-    out_dir = "./output_debug/CO3Dv2/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = CO3DV2Dataset(
-        data_root=data_root,
-        cam_root=cam_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=24,
-        max_distance=24,
-        split_ratio=1,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[1]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    """Visualize gt data. """
-    visualize_gt(views, out_dir, prefix="CO3DV2_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.co3dv2_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(CO3DV2Dataset))

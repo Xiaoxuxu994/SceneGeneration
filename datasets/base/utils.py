@@ -10,6 +10,7 @@ import random
 import os.path as osp
 import h5py
 import re
+from datasets.base import fileio as fio
 
 def tensor2pil(img):
     if -1 <= img.min() <= 0:
@@ -654,7 +655,8 @@ def normalize_poses(poses: torch.Tensor,
 
 def read_any_file(file_name, read_dtype=np.float16, return_dtype=None):
     """
-    Reads any kind file either from a local path or a remote URL.
+    Reads any kind file either from a local path or an obs:// path (via datasets.base.fileio,
+    which also applies the dataset's path_remap).
 
     Args:
         file_name (str): The file name.
@@ -664,54 +666,43 @@ def read_any_file(file_name, read_dtype=np.float16, return_dtype=None):
     Returns:
         np.Array: file
     """
-    obs_file = file_name.startswith("obs://")
+    from datasets.base import fileio as fio
+    path = fio.resolve(file_name)
+    obs_file = fio.is_obs(path)
 
-    ext = osp.splitext(file_name)[-1].lower()
+    ext = osp.splitext(path)[-1].lower()
     if ext == ".png" or ext == ".jpeg" or ext == ".ppm" or ext == ".jpg":
-        with open(file_name, "rb") as f:
+        if obs_file:
+            return np.array(fio.pil_open(path), return_dtype)
+        with open(path, "rb") as f:
             return np.array(Image.open(f), return_dtype)
 
     elif ext == ".bin" or ext == ".raw":
-        return np.frombuffer(open(file_name, "rb").read(), read_dtype)
+        return np.frombuffer(fio.read_bytes(path), read_dtype)
 
-    elif ext == ".tiff" or ext == ".exr":
+    elif ext == ".tiff" or ext == ".tif" or ext == ".exr":
+        flags = cv2.IMREAD_UNCHANGED | cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
         if not obs_file:
-            return np.asarray(
-                cv2.imread(
-                    file_name,
-                    (cv2.IMREAD_UNCHANGED | cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR),
-                ),
-                return_dtype,
-            )
-        else:
-            return np.asarray(
-                cv2.imdecode(
-                    np.frombuffer(open(file_name, "rb").read(), read_dtype),
-                    (cv2.IMREAD_UNCHANGED | cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR),
-                ),
-                return_dtype,
-            )
+            return np.asarray(cv2.imread(path, flags), return_dtype)
+        # 旧代码这里按 read_dtype(float16) 解释字节流，cv2.imdecode 需要 uint8 字节
+        return np.asarray(cv2.imdecode(np.frombuffer(fio.read_bytes(path), np.uint8), flags), return_dtype)
 
     elif ext == ".hdf5" or ext == ".h5":
-        if not obs_file:
-            result = h5py.File(file_name, "r")
-            result = result.get("depth", result.get("dataset"))[:]
-        else:
-            with open(file_name, "rb") as f:
-                result = h5py.File(f, "r")
-                result = result.get("depth", result.get("dataset"))[:]
+        with fio.h5_open(path, "r") as h:
+            result = h.get("depth", h.get("dataset"))[:]
         return np.asarray(result, return_dtype)
 
     elif ext == ".npy" or ext == ".npz":
-        return np.load(file_name)
+        return fio.np_load(path)
 
     elif ext == ".pfm":
-        return np.asarray(read_pfm_file(file_name))
+        return np.asarray(read_pfm_file(path))
 
     raise NotImplementedError(f"Unsupported File: {file_name}")
 
 def read_pfm_file(file_path):
-    with open(file_path, "rb") as file:
+    from datasets.base import fileio as fio
+    with fio.open(file_path, "rb") as file:
         header = file.readline().decode("UTF-8").strip()
 
         if header == "PF":
@@ -759,7 +750,7 @@ def parse_colmap_to_dict(images_txt_path, cameras_txt_path):
     """
     # First, parse cameras.txt to get intrinsics for each camera ID
     cameras = {}
-    with open(cameras_txt_path) as f:
+    with fio.open(cameras_txt_path) as f:
         for line in f:
             if line.startswith("#") or not line.strip():
                 continue
@@ -791,7 +782,7 @@ def parse_colmap_to_dict(images_txt_path, cameras_txt_path):
 
     # Parse images.txt to get extrinsics and map to camera IDs
     result_dict = {}
-    with open(images_txt_path) as f:
+    with fio.open(images_txt_path) as f:
         lines = f.readlines()
 
         i = 0

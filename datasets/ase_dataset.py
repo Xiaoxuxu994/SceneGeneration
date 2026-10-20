@@ -19,6 +19,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import rdepth_to_zdepth, threshold_depth_map
 
@@ -75,11 +76,12 @@ class ASEDataset(BaseDataset):
         self.scene_meta = {}
 
         # 1) load/save cache
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+        if not fio.exists(cache_path):
             print(f'[Dataset] Constructing cache {cache_path}..')
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_to_path", "scene_meta"],save_path=cache_path)
@@ -113,8 +115,8 @@ class ASEDataset(BaseDataset):
     # =========================
     def _scan_scenes(self):
         all_dirs = [
-            x for x in os.listdir(self.data_root)
-            if osp.isdir(osp.join(self.data_root, x)) and x.isdigit()
+            x for x in fio.listdir(self.data_root)
+            if fio.isdir(osp.join(self.data_root, x)) and x.isdigit()
         ]
 
         print('all_dirs', all_dirs)
@@ -137,11 +139,11 @@ class ASEDataset(BaseDataset):
             depth_dir = osp.join(scene_path, "undistort_depth")
             traj_file = osp.join(scene_path, "trajectory.csv")
 
-            if not (osp.isdir(rgb_dir) and osp.isdir(depth_dir) and osp.isfile(traj_file)):
+            if not (fio.isdir(rgb_dir) and fio.isdir(depth_dir) and fio.isfile(traj_file)):
                 continue
 
             try:
-                traj = pd.read_csv(traj_file)
+                traj = fio.read_csv(traj_file)
             except Exception:
                 continue
 
@@ -160,11 +162,11 @@ class ASEDataset(BaseDataset):
 
             rgb_ids = {
                 osp.splitext(osp.basename(x))[0].replace("vignette", "")
-                for x in glob(osp.join(rgb_dir, "vignette*.jpg"))
+                for x in fio.glob(osp.join(rgb_dir, "vignette*.jpg"))
             }
             depth_ids = {
                 osp.splitext(osp.basename(x))[0].replace("depth", "")
-                for x in glob(osp.join(depth_dir, "depth*.png"))
+                for x in fio.glob(osp.join(depth_dir, "depth*.png"))
             }
 
             frame_ids = sorted(rgb_ids & depth_ids, key=int)
@@ -222,8 +224,8 @@ class ASEDataset(BaseDataset):
         impath = osp.join(scene_path, "undistort_rgb", f"vignette{fid}.jpg")
         depthpath = osp.join(scene_path, "undistort_depth", f"depth{fid}.png")
 
-        rgb_image = Image.open(impath).convert("RGB")
-        depthmap = np.array(Image.open(depthpath)).astype(np.float32) * 0.001  # mm -> m
+        rgb_image = fio.pil_open(impath).convert("RGB")
+        depthmap = np.array(fio.pil_open(depthpath)).astype(np.float32) * 0.001  # mm -> m
 
         W0, H0 = rgb_image.size
         intrinsic = self._build_intrinsic(H0, W0)
@@ -288,38 +290,9 @@ class ASEDataset(BaseDataset):
 
         return views
 
+
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt,visualize_gt_norm_compare
-    data_root = "/efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE"
-    out_dir = "output_debug/ASE/080"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = ASEDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=24,
-        max_distance=24,
-        split_ratio=0.9,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[80]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    """Visualize gt data. """
-    visualize_gt(views, out_dir, prefix="ASE_GT")
-    visualize_gt_norm_compare(views, out_dir, prefix="ASE_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.ase_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(ASEDataset))

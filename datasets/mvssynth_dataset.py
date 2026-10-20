@@ -23,6 +23,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 
@@ -52,11 +53,12 @@ class MVSSynthDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_to_path", "scene_meta"],save_path=cache_path)
@@ -89,8 +91,8 @@ class MVSSynthDataset(BaseDataset):
     # =========================
     def _scan_scenes(self):
         scene_names = [
-            x for x in os.listdir(self.data_root)
-            if osp.isdir(osp.join(self.data_root, x))
+            x for x in fio.listdir(self.data_root)
+            if fio.isdir(osp.join(self.data_root, x))
         ]
         scene_names = sorted(scene_names)
 
@@ -104,20 +106,20 @@ class MVSSynthDataset(BaseDataset):
             depth_dir = osp.join(scene_path, "depths")
             pose_dir = osp.join(scene_path, "poses")
 
-            if not (osp.isdir(rgb_dir) and osp.isdir(depth_dir) and osp.isdir(pose_dir)):
+            if not (fio.isdir(rgb_dir) and fio.isdir(depth_dir) and fio.isdir(pose_dir)):
                 continue
 
             rgb_ids = {
                 osp.splitext(osp.basename(x))[0]
-                for x in glob(osp.join(rgb_dir, "*.png"))
+                for x in fio.glob(osp.join(rgb_dir, "*.png"))
             }
             depth_ids = {
                 osp.splitext(osp.basename(x))[0]
-                for x in glob(osp.join(depth_dir, "*.exr"))
+                for x in fio.glob(osp.join(depth_dir, "*.exr"))
             }
             pose_ids = {
                 osp.splitext(osp.basename(x))[0]
-                for x in glob(osp.join(pose_dir, "*.json"))
+                for x in fio.glob(osp.join(pose_dir, "*.json"))
             }
 
             frame_ids = sorted(list(rgb_ids & depth_ids & pose_ids), key=lambda x: int(x))
@@ -152,7 +154,7 @@ class MVSSynthDataset(BaseDataset):
         """
         读取单通道 EXR depth。
         """
-        depth = cv2.imread(path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+        depth = fio.cv2_imread(path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
         if depth is None:
             raise ValueError(f"Failed to read EXR depth: {path}")
 
@@ -194,10 +196,10 @@ class MVSSynthDataset(BaseDataset):
         depth_path = osp.join(scene_path, "depths", f"{fid}.exr")
         pose_path = osp.join(scene_path, "poses", f"{fid}.json")
 
-        rgb_image = Image.open(image_path).convert("RGB")
+        rgb_image = fio.pil_open(image_path).convert("RGB")
         depthmap = self._read_exr_depth(depth_path)
 
-        with open(pose_path, "r") as f:
+        with fio.open(pose_path, "r") as f:
             data = json.load(f)
 
         W0, H0 = rgb_image.size
@@ -275,37 +277,7 @@ class MVSSynthDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/MVS-Synth/GTAV_540/"
-    out_dir = "output_debug/MVS_hardcodeK_yy3/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = MVSSynthDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=8,
-        max_distance=8,
-        min_num_images=24,
-        z_far=160,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    visualize_gt(views, out_dir, prefix="MVS_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.mvssynth_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(MVSSynthDataset))

@@ -22,6 +22,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 
@@ -58,15 +59,17 @@ class MatrixCityDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(
             cache_dir,
             f"{self.dataset_label}_{root_hash}_cache.pkl"
         )
 
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(
@@ -102,8 +105,8 @@ class MatrixCityDataset(BaseDataset):
     # =========================
     def _scan_scenes(self):
         scene_names = [
-            x for x in os.listdir(self.data_root)
-            if osp.isdir(osp.join(self.data_root, x))
+            x for x in fio.listdir(self.data_root)
+            if fio.isdir(osp.join(self.data_root, x))
         ]
         scene_names = sorted(scene_names)
 
@@ -118,14 +121,14 @@ class MatrixCityDataset(BaseDataset):
             normal_dir = osp.join(scene_path, "normal")
             tf_path = osp.join(scene_path, "transforms_1.json")
 
-            if not (osp.isdir(rgb_dir) and osp.isdir(depth_dir) and osp.isfile(tf_path)):
+            if not (fio.isdir(rgb_dir) and fio.isdir(depth_dir) and fio.isfile(tf_path)):
                 continue
 
-            if self.use_normal and not osp.isdir(normal_dir):
+            if self.use_normal and not fio.isdir(normal_dir):
                 continue
 
             try:
-                with open(tf_path, "r", encoding="utf-8") as f:
+                with fio.open(tf_path, "r", encoding="utf-8") as f:
                     meta = json.load(f)
                 frames = meta["frames"]
             except Exception as e:
@@ -144,9 +147,9 @@ class MatrixCityDataset(BaseDataset):
                     depth_path = osp.join(scene_path, "depth", stem + ".exr")
                     normal_path = osp.join(scene_path, "normal", stem + ".exr")
 
-                    if not osp.isfile(rgb_path) or not osp.isfile(depth_path):
+                    if not fio.isfile(rgb_path) or not fio.isfile(depth_path):
                         continue
-                    if self.use_normal and not osp.isfile(normal_path):
+                    if self.use_normal and not fio.isfile(normal_path):
                         continue
 
                     fl_x = fr.get("fl_x", meta["fl_x"])
@@ -210,7 +213,7 @@ class MatrixCityDataset(BaseDataset):
         """
         读取单通道 EXR depth，和参考脚本保持一致。
         """
-        depth = cv2.imread(path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+        depth = fio.cv2_imread(path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
         if depth is None:
             raise ValueError(f"Failed to read EXR depth: {path}")
 
@@ -230,7 +233,7 @@ class MatrixCityDataset(BaseDataset):
         """
         读取3通道 EXR normal。
         """
-        normal = cv2.imread(path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+        normal = fio.cv2_imread(path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
         if normal is None:
             raise ValueError(f"Failed to read EXR normal: {path}")
 
@@ -249,7 +252,7 @@ class MatrixCityDataset(BaseDataset):
     def _load_one_view(self, scene_path, scene_name, fid, frame_meta, resolution, rng):
         rec = frame_meta[fid]
 
-        rgb_image = Image.open(rec["rgb_path"]).convert("RGB")
+        rgb_image = fio.pil_open(rec["rgb_path"]).convert("RGB")
 
         depthmap = self._read_exr_depth(rec["depth_path"])
         depthmap = depthmap / 100.0   # 与参考脚本有出入，这里/100, 原始脚本/10000 ->100m
@@ -346,41 +349,7 @@ class MatrixCityDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt,visualize_gt_norm_compare
-
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/MatrixCity"
-    out_dir = "output_debug/MatrixCity/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = MatrixCityDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=8,
-        max_distance=16,
-        min_num_images=24,
-        split_ratio=0.9,
-        z_far=160,
-        verbose=False,
-        shuffle=False,
-        use_normal=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        msg = (
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-        print(msg)
-
-    visualize_gt(views, out_dir, prefix="MatrixCity_GT")
-    visualize_gt_norm_compare(views, out_dir, prefix="MatrixCity_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.matrixcity_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(MatrixCityDataset))

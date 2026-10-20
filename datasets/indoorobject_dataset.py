@@ -23,6 +23,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 
@@ -83,13 +84,15 @@ class IndoorObjectRenderDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
 
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = osp.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
 
-        if not osp.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(
@@ -137,7 +140,7 @@ class IndoorObjectRenderDataset(BaseDataset):
             IndoorObjectRender/01/01_Furniture/benches/Benches_005
         """
         object_dirs = sorted(
-            glob(osp.join(self.data_root, "*", "*", "*", "*")),
+            fio.glob(osp.join(self.data_root, "*", "*", "*", "*")),
             key=self._sequence_sort_key,
         )
 
@@ -148,24 +151,24 @@ class IndoorObjectRenderDataset(BaseDataset):
         print(f"[IndoorObjectRender] Scanning object dirs: {len(object_dirs)}")
 
         for object_dir in tqdm(object_dirs, desc="Building IndoorObjectRender cache"):
-            if not osp.isdir(object_dir):
+            if not fio.isdir(object_dir):
                 continue
 
             rgb_dir = osp.join(object_dir, "rgb")
             depth_dir = osp.join(object_dir, "depth")
             transform_file = osp.join(object_dir, "transforms.json")
 
-            if not osp.isdir(rgb_dir):
+            if not fio.isdir(rgb_dir):
                 if self.verbose:
                     print(f"[IndoorObjectRender] Skip no rgb dir: {object_dir}")
                 continue
 
-            if not osp.isdir(depth_dir):
+            if not fio.isdir(depth_dir):
                 if self.verbose:
                     print(f"[IndoorObjectRender] Skip no depth dir: {object_dir}")
                 continue
 
-            if not osp.isfile(transform_file):
+            if not fio.isfile(transform_file):
                 if self.verbose:
                     print(f"[IndoorObjectRender] Skip no transforms.json: {transform_file}")
                 continue
@@ -183,12 +186,12 @@ class IndoorObjectRenderDataset(BaseDataset):
 
             rgb_ids = {
                 osp.splitext(osp.basename(p))[0]
-                for p in glob(osp.join(rgb_dir, "*.png"))
+                for p in fio.glob(osp.join(rgb_dir, "*.png"))
             }
 
             depth_ids = {
                 osp.splitext(osp.basename(p))[0]
-                for p in glob(osp.join(depth_dir, "*.exr"))
+                for p in fio.glob(osp.join(depth_dir, "*.exr"))
             }
 
             json_ids = set(frame_meta.keys())
@@ -224,7 +227,7 @@ class IndoorObjectRenderDataset(BaseDataset):
         print(f"[IndoorObjectRender] Total valid sequences: {len(self.all_sequences)}")
 
     def _load_transform_json(self, transform_file):
-        with open(transform_file, "r") as f:
+        with fio.open(transform_file, "r") as f:
             data = json.load(f)
 
         assert "frames" in data, f"No frames in {transform_file}"
@@ -254,10 +257,10 @@ class IndoorObjectRenderDataset(BaseDataset):
     # IO
     # ============================================================
     def _load_rgb(self, path):
-        return Image.open(path).convert("RGB")
+        return fio.pil_open(path).convert("RGB")
 
     def _load_depth_exr(self, path):
-        depth = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        depth = fio.cv2_imread(path, cv2.IMREAD_UNCHANGED)
 
         if depth is None:
             raise RuntimeError(f"Failed to read EXR depth: {path}")
@@ -495,57 +498,7 @@ class IndoorObjectRenderDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/IndoorObjectRender/"
-    out_dir = "output_debug/IndoorObjectRender"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = IndoorObjectRenderDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=24,
-        max_distance=8,
-        min_num_images=8,
-        split_ratio=1.0,
-        verbose=True,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-
-    for i, v in enumerate(views):
-        depth = v["depthmap"]
-
-        if torch.is_tensor(depth):
-            valid_depth = depth[depth > 0]
-            if valid_depth.numel() > 0:
-                depth_min = valid_depth.min().item()
-                depth_max = valid_depth.max().item()
-            else:
-                depth_min = 0
-                depth_max = 0
-        else:
-            valid_depth = depth[depth > 0]
-            if valid_depth.size > 0:
-                depth_min = valid_depth.min()
-                depth_max = depth.max()
-            else:
-                depth_min = 0
-                depth_max = 0
-
-        print(
-            f"[view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={tuple(depth.shape)}, "
-            f"depth_min={depth_min}, "
-            f"depth_max={depth_max}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    visualize_gt(views, out_dir, prefix="IndoorObjectRender_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.indoorobject_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(IndoorObjectRenderDataset))

@@ -19,6 +19,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import rdepth_to_zdepth, threshold_depth_map
 from datasets.base.utils import read_any_file, parse_colmap_to_dict
@@ -78,11 +79,12 @@ class ScannetppDataset(BaseDataset):
         self.scene_meta = {}
 
         # 1) load/save cache
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+        if not fio.exists(cache_path):
             print(f'[Dataset] Constructing cache {cache_path}..')
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_to_path", "scene_meta"],save_path=cache_path)
@@ -116,8 +118,8 @@ class ScannetppDataset(BaseDataset):
     # =========================
     def _scan_scenes(self):
         sequence_list_path = f"{self.ScanNetPP_DIR}/sequence_list.pkl"
-        if osp.exists(sequence_list_path):
-            with open(sequence_list_path, "rb") as f:
+        if fio.exists(sequence_list_path):
+            with fio.open(sequence_list_path, "rb") as f:
                 sequence_list, data_store = pickle.load(f)
         else:
 
@@ -130,14 +132,14 @@ class ScannetppDataset(BaseDataset):
             data_store = {}
             sequence_list = []
 
-            scenes = sorted(os.listdir(self.ScanNetPP_DIR))
+            scenes = sorted(fio.listdir(self.ScanNetPP_DIR))
 
             for scene in scenes:
                 rgb_dir = osp.join(self.ScanNetPP_DIR, scene, "images")
                 depth_dir = osp.join(self.ScanNetPP_DIR, scene, "depth")
 
-                rgb_files = [os.path.splitext(f)[0] for f in os.listdir(rgb_dir)]
-                depth_files = [os.path.splitext(f)[0] for f in os.listdir(depth_dir)]
+                rgb_files = [os.path.splitext(f)[0] for f in fio.listdir(rgb_dir)]
+                depth_files = [os.path.splitext(f)[0] for f in fio.listdir(depth_dir)]
 
                 frames = sorted(list(set(rgb_files) & set(depth_files)), key=dsc_sort_key)
                 if len(frames) < self.min_num_images:
@@ -146,7 +148,7 @@ class ScannetppDataset(BaseDataset):
                 data_store[scene] = frames
                 sequence_list.append(scene)
 
-            with open(sequence_list_path, "wb") as f:
+            with fio.open(sequence_list_path, "wb") as f:
                 pickle.dump((sequence_list, data_store), f)
 
         all_sequences = []
@@ -272,37 +274,9 @@ class ScannetppDataset(BaseDataset):
 
         return views
 
+
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/Scannetpp"
-    out_dir = "output_debug/Scannetpp/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = ScannetppDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=8,
-        max_distance=24,
-        split_ratio=0.9,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    """Visualize gt data. """
-    visualize_gt(views, out_dir, prefix="Scannetpp_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.scannetpp_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(ScannetppDataset))

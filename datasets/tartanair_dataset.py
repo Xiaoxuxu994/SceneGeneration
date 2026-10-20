@@ -17,6 +17,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 
 
@@ -72,15 +73,17 @@ class TarTanAirDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(
             cache_dir,
             f"{self.dataset_label}_{root_hash}_cache.pkl"
         )
 
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(
@@ -115,15 +118,15 @@ class TarTanAirDataset(BaseDataset):
     # scan / cache
     # =========================
     def _scan_scenes(self):
-        assert osp.isdir(self.data_root), f"[{self.dataset_label}] data_root not found: {self.data_root}"
+        assert fio.isdir(self.data_root), f"[{self.dataset_label}] data_root not found: {self.data_root}"
 
         all_sequences = []
         scene_to_path = {}
         scene_meta = {}
 
         top_scene_names = sorted([
-            x for x in os.listdir(self.data_root)
-            if osp.isdir(osp.join(self.data_root, x))
+            x for x in fio.listdir(self.data_root)
+            if fio.isdir(osp.join(self.data_root, x))
         ])
 
         for top_scene in tqdm(top_scene_names, desc=f"Building {self.dataset_label} cache"):
@@ -131,12 +134,12 @@ class TarTanAirDataset(BaseDataset):
 
             for difficulty in ["Easy", "Hard"]:
                 difficulty_root = osp.join(top_scene_root, difficulty)
-                if not osp.isdir(difficulty_root):
+                if not fio.isdir(difficulty_root):
                     continue
 
                 sub_scene_names = sorted([
-                    x for x in os.listdir(difficulty_root)
-                    if osp.isdir(osp.join(difficulty_root, x))
+                    x for x in fio.listdir(difficulty_root)
+                    if fio.isdir(osp.join(difficulty_root, x))
                 ])
 
                 for sub_scene in sub_scene_names:
@@ -147,13 +150,13 @@ class TarTanAirDataset(BaseDataset):
                     depth_dir = osp.join(scene_path, "depth_left")
                     cam_file = osp.join(scene_path, "pose_left.txt")
 
-                    if not (osp.isdir(rgb_dir) and osp.isdir(depth_dir) and osp.isfile(cam_file)):
+                    if not (fio.isdir(rgb_dir) and fio.isdir(depth_dir) and fio.isfile(cam_file)):
                         if self.verbose:
                             print(f"[{self.dataset_label}] Skip invalid scene: {scene_path}")
                         continue
 
                     try:
-                        caminfo = np.loadtxt(cam_file).astype(np.float32)
+                        caminfo = fio.loadtxt(cam_file).astype(np.float32)
                         if caminfo.ndim == 1:
                             caminfo = caminfo[None, :]
                     except Exception as e:
@@ -162,11 +165,11 @@ class TarTanAirDataset(BaseDataset):
 
                     rgb_ids = {
                         osp.basename(x).replace("_left.png", "")
-                        for x in glob(osp.join(rgb_dir, "*_left.png"))
+                        for x in fio.glob(osp.join(rgb_dir, "*_left.png"))
                     }
                     depth_ids = {
                         osp.basename(x).replace("_left_depth.npy", "")
-                        for x in glob(osp.join(depth_dir, "*_left_depth.npy"))
+                        for x in fio.glob(osp.join(depth_dir, "*_left_depth.npy"))
                     }
 
                     inter_ids = rgb_ids & depth_ids
@@ -221,8 +224,8 @@ class TarTanAirDataset(BaseDataset):
         impath = osp.join(scene_path, "image_left", f"{idx:06d}_left.png")
         depthpath = osp.join(scene_path, "depth_left", f"{idx:06d}_left_depth.npy")
 
-        rgb_image = np.array(Image.open(impath).convert("RGB"))
-        depthmap = np.load(depthpath).astype(np.float32)
+        rgb_image = np.array(fio.pil_open(impath).convert("RGB"))
+        depthmap = fio.np_load(depthpath).astype(np.float32)
 
         depthmap[depthmap > 80] = -1
         depthmap = np.nan_to_num(depthmap, nan=-1.0, posinf=-1.0, neginf=-1.0).astype(np.float32)
@@ -283,36 +286,7 @@ class TarTanAirDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-    data_root = "/efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir/"
-    out_dir = "output_debug/TarTanAir/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = TarTanAirDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=8,
-        max_distance=24,
-        min_num_images=24,
-        split_ratio=0.9,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    visualize_gt(views, out_dir, prefix="Tartanair_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.tartanair_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(TarTanAirDataset))

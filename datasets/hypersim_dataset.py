@@ -19,12 +19,13 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 
 
 def read_hdf5(path, return_dtype=None):
-    with h5py.File(path, "r") as f:
+    with fio.h5_open(path, "r") as f:
         keys = list(f.keys())
         assert len(keys) > 0, f"No dataset found in {path}"
         arr = f[keys[0]][()]
@@ -69,12 +70,14 @@ class HypersimDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
 
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path} ..")
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_to_path", "scene_meta"], save_path=cache_path)
@@ -86,7 +89,7 @@ class HypersimDataset(BaseDataset):
                 self.cache_loaded = True
                 print(f"[Dataset] Cache loaded.")
 
-        self.metadata_df = pd.read_csv(self.metadata_file)
+        self.metadata_df = fio.read_csv(self.metadata_file)
 
         self.sequences = self._split_sequences(self.all_sequences)
 
@@ -109,8 +112,8 @@ class HypersimDataset(BaseDataset):
     # =========================
     def _scan_scenes(self):
         scene_names = [
-            x for x in os.listdir(self.data_root)
-            if osp.isdir(osp.join(self.data_root, x))
+            x for x in fio.listdir(self.data_root)
+            if fio.isdir(osp.join(self.data_root, x))
         ]
         scene_names = sorted(scene_names)
 
@@ -121,7 +124,7 @@ class HypersimDataset(BaseDataset):
         for scene in tqdm(scene_names, desc="Building Hypersim cache"):
             scene_path = osp.join(self.data_root, scene)
 
-            final_dirs = glob(osp.join(scene_path, "scene_*_final_hdf5"))
+            final_dirs = fio.glob(osp.join(scene_path, "scene_*_final_hdf5"))
 
             for final_dir in final_dirs:
                 final_name = osp.basename(final_dir)  # e.g. scene_cam_00_final_hdf5
@@ -134,19 +137,19 @@ class HypersimDataset(BaseDataset):
                 depth_dir = osp.join(scene_path, f"scene_{camera_name}_geometry_hdf5")
                 extr_path = osp.join(scene_path, f"{camera_name}_extrinsics.hdf5")
 
-                if not (osp.isdir(rgb_dir) and osp.isdir(depth_dir) and osp.isfile(extr_path)):
+                if not (fio.isdir(rgb_dir) and fio.isdir(depth_dir) and fio.isfile(extr_path)):
                     continue
 
                 rgb_ids = {
                     m.group(1)
-                    for x in glob(osp.join(rgb_dir, "frame.*.color.hdf5"))
+                    for x in fio.glob(osp.join(rgb_dir, "frame.*.color.hdf5"))
                     for m in [re.search(r"frame\.(\d+)\.color\.hdf5$", osp.basename(x))]
                     if m is not None
                 }
 
                 depth_ids = {
                     m.group(1)
-                    for x in glob(osp.join(depth_dir, "frame.*.depth_meters.hdf5"))
+                    for x in fio.glob(osp.join(depth_dir, "frame.*.depth_meters.hdf5"))
                     for m in [re.search(r"frame\.(\d+)\.depth_meters\.hdf5$", osp.basename(x))]
                     if m is not None
                 }
@@ -279,37 +282,7 @@ class HypersimDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/Hypersim"
-    out_dir = "output_debug/Hypersim/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = HypersimDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=24,
-        max_distance=24,
-        split_ratio=0.9,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        img_shape = tuple(v["img"].shape) if hasattr(v["img"], "shape") else v["img"].size
-        print(
-            f"[dataset view {i}] "
-            f"img={img_shape}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    visualize_gt(views, out_dir, prefix="Hypersim_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.hypersim_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(HypersimDataset))

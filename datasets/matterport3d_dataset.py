@@ -17,6 +17,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 
@@ -51,12 +52,14 @@ class Matterport3DDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
 
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(
@@ -92,8 +95,8 @@ class Matterport3DDataset(BaseDataset):
     # =========================
     def _scan_scenes(self):
         scene_names = sorted([
-            x for x in os.listdir(self.data_root)
-            if osp.isdir(osp.join(self.data_root, x))
+            x for x in fio.listdir(self.data_root)
+            if fio.isdir(osp.join(self.data_root, x))
         ])
 
         all_sequences = []
@@ -103,16 +106,16 @@ class Matterport3DDataset(BaseDataset):
         for scene in tqdm(scene_names, desc="Building Matterport3D cache"):
             outer_scene_path = osp.join(self.data_root, scene)
             inner_scene_path = osp.join(outer_scene_path, scene)
-            scene_path = inner_scene_path if osp.isdir(inner_scene_path) else outer_scene_path
+            scene_path = inner_scene_path if fio.isdir(inner_scene_path) else outer_scene_path
 
             cam_param_dir = osp.join(scene_path, "undistorted_camera_parameters")
             color_dir = osp.join(scene_path, "undistorted_color_images")
             depth_dir = osp.join(scene_path, "undistorted_depth_images")
 
-            if not (osp.isdir(cam_param_dir) and osp.isdir(color_dir) and osp.isdir(depth_dir)):
+            if not (fio.isdir(cam_param_dir) and fio.isdir(color_dir) and fio.isdir(depth_dir)):
                 continue
 
-            conf_files = sorted(glob(osp.join(cam_param_dir, "*.conf")))
+            conf_files = sorted(fio.glob(osp.join(cam_param_dir, "*.conf")))
             if len(conf_files) == 0:
                 continue
 
@@ -148,7 +151,7 @@ class Matterport3DDataset(BaseDataset):
         depth_dirname = None
         current_K = None
 
-        with open(conf_path, "r") as f:
+        with fio.open(conf_path, "r") as f:
             lines = [x.strip() for x in f.readlines() if x.strip()]
 
         for line in lines:
@@ -186,7 +189,7 @@ class Matterport3DDataset(BaseDataset):
                 img_path = osp.join(scene_path, color_dirname, color_name)
                 depth_path = osp.join(scene_path, depth_dirname, depth_name)
 
-                if not (osp.isfile(img_path) and osp.isfile(depth_path)):
+                if not (fio.isfile(img_path) and fio.isfile(depth_path)):
                     continue
 
                 frame_ids.append(fid)
@@ -220,12 +223,12 @@ class Matterport3DDataset(BaseDataset):
     # =========================
     def _read_rgb(self, path):
 
-        return Image.open(path).convert("RGB")
+        return fio.pil_open(path).convert("RGB")
 
     def _read_depth(self, path):
         # Official docs:
         # 16-bit PNG, z-direction depth, 0.25 mm per unit -> divide by 4000
-        depth = np.array(Image.open(path)).astype(np.float32) / 4000.0
+        depth = np.array(fio.pil_open(path)).astype(np.float32) / 4000.0
         depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
         depth[(depth <= 0)] = 0.0
         return depth.astype(np.float32)
@@ -310,37 +313,7 @@ class Matterport3DDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/Matterport3D_decode"
-    out_dir = "output_debug/Matterport3D/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = Matterport3DDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=128,
-        max_distance=8,
-        min_num_images=8,
-        split_ratio=1.0,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    visualize_gt(views, out_dir, prefix="Matterport3D_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.matterport3d_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(Matterport3DDataset))

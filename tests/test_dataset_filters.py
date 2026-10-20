@@ -74,11 +74,13 @@ class ToyDataset(BaseDataset):
     """每条序列 8 帧、深度恒为 2 m；序列 'still' 的相机不动，其余序列每帧平移 0.2 m。"""
 
     def __init__(self, **kw):
-        super().__init__(resolution=[[W, H]], transform=lambda im: im, **kw)
+        kw.setdefault('resolution', [[W, H]])
+        kw.setdefault('transform', lambda im: im)
+        super().__init__(**kw)
         self.dataset_label = 'Toy'
         self.sequences = ['moving', 'still', 'bad/seq_3']
         self.scene_to_path = {'moving': 'root/moving', 'still': 'root/still', 'bad/seq_3': 'root/bad/seq_3'}
-        self.calls = []
+        self.calls = __import__('collections').deque()   # 不用 list：convert_attributes 会把 list 转成 ndarray
 
     def __len__(self):
         return len(self.sequences)
@@ -108,10 +110,10 @@ def test_extra_valid_only_when_enabled():
 def test_low_parallax_resamples_then_accepts():
     ds = ToyDataset(frame_num=4, shuffle=False, min_baseline_ratio=0.05, baseline_retries=3)
     views = ds[1]                                   # 'still'：基线为 0，重选 3 次后照常返回
-    assert len(views) == 4 and ds.calls == ['still'] * 4 and ds._n_low_parallax == 3
+    assert len(views) == 4 and list(ds.calls) == ['still'] * 4 and ds._n_low_parallax == 3
     ds.calls.clear()
     ds[0]                                           # 'moving'：基线/深度 = 0.3/2 = 0.15 ≥ 0.05，一次通过
-    assert ds.calls == ['moving']
+    assert list(ds.calls) == ['moving']
     still = [dict(camera_pose=pose(0.0), depthmap=np.full((2, 2), 2.0), valid_mask=np.ones((2, 2), bool)) for _ in range(4)]
     moving = [dict(camera_pose=pose(0.2 * k), depthmap=np.full((2, 2), 2.0), valid_mask=np.ones((2, 2), bool)) for k in range(4)]
     assert baseline_over_depth(still) == 0.0 and abs(baseline_over_depth(moving) - 0.15) < 1e-6   # 两两间距中位数 0.3 / 深度 2

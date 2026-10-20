@@ -1,0 +1,40 @@
+# 数据读取：本地 / OBS 与单独调试（xiaoxu/Pi3_training_v2）
+
+## 1. 统一读写层 `datasets/base/fileio.py`
+
+所有 loader 的文件读取（exists / isdir / listdir / glob / open / PIL / cv2 / numpy / h5py / pandas / imageio）都改为 `fio.*`：
+- 本地路径：直接调用原函数，行为不变。
+- `obs://` 路径：惰性导入 moxing，整读字节后在内存里解码；每 25 次读取 gc 一次（moxing 内存泄漏的规避办法）。
+- `path_remap`：`{efs 前缀: obs 前缀}`，按最长前缀替换。缓存 pkl 里存的是建缓存时的本地绝对路径，用它就能改读 OBS，不必重建缓存。
+
+## 2. 新的构造参数（BaseDataset，任何数据集都能写）
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `cache_dir` | 环境变量 `DATASET_CACHE_DIR`，否则旧的写死目录 | 索引缓存 pkl 的目录，可以是 obs:// |
+| `cache_file` | null | 直接指定缓存 pkl 的完整路径（优先） |
+| `path_remap` | null | `{src_prefix: dst_prefix}` |
+
+缓存文件名仍是 `{label}_{md5(data_root)[:8]}_cache.pkl`。`data_root` 不变，已有缓存就能直接用。
+
+## 3. 贵阳 OBS 配置
+
+- 路径对照：`configs/data/obs_paths_guiyang.yaml`（来自 Reliev3R_dataset2.xlsx，含每个数据集的 status / note）。
+- 生成的配置：`configs/data/datamix_all_v9-5_obs.yaml`、`configs/data/datamix_all_v9-5_fix_obs.yaml`。
+- 训练前：`export DATASET_CACHE_DIR=<缓存根目录>`，然后 `data=datamix_all_v9-5_obs`。
+
+## 4. 每个数据集单独调试
+
+每个 `datasets/*_dataset.py` 都可以直接运行（在仓库根目录）：
+
+```bash
+python -m datasets.hypersim_dataset --config configs/data/datamix_all_v9-5_obs.yaml --n 3
+python -m datasets.dl3dv_dataset --config configs/data/datamix_all_v9-5_obs.yaml --idx 0 100 --vis output_debug/dl3dv
+python -m datasets.scannet_dataset --cache_dir obs://bucket-471/xxx/dataset_cache --remap /efs-m3ga/z00533370/dataset/scannet_v2_decode=obs://bucket-471/.../scannet
+```
+
+它会：从配置里找到该类对应的块 → 构造数据集（打印长度、缓存目录、耗时）→ 对每个样本先直接调用 `_get_views`
+（出错打印完整 traceback，不会被训练时的重试掩盖），再走一遍 `__getitem__` → 打印每帧的图像尺寸、深度范围、有效像素比例、
+位姿行列式、焦距；`--vis` 时保存点云与图像。全部参数见 `datasets/base/debug.py`。
+
+测试：`python tests/test_fileio.py`（假 moxing，不需要真实数据）。

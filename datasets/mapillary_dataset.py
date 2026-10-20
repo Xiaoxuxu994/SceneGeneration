@@ -17,6 +17,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 from datasets.base.utils import read_any_file
@@ -51,11 +52,12 @@ class MapillaryDataset(BaseDataset):
         self.scene_meta = {}
 
         # 1) load/save cache
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+        if not fio.exists(cache_path):
             print(f'[Dataset] Constructing cache {cache_path}..')
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_meta"],save_path=cache_path)
@@ -70,13 +72,13 @@ class MapillaryDataset(BaseDataset):
         # 2) load all intrisics & extrinsics
         self.ego_pose= {}
         self.calibrated_sensor = {}
-        for subdir in os.listdir(self.MAPILLARY_DIR):
+        for subdir in fio.listdir(self.MAPILLARY_DIR):
             if subdir in self.subdir:
                 pose_dir = f"{self.MAPILLARY_DIR}/{subdir}/ego_pose.json"
-                with open(pose_dir) as file:
+                with fio.open(pose_dir) as file:
                     self.ego_pose[subdir] = json.load(file)
                 instrinsic_dir = f"{self.MAPILLARY_DIR}/{subdir}/calibrated_sensor.json"
-                with open(instrinsic_dir) as file:
+                with fio.open(instrinsic_dir) as file:
                     self.calibrated_sensor[subdir] = json.load(file)
                 
 
@@ -103,7 +105,7 @@ class MapillaryDataset(BaseDataset):
     # =========================
     def _load_json_table(self, subdir, table_name):
         table_path = osp.join(self.MAPILLARY_DIR, subdir, f"{table_name}.json")
-        with open(table_path, "r") as f:
+        with fio.open(table_path, "r") as f:
             return json.load(f)
     
     def _scan_scenes(self):
@@ -117,7 +119,7 @@ class MapillaryDataset(BaseDataset):
         sequence_list = []
         data_store = {}
 
-        for subdir in os.listdir(self.MAPILLARY_DIR):
+        for subdir in fio.listdir(self.MAPILLARY_DIR):
             if subdir not in self.subdir:
                 continue
 
@@ -193,7 +195,7 @@ class MapillaryDataset(BaseDataset):
                         depth_info = sample_data_by_token[current_sample["data"][depth_cam]]
                         depth_file = os.path.join(self.MAPILLARY_DIR, depth_info["filename"])
 
-                        if not (os.path.exists(camera_file) and os.path.exists(depth_file)):
+                        if not (fio.exists(camera_file) and fio.exists(depth_file)):
                             next_sample_token = current_sample["next_sample"]
                             continue
 
@@ -352,37 +354,10 @@ class MapillaryDataset(BaseDataset):
 
         return tm
     
+
+
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/Mapillary"
-    out_dir = "../output_debug/Mapillary/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = MapillaryDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=24,
-        max_distance=8,
-        split_ratio=1,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    """Visualize gt data. """
-    visualize_gt(views, out_dir, prefix="Mapillary_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.mapillary_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(MapillaryDataset))

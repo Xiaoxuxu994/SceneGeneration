@@ -20,6 +20,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 
@@ -53,11 +54,12 @@ class GTASfMDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(
@@ -94,7 +96,7 @@ class GTASfMDataset(BaseDataset):
     def _scan_scenes(self):
         h5_files = []
         for subdir in ["train", "test"]:
-            h5_files.extend(sorted(glob(osp.join(self.data_root, subdir, "*.hdf5"))))
+            h5_files.extend(sorted(fio.glob(osp.join(self.data_root, subdir, "*.hdf5"))))
 
         if len(h5_files) == 0:
             raise RuntimeError(
@@ -114,7 +116,7 @@ class GTASfMDataset(BaseDataset):
                 scene = scene[:-5]
 
             try:
-                with h5py.File(h5_path, "r") as f:
+                with fio.h5_open(h5_path, "r") as f:
                     layout = self._inspect_h5_layout(f)
                     frame_ids = layout["frame_ids"]
 
@@ -194,7 +196,7 @@ class GTASfMDataset(BaseDataset):
         camera_pose = np.asarray(f[f"pose_{fid}"]).astype(np.float32)
 
         image_bytes = image_raw.reshape(-1).astype(np.uint8).tobytes()
-        with Image.open(BytesIO(image_bytes)) as im:
+        with fio.pil_open(BytesIO(image_bytes)) as im:
             rgb_image = im.convert("RGB")
 
 
@@ -241,7 +243,7 @@ class GTASfMDataset(BaseDataset):
         }
 
         views = []
-        with h5py.File(h5_path, "r") as f:
+        with fio.h5_open(h5_path, "r") as f:
             for fid in idxs:
                 views.append(
                     self._load_one_view(
@@ -258,39 +260,7 @@ class GTASfMDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/GTA-SfM"
-    # data_root = "/efs-m3ga/h00548084/relive3r_raw/GTA-SfM/"
-
-    out_dir = "output_debug/GTASfM/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = GTASfMDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=24,
-        max_distance=8,
-        z_far=200,
-        min_num_images=24,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    visualize_gt(views, out_dir, prefix="GTASfM_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.gta_sfm_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(GTASfMDataset))

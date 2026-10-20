@@ -73,6 +73,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 from datasets.base.utils import read_any_file
@@ -110,11 +111,12 @@ class CO3DDataset(BaseDataset):
         self.scene_meta = {}
 
         # 1) load/save cache
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+        if not fio.exists(cache_path):
             print(f'[Dataset] Constructing cache {cache_path}..')
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_to_path", "scene_meta"],save_path=cache_path)
@@ -157,7 +159,7 @@ class CO3DDataset(BaseDataset):
                 annotation_file = osp.join(self.CO3D_DIR, "anno", f"{c}_{split_name}.jgz")
 
                 try:
-                    with gzip.open(annotation_file, "r") as fin:
+                    with gzip.open(fio.open(annotation_file, "rb"), "r") as fin:
                         annotation = json.loads(fin.read())
                 except FileNotFoundError:
                     print(f"Annotation file not found: {annotation_file}")
@@ -166,7 +168,7 @@ class CO3DDataset(BaseDataset):
                 for seq_name, seq_data in annotation.items():
                     seq_path = osp.join(self.CO3D_DIR, c, seq_name)
 
-                    if not osp.exists(seq_path):
+                    if not fio.exists(seq_path):
                         continue
                     if len(seq_data) >= self.min_num_images:
                         key = f"{c}/{seq_name}"
@@ -278,38 +280,9 @@ class CO3DDataset(BaseDataset):
 
         return views
 
+
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt,visualize_gt_norm_compare
-    data_root = "/efs-m3ga/z00533370/reliev3r_data/co3d"
-    out_dir = "output_debug/CO3D/005"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = CO3DDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=24,
-        max_distance=8,
-        split_ratio=1,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[5]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    """Visualize gt data. """
-    visualize_gt(views, out_dir, prefix="CO3D_GT")
-    visualize_gt_norm_compare(views, out_dir, prefix="CO3D_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.co3d_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(CO3DDataset))

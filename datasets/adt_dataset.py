@@ -21,6 +21,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import rdepth_to_zdepth
 
@@ -52,12 +53,14 @@ class ADTWAIDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
 
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(
@@ -93,8 +96,8 @@ class ADTWAIDataset(BaseDataset):
     # =========================
     def _scan_scenes(self):
         scene_names = sorted([
-            x for x in os.listdir(self.data_root)
-            if osp.isdir(osp.join(self.data_root, x))
+            x for x in fio.listdir(self.data_root)
+            if fio.isdir(osp.join(self.data_root, x))
         ])
 
         all_sequences = []
@@ -105,11 +108,11 @@ class ADTWAIDataset(BaseDataset):
             scene_path = osp.join(self.data_root, scene)
             meta_path = osp.join(scene_path, "scene_meta.json")
 
-            if not osp.isfile(meta_path):
+            if not fio.isfile(meta_path):
                 continue
 
             try:
-                with open(meta_path, "r") as f:
+                with fio.open(meta_path, "r") as f:
                     meta = json.load(f)
             except Exception as e:
                 print(f"[ADT_wai] Skip scene {scene}, failed to read scene_meta.json: {e}")
@@ -135,7 +138,7 @@ class ADTWAIDataset(BaseDataset):
                 img_path = osp.join(scene_path, fr["image"])
                 depth_path = osp.join(scene_path, fr["depth"])
 
-                if not (osp.isfile(img_path) and osp.isfile(depth_path)):
+                if not (fio.isfile(img_path) and fio.isfile(depth_path)):
                     continue
 
                 K = np.array(
@@ -198,14 +201,14 @@ class ADTWAIDataset(BaseDataset):
         ext = osp.splitext(path)[1].lower()
 
         if ext == ".npy":
-            depth = np.load(path).astype(np.float32)
+            depth = fio.np_load(path).astype(np.float32)
         elif ext == ".exr":
-            depth = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+            depth = fio.cv2_imread(path, cv2.IMREAD_UNCHANGED)
             if depth is None:
                 raise ValueError(f"Failed to read EXR depth: {path}")
             depth = depth.astype(np.float32)
         else:
-            depth = np.array(Image.open(path)).astype(np.float32)
+            depth = np.array(fio.pil_open(path)).astype(np.float32)
 
         if depth.ndim == 3:
             # EXR 常见 H x W x C
@@ -230,7 +233,7 @@ class ADTWAIDataset(BaseDataset):
         img_path = file_info["img_path"]
         depth_path = file_info["depth_path"]
 
-        rgb_image = Image.open(img_path).convert("RGB")
+        rgb_image = fio.pil_open(img_path).convert("RGB")
         depthmap = self._read_depth(depth_path)
         intrinsics = cam_info["camera_intrinsics"].copy()
 
@@ -290,38 +293,7 @@ class ADTWAIDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-
-    data_root = "/efs-m3ga/z00533370/reliev3r_data/ADT_wai"
-    out_dir = "output_debug/ADT_wai/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = ADTWAIDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=8,
-        max_distance=24,
-        min_num_images=8,
-        split_ratio=1.0,
-        verbose=False,
-        shuffle=False,
-        z_far=200.0,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    visualize_gt(views, out_dir, prefix="ADT_wai_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.adt_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(ADTWAIDataset))

@@ -20,6 +20,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import rdepth_to_zdepth, threshold_depth_map
 from datasets.base.utils import read_any_file
@@ -129,11 +130,12 @@ class WildrgbdDataset(BaseDataset):
         self.scene_meta = {}
 
         # 1) load/save cache
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+        if not fio.exists(cache_path):
             print(f'[Dataset] Constructing cache {cache_path}..')
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_to_path", "scene_meta"],save_path=cache_path)
@@ -177,9 +179,9 @@ class WildrgbdDataset(BaseDataset):
 
         sequence_list_path = f"{self.WILDRGBD_DIR}/{self.mode}_sequence_list.pkl"
 
-        if osp.exists(sequence_list_path):
+        if fio.exists(sequence_list_path):
             print(f"[WildRGBD] Loading sequence list from {sequence_list_path}")
-            with open(sequence_list_path, "rb") as f:
+            with fio.open(sequence_list_path, "rb") as f:
                 sequence_list, scene_len = pickle.load(f)
 
         else:
@@ -188,7 +190,7 @@ class WildrgbdDataset(BaseDataset):
             scene_len = {}
             sequence_list = []
 
-            category_list = set(os.listdir(self.WILDRGBD_DIR))
+            category_list = set(fio.listdir(self.WILDRGBD_DIR))
 
             all_scenes = []
             for c in tqdm(category, desc="[WildRGBD] Collecting categories"):
@@ -196,12 +198,12 @@ class WildrgbdDataset(BaseDataset):
                     continue
 
                 scene_dir = osp.join(self.WILDRGBD_DIR, c, "scenes")
-                if not osp.isdir(scene_dir):
+                if not fio.isdir(scene_dir):
                     continue
 
-                for each in os.listdir(scene_dir):
+                for each in fio.listdir(scene_dir):
                     abs_path = osp.join(scene_dir, each)
-                    if osp.isdir(abs_path):
+                    if fio.isdir(abs_path):
                         all_scenes.append((c, each, abs_path))
 
             print(f"[WildRGBD] Found {len(all_scenes)} candidate scenes")
@@ -213,20 +215,20 @@ class WildrgbdDataset(BaseDataset):
                 cam_pose_path = osp.join(abs_path, "cam_poses.txt")
 
                 if not (
-                    osp.isdir(rgb_dir)
-                    and osp.isdir(depth_dir)
-                    and osp.isdir(masks_dir)
-                    and osp.isfile(cam_pose_path)
+                    fio.isdir(rgb_dir)
+                    and fio.isdir(depth_dir)
+                    and fio.isdir(masks_dir)
+                    and fio.isfile(cam_pose_path)
                 ):
                     self.invalid_sequence.append(abs_path)
                     continue
 
                 try:
-                    num_rgb = len(os.listdir(rgb_dir))
-                    num_depth = len(os.listdir(depth_dir))
-                    num_masks = len(os.listdir(masks_dir))
+                    num_rgb = len(fio.listdir(rgb_dir))
+                    num_depth = len(fio.listdir(depth_dir))
+                    num_masks = len(fio.listdir(masks_dir))
 
-                    with open(cam_pose_path, encoding="utf-8") as cam_pose_txt:
+                    with fio.open(cam_pose_path, encoding="utf-8") as cam_pose_txt:
                         num_cam = sum(1 for _ in cam_pose_txt)
 
                 except Exception:
@@ -246,7 +248,7 @@ class WildrgbdDataset(BaseDataset):
                 f"Invalid scenes: {len(self.invalid_sequence)}"
             )
 
-            with open(sequence_list_path, "wb") as f:
+            with fio.open(sequence_list_path, "wb") as f:
                 pickle.dump((sequence_list, scene_len), f)
 
             print(f"[WildRGBD] Saved sequence list to {sequence_list_path}")
@@ -350,7 +352,7 @@ class WildrgbdDataset(BaseDataset):
 
         camera_path = osp.join(scene_path, "cam_poses.txt")
         extrinsics_list = []
-        with open(camera_path) as file:
+        with fio.open(camera_path) as file:
             for line in file:
                 line = line.strip()
                 elements = line.split()
@@ -368,7 +370,7 @@ class WildrgbdDataset(BaseDataset):
         intrinsics_path = osp.join(scene_path, "metadata")
 
         intri_opencv_original = np.zeros((3, 3))
-        with open(intrinsics_path) as f:
+        with fio.open(intrinsics_path) as f:
             data = json.load(f)
             intrinsics_value = data["K"]
             i = 0
@@ -397,37 +399,9 @@ class WildrgbdDataset(BaseDataset):
 
         return views
 
+
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/Wildrgbd"
-    out_dir = "output_debug/Wildrgbd/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = WildrgbdDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=24,
-        max_distance=8,
-        split_ratio=0.9,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    """Visualize gt data. """
-    visualize_gt(views, out_dir, prefix="Wildrgbd_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.wildrgbd_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(WildrgbdDataset))

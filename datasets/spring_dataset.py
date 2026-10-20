@@ -18,6 +18,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 
 
@@ -52,12 +53,14 @@ class SpringDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
 
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(
@@ -93,8 +96,8 @@ class SpringDataset(BaseDataset):
     # =========================
     def _scan_scenes(self):
         scene_names = [
-            x for x in os.listdir(self.data_root)
-            if osp.isdir(osp.join(self.data_root, x))
+            x for x in fio.listdir(self.data_root)
+            if fio.isdir(osp.join(self.data_root, x))
         ]
         scene_names = sorted(scene_names)
 
@@ -116,14 +119,14 @@ class SpringDataset(BaseDataset):
             extr_path = osp.join(cam_dir, "extrinsics.txt")
 
             if not (
-                osp.isdir(frame_dir)
-                and osp.isdir(disp_dir)
-                and osp.isfile(intr_path)
-                and osp.isfile(extr_path)
+                fio.isdir(frame_dir)
+                and fio.isdir(disp_dir)
+                and fio.isfile(intr_path)
+                and fio.isfile(extr_path)
             ):
                 continue
 
-            img_files = sorted(glob(osp.join(frame_dir, "*.png")))
+            img_files = sorted(fio.glob(osp.join(frame_dir, "*.png")))
             if len(img_files) < self.min_num_images:
                 continue
 
@@ -144,15 +147,15 @@ class SpringDataset(BaseDataset):
                 ordered_frame_ids.append(fid)
 
                 disppath = osp.join(disp_dir, f"{disp_prefix}{fid}.dsp5")
-                if osp.isfile(disppath):
+                if fio.isfile(disppath):
                     valid_frame_ids.append(fid)
 
             if len(valid_frame_ids) < self.min_num_images:
                 continue
 
             try:
-                intr_rows = np.loadtxt(intr_path)
-                extr_rows = np.loadtxt(extr_path)
+                intr_rows = fio.loadtxt(intr_path)
+                extr_rows = fio.loadtxt(extr_path)
 
                 intr_rows = np.atleast_2d(intr_rows).astype(np.float32)
                 extr_rows = np.atleast_2d(extr_rows).astype(np.float32)
@@ -228,7 +231,7 @@ class SpringDataset(BaseDataset):
     # disparity/depth helpers
     # =========================
     def _read_disparity_dsp5(self, path):
-        with h5py.File(path, "r") as f:
+        with fio.h5_open(path, "r") as f:
             if "disparity" in f:
                 disp = f["disparity"][()]
             else:
@@ -280,7 +283,7 @@ class SpringDataset(BaseDataset):
         impath = osp.join(scene_path, "frame_left", f"{frame_prefix}{fid}.png")
         disppath = osp.join(scene_path, "disp1_left", f"{disp_prefix}{fid}.dsp5")
 
-        rgb_image = Image.open(impath).convert("RGB")
+        rgb_image = fio.pil_open(impath).convert("RGB")
         rgb_np = np.array(rgb_image)
 
         disparity = self._read_disparity_dsp5(disppath)
@@ -358,39 +361,7 @@ class SpringDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-
-    data_root = "/efs-m3ga/z00533370/reliev3r_data/Spring_decode/spring/train/"
-    out_dir = "output_debug/Spring/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = SpringDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=24,
-        max_distance=8,
-        min_num_images=24,
-        split_ratio=0.9,
-        z_far=120,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    test_idx = min(20, len(dataset) - 1)
-    views = dataset[test_idx]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    visualize_gt(views, out_dir, prefix="Spring_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.spring_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(SpringDataset))

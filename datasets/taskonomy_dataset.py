@@ -24,6 +24,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import rdepth_to_zdepth, threshold_depth_map
 from datasets.base.utils import read_any_file
@@ -192,11 +193,12 @@ class TaskonomyDataset(BaseDataset):
         self.scene_meta = {}
 
         # 1) load/save cache
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+        if not fio.exists(cache_path):
             print(f'[Dataset] Constructing cache {cache_path}..')
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_meta"],save_path=cache_path)
@@ -230,8 +232,8 @@ class TaskonomyDataset(BaseDataset):
     # =========================
     def _scan_scenes(self):
         sequence_list_path = f"{self.TASKONOMY_DIR}/sequence_list.pkl"
-        if osp.exists(sequence_list_path):
-            with open(sequence_list_path, "rb") as f:
+        if fio.exists(sequence_list_path):
+            with fio.open(sequence_list_path, "rb") as f:
                 sequence_list = pickle.load(f)
         else:
             sequence_list = defaultdict(list)
@@ -276,7 +278,7 @@ class TaskonomyDataset(BaseDataset):
                         value = parts[3]
                         sequence_list[key].append(value)
 
-            with open(sequence_list_path, "wb") as f:
+            with fio.open(sequence_list_path, "wb") as f:
                 pickle.dump(sequence_list, f)
         
         all_sequences = []
@@ -344,7 +346,7 @@ class TaskonomyDataset(BaseDataset):
         ############ Obtain Camera Extrinsics and intrinsics ############
         point_name = base_name + "point_info.json"
         point_path = osp.join(self.TASKONOMY_DIR, "point_info", scene_point[0], point_name)
-        with open(point_path) as f:
+        with fio.open(point_path) as f:
             point_info = json.load(f)
 
         location = point_info["camera_location"]
@@ -408,7 +410,7 @@ class TaskonomyDataset(BaseDataset):
         if self.sample_method is None:
             idxs = self._sample_frame_ids(meta["frames_id"], rng)
         elif self.sample_method=='pose_sim':
-            with open(osp.join(self.TASKONOMY_DIR, "../covisibility", f"{scene_point[0]}_{scene_point[1]}.pkl"), "rb") as f:
+            with fio.open(osp.join(self.TASKONOMY_DIR, "../covisibility", f"{scene_point[0]}_{scene_point[1]}.pkl"), "rb") as f:
                 ranking, dists = pickle.load(f)
             random_id = np.random.randint(0, ranking.shape[0])
             idxs = ranking[random_id, :self.frame_num]
@@ -458,37 +460,9 @@ def get_sort_key(filename: str) -> tuple[int, int]:
     # so they are sorted at the end.
     return (float("inf"), float("inf"))
 
+
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/Taskonomy"
-    out_dir = "output_debug/Taskonomy/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = TaskonomyDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=24,
-        max_distance=8,
-        split_ratio=0.9,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    """Visualize gt data. """
-    visualize_gt(views, out_dir, prefix="Taskonomy_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.taskonomy_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(TaskonomyDataset))

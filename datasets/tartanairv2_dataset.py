@@ -18,6 +18,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 
@@ -72,12 +73,14 @@ class TartanAirV2Dataset(BaseDataset):
             dtype=np.float32,
         )
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_{self.camera_name}_cache.pkl")
 
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(
@@ -113,8 +116,8 @@ class TartanAirV2Dataset(BaseDataset):
     # =========================
     def _scan_scenes(self):
         traj_names = sorted([
-            x for x in os.listdir(self.data_root)
-            if osp.isdir(osp.join(self.data_root, x))
+            x for x in fio.listdir(self.data_root)
+            if fio.isdir(osp.join(self.data_root, x))
         ])
 
         all_sequences = []
@@ -128,18 +131,18 @@ class TartanAirV2Dataset(BaseDataset):
             depth_dir = osp.join(traj_path, f"depth_{self.camera_name}")
             pose_path = osp.join(traj_path, f"pose_{self.camera_name}.txt")
 
-            if not (osp.isdir(rgb_dir) and osp.isdir(depth_dir) and osp.isfile(pose_path)):
+            if not (fio.isdir(rgb_dir) and fio.isdir(depth_dir) and fio.isfile(pose_path)):
                 continue
 
             try:
-                poses = np.loadtxt(pose_path).astype(np.float32)
+                poses = fio.loadtxt(pose_path).astype(np.float32)
                 poses = np.atleast_2d(poses)
             except Exception as e:
                 print(f"[TartanAirV2] Skip {traj}, pose load failed: {e}")
                 continue
 
-            rgb_files = sorted([f for f in os.listdir(rgb_dir) if f.endswith(".png")])
-            depth_files = sorted([f for f in os.listdir(depth_dir) if f.endswith(".png")])
+            rgb_files = sorted([f for f in fio.listdir(rgb_dir) if f.endswith(".png")])
+            depth_files = sorted([f for f in fio.listdir(depth_dir) if f.endswith(".png")])
 
             rgb_ids = {f.split("_", 1)[0] for f in rgb_files}
             depth_ids = {f.split("_", 1)[0] for f in depth_files}
@@ -160,7 +163,7 @@ class TartanAirV2Dataset(BaseDataset):
                 img_path = osp.join(rgb_dir, f"{fid}_{self.camera_name}.png")
                 depth_path = osp.join(depth_dir, f"{fid}_{self.camera_name}_depth.png")
 
-                if not (osp.isfile(img_path) and osp.isfile(depth_path)):
+                if not (fio.isfile(img_path) and fio.isfile(depth_path)):
                     continue
 
                 camera_pose = self._pose_row_to_camera_pose(poses[idx])
@@ -243,15 +246,15 @@ class TartanAirV2Dataset(BaseDataset):
     # helpers
     # =========================
     def _read_rgb(self, path):
-        return Image.open(path).convert("RGB")
+        return fio.pil_open(path).convert("RGB")
 
     def _read_depth(self, path):
         """
         Official decoding:
-            depth_rgba = cv2.imread(depthpath, cv2.IMREAD_UNCHANGED)
+            depth_rgba = fio.cv2_imread(depthpath, cv2.IMREAD_UNCHANGED)
             depth = depth_rgba.view('<f4').squeeze(axis=-1)
         """
-        depth_rgba = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        depth_rgba = fio.cv2_imread(path, cv2.IMREAD_UNCHANGED)
         if depth_rgba is None:
             raise ValueError(f"Failed to read depth png: {path}")
 
@@ -331,39 +334,7 @@ class TartanAirV2Dataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/TartanAirV2"
-    out_dir = "output_debug/TartanAirV2/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = TartanAirV2Dataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=8,
-        max_distance=24,
-        min_num_images=8,
-        split_ratio=1.0,
-        verbose=False,
-        shuffle=False,
-        z_far=200.0,
-        camera_name="lcam_front",
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    visualize_gt(views, out_dir, prefix="TartanAirV2_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.tartanairv2_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(TartanAirV2Dataset))

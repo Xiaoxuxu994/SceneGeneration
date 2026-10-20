@@ -19,6 +19,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 
@@ -30,11 +31,11 @@ def _load_pose(path, ret_44=False):
       - first 4x4: extrinsic, world2cam
       - then 3x3: intrinsic
     """
-    with open(path, "r") as f:
-        RT = np.loadtxt(f, skiprows=1, max_rows=4, dtype=np.float32)  # world2cam
+    with fio.open(path, "r") as f:
+        RT = fio.loadtxt(f, skiprows=1, max_rows=4, dtype=np.float32)  # world2cam
         assert RT.shape == (4, 4), f"Invalid extrinsic shape in {path}: {RT.shape}"
 
-        K = np.loadtxt(f, skiprows=2, max_rows=3, dtype=np.float32)
+        K = fio.loadtxt(f, skiprows=2, max_rows=3, dtype=np.float32)
         assert K.shape == (3, 3), f"Invalid intrinsic shape in {path}: {K.shape}"
 
     if ret_44:
@@ -46,7 +47,7 @@ def read_pfm(path):
     """
     Minimal PFM reader.
     """
-    with open(path, "rb") as f:
+    with fio.open(path, "rb") as f:
         header = f.readline().decode("utf-8").rstrip()
         if header not in ("PF", "Pf"):
             raise ValueError(f"Not a PFM file: {path}")
@@ -64,7 +65,7 @@ def read_pfm(path):
 
         scale = float(f.readline().decode("utf-8").strip())
         endian = "<" if scale < 0 else ">"
-        data = np.fromfile(f, endian + "f")
+        data = fio.fromfile(f, endian + "f")
 
         shape = (height, width, 3) if color else (height, width)
         data = np.reshape(data, shape)
@@ -99,11 +100,12 @@ class BlendedMVSDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path} ..")
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_to_path", "scene_meta"],save_path=cache_path)
@@ -158,10 +160,10 @@ class BlendedMVSDataset(BaseDataset):
 
         keep = set()
         for path in files:
-            if not osp.exists(path):
+            if not fio.exists(path):
                 raise FileNotFoundError(f"scene_filter_file does not exist: {path}")
 
-            with open(path, "r", encoding="utf-8") as f:
+            with fio.open(path, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith("#"):
@@ -211,8 +213,8 @@ class BlendedMVSDataset(BaseDataset):
     # =========================
     def _scan_scenes(self):
         scene_names = [
-            x for x in os.listdir(self.data_root)
-            if osp.isdir(osp.join(self.data_root, x))
+            x for x in fio.listdir(self.data_root)
+            if fio.isdir(osp.join(self.data_root, x))
         ]
         scene_names = sorted(scene_names)
 
@@ -226,21 +228,21 @@ class BlendedMVSDataset(BaseDataset):
             depth_dir = osp.join(scene_path, "rendered_depth_maps")
             cam_dir = osp.join(scene_path, "cams")
 
-            if not (osp.isdir(rgb_dir) and osp.isdir(depth_dir) and osp.isdir(cam_dir)):
+            if not (fio.isdir(rgb_dir) and fio.isdir(depth_dir) and fio.isdir(cam_dir)):
                 continue
 
             rgb_ids = {
                 osp.splitext(osp.basename(x))[0]
-                for x in glob(osp.join(rgb_dir, "*.jpg"))
+                for x in fio.glob(osp.join(rgb_dir, "*.jpg"))
                 if not osp.splitext(osp.basename(x))[0].endswith("_masked")
             }
             depth_ids = {
                 osp.splitext(osp.basename(x))[0]
-                for x in glob(osp.join(depth_dir, "*.pfm"))
+                for x in fio.glob(osp.join(depth_dir, "*.pfm"))
             }
             cam_ids = {
                 osp.basename(x).replace("_cam.txt", "")
-                for x in glob(osp.join(cam_dir, "*_cam.txt"))
+                for x in fio.glob(osp.join(cam_dir, "*_cam.txt"))
             }
 
             frame_ids = sorted(
@@ -289,7 +291,7 @@ class BlendedMVSDataset(BaseDataset):
         depthpath = osp.join(scene_path, "rendered_depth_maps", f"{fid}.pfm")
         campath = osp.join(scene_path, "cams", f"{fid}_cam.txt")
 
-        rgb_image = Image.open(impath).convert("RGB")
+        rgb_image = fio.pil_open(impath).convert("RGB")
         depthmap = read_pfm(depthpath).astype(np.float32)
 
         if depthmap.ndim == 3:
@@ -378,73 +380,7 @@ class BlendedMVSObjectDataset(BlendedMVSDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-
-    # data_root = "/efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS"
-    # out_dir = "output_debug/BlendedMVS/"
-    # os.makedirs(out_dir, exist_ok=True)
-
-    # dataset = BlendedMVSDataset(
-    #     data_root=data_root,
-    #     mode="train",
-    #     resolution=[[224, 224]],
-    #     frame_num=24,
-    #     max_distance=24,
-    #     split_ratio=0.9,
-    #     verbose=False,
-    #     shuffle=False,
-    # )
-
-    # print(f"len(dataset) = {len(dataset)}")
-
-    # views = dataset[0]
-    # print(f"[dataset] number of views = {len(views)}")
-    # for i, v in enumerate(views):
-    #     img_shape = tuple(v["img"].shape) if hasattr(v["img"], "shape") else v["img"].size
-    #     print(
-    #         f"[dataset view {i}] "
-    #         f"img={img_shape}, "
-    #         f"depth={v['depthmap'].shape}, "
-    #         f"depthmin={v['depthmap'].min()}, "
-    #         f"depthmax={v['depthmap'].max()}, "
-    #         f"pts3d={v['pts3d'].shape}, "
-    #         f"valid={v['valid_mask'].sum()}"
-    #     )
-
-    # visualize_gt(views, out_dir, prefix="BlendedMVS_GT")
-
-
-    data_root = "/efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS"
-    out_dir = "output_debug/BlendedMVSObj/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = BlendedMVSObjectDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=24,
-        max_distance=24,
-        split_ratio=0.9,
-        verbose=False,
-        shuffle=False,
-        dataset_label="BlendedMVSObj",
-        scene_filter_file='/efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS/blendedmvs_small_sculpture.txt',
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        img_shape = tuple(v["img"].shape) if hasattr(v["img"], "shape") else v["img"].size
-        print(
-            f"[dataset view {i}] "
-            f"img={img_shape}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    visualize_gt(views, out_dir, prefix="BlendedMVS_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.blendedmvs_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(BlendedMVSDataset))

@@ -11,6 +11,10 @@ import pandas as pd
 from .utils import *
 import pickle
 from datasets.sample_utils.common import set_depth_filter
+from datasets.base import fileio as fio
+
+# 旧版各 loader 写死的缓存目录；没有传 cache_dir、也没有设环境变量 DATASET_CACHE_DIR 时沿用它
+LEGACY_CACHE_DIR = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
 
 
 class _LowParallax(Exception):
@@ -55,8 +59,18 @@ class BaseDataset(EasyDataset):
         min_baseline_ratio=0.0,     # > 0 时要求所选帧的 基线/深度 ≥ 该值，不满足则对同一序列重新选帧
         baseline_retries=3,         # 重新选帧的次数上限，用完仍不满足则照常使用
         seq_blacklist=None,         # 序列黑名单：txt 路径（每行一个序列名）或列表
+        # ---- 数据位置（本地或 obs://，见 datasets/base/fileio.py）----
+        cache_dir=None,             # 索引缓存 pkl 的目录；默认环境变量 DATASET_CACHE_DIR，再默认旧的写死目录
+        cache_file=None,            # 直接指定缓存 pkl 的完整路径（优先于 cache_dir）
+        path_remap=None,            # {本地前缀: obs 前缀}，缓存里存的是本地绝对路径时用它改读 OBS
     ):
         super().__init__()
+        self.cache_dir = cache_dir or os.environ.get("DATASET_CACHE_DIR") or LEGACY_CACHE_DIR
+        self.cache_file = cache_file
+        if OmegaConf.is_config(path_remap):
+            path_remap = OmegaConf.to_container(path_remap, resolve=True)
+        self.path_remap = dict(path_remap) if path_remap else None
+        fio.set_path_remap(self.path_remap)
         self.pct_valid_only = pct_valid_only
         self.pct_disable = pct_disable
         self.use_dataset_masks = use_dataset_masks
@@ -422,6 +436,7 @@ class BaseDataset(EasyDataset):
                 if hasattr(self, "this_views_info"):
                     delattr(self, "this_views_info")
                 set_depth_filter(self.pct_valid_only, self.pct_disable)
+                fio.set_path_remap(getattr(self, "path_remap", None))
                 self._n_load += 1
                 views = self._get_views(idx, resolution, self._rng)
 
@@ -528,8 +543,7 @@ class BaseDataset(EasyDataset):
     
     def _load_cache(self, cache_file):
         try:
-            with open(cache_file, "rb") as f:
-                data = pickle.load(f)
+            data = fio.load_pickle(cache_file)
 
             if not isinstance(data, dict):
                 print("Error: cache file does not contain a dictionary.")
@@ -543,12 +557,8 @@ class BaseDataset(EasyDataset):
             return False
 
     def _save_cache(self, keys, save_path):
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-
         save_dict = {key: getattr(self, key) for key in keys}
-
-        with open(save_path, "wb") as f:
-            pickle.dump(save_dict, f)
+        fio.save_pickle(save_dict, save_path)
 
         print(f"Saved cache to {save_path}.", flush=True)
 

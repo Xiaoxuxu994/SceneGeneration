@@ -25,6 +25,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import rdepth_to_zdepth, threshold_depth_map
 from datasets.base.utils import read_any_file, parse_colmap_to_dict
@@ -89,11 +90,12 @@ class ScanNetDataset(BaseDataset):
         self.scene_meta = {}
 
         # 1) load/save cache
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+        if not fio.exists(cache_path):
             print(f'[Dataset] Constructing cache {cache_path}..')
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_to_path", "scene_meta"],save_path=cache_path)
@@ -127,14 +129,14 @@ class ScanNetDataset(BaseDataset):
     # =========================
     def _scan_scenes(self):
         sequence_list_path = f"{self.SCANNET_DIR}/sequence_list.pkl"
-        if osp.exists(sequence_list_path):
-            with open(sequence_list_path, "rb") as f:
+        if fio.exists(sequence_list_path):
+            with fio.open(sequence_list_path, "rb") as f:
                 sequence_list, data_store = pickle.load(f)
         else:
             data_store = {}
             sequence_list = []
-            subdirs = os.listdir(self.SCANNET_DIR)
-            scenes = sorted([osp.join(subdir, d) for subdir in subdirs for d in os.listdir(osp.join(self.SCANNET_DIR, subdir)) if osp.isdir(osp.join(self.SCANNET_DIR, subdir, d))])
+            subdirs = fio.listdir(self.SCANNET_DIR)
+            scenes = sorted([osp.join(subdir, d) for subdir in subdirs for d in fio.listdir(osp.join(self.SCANNET_DIR, subdir)) if fio.isdir(osp.join(self.SCANNET_DIR, subdir, d))])
             for scene in tqdm(scenes, desc="Building Scannet cache"):
                 scene_path = osp.join(self.SCANNET_DIR, scene)
                 color_dir = osp.join(scene_path, "color")
@@ -143,16 +145,16 @@ class ScanNetDataset(BaseDataset):
                 cam_dir = osp.join(scene_path, "cam")
                 pose_dir = osp.join(scene_path, "pose")
                 intrinsic_path = osp.join(scene_path, "intrinsics", "intrinsic_depth.txt")
-                use_cam = osp.exists(cam_dir)
-                if not (osp.exists(color_dir) and osp.exists(depth_dir)):
+                use_cam = fio.exists(cam_dir)
+                if not (fio.exists(color_dir) and fio.exists(depth_dir)):
                     continue
 
                 def sort_by_number(file_name):
                     return int(file_name.split(".")[0])
 
                 if use_cam:
-                    color_files = sorted([f for f in os.listdir(color_dir) if f.endswith(".jpg")], key=sort_by_number)
-                    cam_files = sorted([f for f in os.listdir(cam_dir) if f.endswith(".npz")], key=sort_by_number)
+                    color_files = sorted([f for f in fio.listdir(color_dir) if f.endswith(".jpg")], key=sort_by_number)
+                    cam_files = sorted([f for f in fio.listdir(cam_dir) if f.endswith(".npz")], key=sort_by_number)
                     if len(color_files) < self.min_num_images or len(cam_files) < self.min_num_images:
                         continue
                     frame_metadata = []
@@ -163,10 +165,10 @@ class ScanNetDataset(BaseDataset):
                         segment_path = osp.join(segment_dir, f"{frame_id}.png")
                         cam_path = osp.join(cam_dir, f"{int(frame_id):05d}.npz")
                         if not (
-                            osp.exists(color_path)
-                            and osp.exists(depth_path)
-                            and osp.exists(segment_path)
-                            and osp.exists(cam_path)
+                            fio.exists(color_path)
+                            and fio.exists(depth_path)
+                            and fio.exists(segment_path)
+                            and fio.exists(cam_path)
                         ):
                             continue
                         frame_metadata.append(
@@ -183,9 +185,9 @@ class ScanNetDataset(BaseDataset):
                         data_store[scene] = frame_metadata
                         sequence_list.append(scene)
                 else:
-                    if not (osp.exists(pose_dir) and osp.exists(intrinsic_path)):
+                    if not (fio.exists(pose_dir) and fio.exists(intrinsic_path)):
                         continue
-                    color_files = sorted([f for f in os.listdir(color_dir) if f.endswith(".jpg")], key=sort_by_number)
+                    color_files = sorted([f for f in fio.listdir(color_dir) if f.endswith(".jpg")], key=sort_by_number)
                     if len(color_files) < self.min_num_images:
                         continue
                     frame_metadata = []
@@ -196,14 +198,14 @@ class ScanNetDataset(BaseDataset):
                         segment_path = osp.join(segment_dir, f"{frame_id}.png")
                         pose_path = osp.join(pose_dir, f"{frame_id}.txt")
                         if not (
-                            osp.exists(color_path)
-                            and osp.exists(depth_path)
-                            # and osp.exists(segment_path)
-                            and osp.exists(pose_path)
+                            fio.exists(color_path)
+                            and fio.exists(depth_path)
+                            # and fio.exists(segment_path)
+                            and fio.exists(pose_path)
                         ):
                             continue
                         # filter out images without pose annotation
-                        pose_anno = np.loadtxt(open(pose_path))
+                        pose_anno = fio.loadtxt(fio.open(pose_path))
                         if np.isnan(pose_anno).any() or np.isinf(pose_anno).any():
                             continue
                         frame_metadata.append(
@@ -221,13 +223,13 @@ class ScanNetDataset(BaseDataset):
                         data_store[scene] = frame_metadata
                         sequence_list.append(scene)
 
-                with open(sequence_list_path, "wb") as f:
+                with fio.open(sequence_list_path, "wb") as f:
                     pickle.dump((sequence_list, data_store), f)
 
         if self.load_segment:
             self.classes = 40 + 1
-            with open(self.SCANNET_DIR + "/scannetv2-labels.combined.tsv") as _file:
-                df = pd.read_csv(_file, delimiter="\t")
+            with fio.open(self.SCANNET_DIR + "/scannetv2-labels.combined.tsv") as _file:
+                df = fio.read_csv(_file, delimiter="\t")
                 id_to_nyu40id = dict(zip(df["id"], df["nyu40id"]))
                 id_to_nyu40id[0] = 0
                 self.reid = np.vectorize(lambda id_: id_to_nyu40id.get(id_, -1))
@@ -281,8 +283,8 @@ class ScanNetDataset(BaseDataset):
     def _load_one_view(self, scene_path, fid, frame, resolution, rng):
         
         # rgb_image = read_any_file(osp.join(self.SCANNET_DIR, frame["color"]))
-        rgb_image = np.array(Image.open(osp.join(self.SCANNET_DIR, frame["color"])).resize((640, 480), resample=lanczos))
-        # rgb_image = np.array(Image.open(osp.join(self.SCANNET_DIR, frame["color"])).resize((600, 400), resample=lanczos))
+        rgb_image = np.array(fio.pil_open(osp.join(self.SCANNET_DIR, frame["color"])).resize((640, 480), resample=lanczos))
+        # rgb_image = np.array(fio.pil_open(osp.join(self.SCANNET_DIR, frame["color"])).resize((600, 400), resample=lanczos))
         depthmap = read_any_file(osp.join(self.SCANNET_DIR, frame["depth"]))
 
         depthmap = depthmap * 0.001
@@ -296,15 +298,15 @@ class ScanNetDataset(BaseDataset):
 
 
         if frame.get("format") == "npz":
-            with open(osp.join(self.SCANNET_DIR, frame["cam"]), "rb") as f:
-                cam_data = np.load(f)
+            with fio.open(osp.join(self.SCANNET_DIR, frame["cam"]), "rb") as f:
+                cam_data = fio.np_load(f)
             intrinsic = cam_data["intrinsics"][:3, :3]
             extrinsic = cam_data["pose"][:3, :]
         else:
-            with open(osp.join(self.SCANNET_DIR, frame["intrinsic"])) as f:
-                intrinsic = np.loadtxt(f)[:3, :3]
-            with open(osp.join(self.SCANNET_DIR, frame["pose"])) as f:
-                extrinsic = np.loadtxt(f)[:3, :]
+            with fio.open(osp.join(self.SCANNET_DIR, frame["intrinsic"])) as f:
+                intrinsic = fio.loadtxt(f)[:3, :3]
+            with fio.open(osp.join(self.SCANNET_DIR, frame["pose"])) as f:
+                extrinsic = fio.loadtxt(f)[:3, :]
 
         # extri_opencv is cam-to-world, transform it to world-to-cam
         extrinsic[:3, :3] = extrinsic[:3, :3].transpose(-1, -2)
@@ -361,40 +363,9 @@ class ScanNetDataset(BaseDataset):
 
         return views
 
+
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/ScanNet"
-    out_dir = "output_debug/ScanNet/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = ScanNetDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[518, 336]],
-        frame_num=8,
-        max_distance=24,
-        split_ratio=0.9,
-        random_sample_thres=0.05,
-        stride_sample_thres=0.30,
-        stride_candidates=[20, 22, 25, 28, 30],
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    """Visualize gt data. """
-    visualize_gt(views, out_dir, prefix="ScanNet_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.scannet_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(ScanNetDataset))

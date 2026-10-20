@@ -15,6 +15,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 from datasets.base.utils import read_any_file
@@ -62,11 +63,12 @@ class DL3DVDataset(BaseDataset):
         self.scene_meta = {}
 
         # 1) load/save cache
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+        if not fio.exists(cache_path):
             print(f'[Dataset] Constructing cache {cache_path}..')
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_to_path", "scene_meta"],save_path=cache_path)
@@ -106,12 +108,12 @@ class DL3DVDataset(BaseDataset):
             intrinsic[1,1] = float(cam_info["fl_y"])
             intrinsic[1,2] = float(cam_info["cy"])
             return intrinsic
-        scene_list = os.listdir(self.DL3DV_DIR)
+        scene_list = fio.listdir(self.DL3DV_DIR)
         
         for scene_name in tqdm(scene_list, desc=f"Building {self.dataset_label} cache"):
             cam_file = osp.join(self.DL3DV_DIR, scene_name, "scene_meta.json")
-            if osp.exists(cam_file):
-                with open(cam_file, 'r') as f:
+            if fio.exists(cam_file):
+                with fio.open(cam_file, 'r') as f:
                     cam_info = json.load(f)
                 if cam_info["scene_name"] == scene_name:
                     frame_metadata = {}
@@ -125,7 +127,7 @@ class DL3DVDataset(BaseDataset):
                         depth_path = osp.join(self.DL3DV_DIR, scene_name, frame_info["mvsanywhere_depth"])
                         depthconf_path = osp.join(self.DL3DV_DIR, scene_name, frame_info["mvsanywhere_depth_confidence"])
         
-                        if osp.exists(rgb_path) and osp.exists(depth_path) and osp.exists(depthconf_path):
+                        if fio.exists(rgb_path) and fio.exists(depth_path) and fio.exists(depthconf_path):
                             frames.append(frame_info)
 
                     frame_metadata["rgb_depth_extrinsic"] = frames
@@ -238,37 +240,10 @@ class DL3DVDataset(BaseDataset):
 
         return views
     
+
+
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/DL3DV_WAI"
-    out_dir = "output_debug/DL3DV/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = DL3DVDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=8,
-        max_distance=64,
-        split_ratio=1,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}",
-        )
-
-    """Visualize gt data. """
-    visualize_gt(views, out_dir, prefix="DL3DV_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.dl3dv_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(DL3DVDataset))

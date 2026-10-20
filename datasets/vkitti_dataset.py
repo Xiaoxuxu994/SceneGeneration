@@ -17,6 +17,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 
@@ -46,15 +47,17 @@ class VKittiDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(
             cache_dir,
             f"{self.dataset_label}_{root_hash}_cache.pkl"
         )
 
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(
@@ -89,7 +92,7 @@ class VKittiDataset(BaseDataset):
     # scan / cache
     # =========================
     def _scan_scenes(self):
-        assert osp.isdir(self.data_root), f"[{self.dataset_label}] data_root not found: {self.data_root}"
+        assert fio.isdir(self.data_root), f"[{self.dataset_label}] data_root not found: {self.data_root}"
 
         all_sequences = []
         scene_to_path = {}
@@ -97,7 +100,7 @@ class VKittiDataset(BaseDataset):
 
         # 正确结构:
         # data_root/Scene01/rain/frames/rgb/Camera_0
-        rgb_cam_dirs = sorted(glob(osp.join(self.data_root, "*", "*", "frames", "rgb", "Camera_*")))
+        rgb_cam_dirs = sorted(fio.glob(osp.join(self.data_root, "*", "*", "frames", "rgb", "Camera_*")))
 
         for rgb_cam_dir in tqdm(rgb_cam_dirs, desc=f"Building {self.dataset_label} cache"):
             cam_name = osp.basename(rgb_cam_dir)                        # Camera_0
@@ -114,7 +117,7 @@ class VKittiDataset(BaseDataset):
                 continue
 
             depth_root = osp.join(frames_dir, "depth", cam_name)
-            if not osp.isdir(depth_root):
+            if not fio.isdir(depth_root):
                 if self.verbose:
                     print(f"[{self.dataset_label}] Skip invalid scene (missing depth dir): {depth_root}")
                 continue
@@ -124,14 +127,14 @@ class VKittiDataset(BaseDataset):
             extri_file = osp.join(scene_path, "extrinsic.txt")
             intri_file = osp.join(scene_path, "intrinsic.txt")
 
-            if not (osp.isfile(extri_file) and osp.isfile(intri_file)):
+            if not (fio.isfile(extri_file) and fio.isfile(intri_file)):
                 if self.verbose:
                     print(f"[{self.dataset_label}] Skip invalid scene (missing camera txt): {scene_path}")
                 continue
 
             try:
-                extrinsics_all = np.loadtxt(extri_file, delimiter=" ", skiprows=1).astype(np.float32)
-                intrinsics_all = np.loadtxt(intri_file, delimiter=" ", skiprows=1).astype(np.float32)
+                extrinsics_all = fio.loadtxt(extri_file, delimiter=" ", skiprows=1).astype(np.float32)
+                intrinsics_all = fio.loadtxt(intri_file, delimiter=" ", skiprows=1).astype(np.float32)
             except Exception as e:
                 print(f"[{self.dataset_label}] Skip scene {scene_name}, failed to load camera txt: {e}")
                 continue
@@ -152,11 +155,11 @@ class VKittiDataset(BaseDataset):
 
             rgb_ids = {
                 osp.basename(x).replace("rgb_", "").replace(".jpg", "")
-                for x in glob(osp.join(rgb_root, "rgb_*.jpg"))
+                for x in fio.glob(osp.join(rgb_root, "rgb_*.jpg"))
             }
             depth_ids = {
                 osp.basename(x).replace("depth_", "").replace(".png", "")
-                for x in glob(osp.join(depth_root, "depth_*.png"))
+                for x in fio.glob(osp.join(depth_root, "depth_*.png"))
             }
 
             inter_ids = rgb_ids & depth_ids
@@ -237,8 +240,8 @@ class VKittiDataset(BaseDataset):
         impath = osp.join(scene_path, "frames", "rgb", cam_name, f"rgb_{idx:05d}.jpg")
         depthpath = osp.join(scene_path, "frames", "depth", cam_name, f"depth_{idx:05d}.png")
 
-        rgb_image = np.array(Image.open(impath).convert("RGB"))
-        depthmap = np.array(Image.open(depthpath)).astype(np.float32)
+        rgb_image = np.array(fio.pil_open(impath).convert("RGB"))
+        depthmap = np.array(fio.pil_open(depthpath)).astype(np.float32)
 
         depthmap = np.nan_to_num(depthmap, nan=0.0, posinf=0.0, neginf=0.0)
         depthmap = depthmap / 100.0
@@ -305,35 +308,7 @@ class VKittiDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt,visualize_gt_norm_compare
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/vKitti2"
-    out_dir = "output_debug/vKitti2/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = VKittiDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=8,
-        min_num_images=24,
-        split_ratio=0.9,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-    visualize_gt(views, out_dir, prefix="vKitti_GT")
-    visualize_gt_norm_compare(views, out_dir, prefix="vKitti_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.vkitti_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(VKittiDataset))

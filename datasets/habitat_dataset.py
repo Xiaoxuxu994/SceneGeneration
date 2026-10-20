@@ -23,6 +23,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 
@@ -204,12 +205,14 @@ class HabitatDataset(BaseDataset):
         self.scene_meta = {}
 
         # 1) load/save cache
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
 
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(
@@ -346,21 +349,21 @@ class HabitatDataset(BaseDataset):
         depthpath = osp.join(self.depth_root, scene_name, f"{base}_depth_zbuffer.png")
         pointpath = osp.join(self.point_info_root, scene_name, f"{base}_fixatedpose.json")
 
-        if not osp.isfile(impath):
+        if not fio.isfile(impath):
             raise FileNotFoundError(impath)
-        if not osp.isfile(depthpath):
+        if not fio.isfile(depthpath):
             raise FileNotFoundError(depthpath)
-        if not osp.isfile(pointpath):
+        if not fio.isfile(pointpath):
             raise FileNotFoundError(pointpath)
 
-        rgb_image = Image.open(impath).convert("RGB")
-        depthmap = np.array(Image.open(depthpath)).astype(np.float32) / 512.0
+        rgb_image = fio.pil_open(impath).convert("RGB")
+        depthmap = np.array(fio.pil_open(depthpath)).astype(np.float32) / 512.0
 
         # Habitat original logic: threshold max depth 127.99
         depthmap = np.nan_to_num(depthmap, nan=0.0, posinf=0.0, neginf=0.0)
         depthmap[(depthmap <= 0.0) | (depthmap > 127.99)] = 0.0
 
-        with open(pointpath, "r") as f:
+        with fio.open(pointpath, "r") as f:
             point_info = json.load(f)
 
         W0, H0 = rgb_image.size
@@ -424,38 +427,7 @@ class HabitatDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/habitat"
-    out_dir = "output_debug/Habitat/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = HabitatDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=8,
-        max_distance=24,
-        split_ratio=1.0,
-        min_num_images=24,
-        z_far=127.99,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    visualize_gt(views, out_dir, prefix="Habitat_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.habitat_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(HabitatDataset))

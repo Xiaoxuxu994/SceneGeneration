@@ -18,6 +18,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 
@@ -47,12 +48,14 @@ class ReplicaDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
 
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(
@@ -100,10 +103,10 @@ class ReplicaDataset(BaseDataset):
                     ...
         """
         cam_params_path = osp.join(self.data_root, "cam_params.json")
-        if not osp.isfile(cam_params_path):
+        if not fio.isfile(cam_params_path):
             raise FileNotFoundError(f"Missing shared camera params: {cam_params_path}")
 
-        with open(cam_params_path, "r") as f:
+        with fio.open(cam_params_path, "r") as f:
             cam_params = json.load(f)
 
         camera_intrinsic = np.array(
@@ -117,8 +120,8 @@ class ReplicaDataset(BaseDataset):
         )
 
         scene_names = [
-            x for x in os.listdir(self.data_root)
-            if osp.isdir(osp.join(self.data_root, x))
+            x for x in fio.listdir(self.data_root)
+            if fio.isdir(osp.join(self.data_root, x))
         ]
         scene_names = sorted(scene_names)
 
@@ -131,11 +134,11 @@ class ReplicaDataset(BaseDataset):
             results_dir = osp.join(scene_path, "results")
             traj_file = osp.join(scene_path, "traj.txt")
 
-            if not (osp.isdir(results_dir) and osp.isfile(traj_file)):
+            if not (fio.isdir(results_dir) and fio.isfile(traj_file)):
                 continue
 
             try:
-                camera_parameters = np.loadtxt(traj_file, delimiter=" ", skiprows=0).astype(np.float32)
+                camera_parameters = fio.loadtxt(traj_file, delimiter=" ", skiprows=0).astype(np.float32)
             except Exception as e:
                 print(f"[Replica] Skip {scene}, failed to load traj: {e}")
                 continue
@@ -149,11 +152,11 @@ class ReplicaDataset(BaseDataset):
 
             rgb_ids = {
                 osp.splitext(osp.basename(x))[0].replace("frame", "")
-                for x in glob(osp.join(results_dir, "frame*.jpg"))
+                for x in fio.glob(osp.join(results_dir, "frame*.jpg"))
             }
             depth_ids = {
                 osp.splitext(osp.basename(x))[0].replace("depth", "")
-                for x in glob(osp.join(results_dir, "depth*.png"))
+                for x in fio.glob(osp.join(results_dir, "depth*.png"))
             }
 
             frame_ids = sorted(rgb_ids & depth_ids, key=int)
@@ -212,8 +215,8 @@ class ReplicaDataset(BaseDataset):
         image_filepath = osp.join(scene_path, "results", f"frame{image_idx:06d}.jpg")
         depth_filepath = osp.join(scene_path, "results", f"depth{image_idx:06d}.png")
 
-        rgb_image = Image.open(image_filepath).convert("RGB")
-        depthmap = np.array(Image.open(depth_filepath)).astype(np.float32)
+        rgb_image = fio.pil_open(image_filepath).convert("RGB")
+        depthmap = np.array(fio.pil_open(depth_filepath)).astype(np.float32)
 
         # Replica depth conversion
         depthmap = depthmap / 6553.5
@@ -280,37 +283,7 @@ class ReplicaDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-
-    data_root = "/efs-m3ga/z00533370/reliev3r_data/Replica"
-    out_dir = "output_debug/Replica/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = ReplicaDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=8,
-        max_distance=24,
-        split_ratio=0.9,
-        min_num_images=24,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    visualize_gt(views, out_dir, prefix="Replica_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.replica_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(ReplicaDataset))

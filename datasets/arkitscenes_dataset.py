@@ -16,6 +16,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 from datasets.base.utils import read_any_file
@@ -56,11 +57,12 @@ class ARKitScenesDataset(BaseDataset):
         self.scene_meta = {}
 
         # 1) load/save cache
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+        if not fio.exists(cache_path):
             print(f'[Dataset] Constructing cache {cache_path}..')
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_to_path", "scene_meta"],save_path=cache_path)
@@ -96,13 +98,13 @@ class ARKitScenesDataset(BaseDataset):
         all_sequences = []
         scene_to_path = {}
         scene_meta = {}
-        for subdir in os.listdir(self.ARKITSCENES_DIR):
+        for subdir in fio.listdir(self.ARKITSCENES_DIR):
             subdir_path = osp.join(self.ARKITSCENES_DIR, subdir)
-            if not osp.isdir(subdir_path):
+            if not fio.isdir(subdir_path):
                 continue
 
             for scene_id in tqdm(
-                sorted(os.listdir(subdir_path)),
+                sorted(fio.listdir(subdir_path)),
                 desc=f"{subdir}",
                 leave=False
             ):
@@ -110,13 +112,13 @@ class ARKitScenesDataset(BaseDataset):
                 rgb_path = osp.join(self.ARKITSCENES_DIR, subdir, scene_id, "vga_wide")
                 depth_path = osp.join(self.ARKITSCENES_DIR, subdir, scene_id, "lowres_depth")
                 pose_path = osp.join(self.ARKITSCENES_DIR, subdir, scene_id, "lowres_wide.traj") 
-                if osp.exists(intri_path) and osp.exists(rgb_path) and osp.exists(depth_path) and osp.exists(pose_path):
+                if fio.exists(intri_path) and fio.exists(rgb_path) and fio.exists(depth_path) and fio.exists(pose_path):
                     # get all timestamp of intrisic/rgb/depth/traj aand sorted
-                    intri_timestamp_list = sorted([s.split("_")[1].replace(".pincam", "") for s in os.listdir(intri_path)], key=lambda s: float(s))
-                    rgb_timestamp_list = sorted([s.split("_")[1].replace(".png", "") for s in os.listdir(rgb_path)], key=lambda s: float(s))
-                    depth_timestamp_list = sorted([s.split("_")[1].replace(".png", "") for s in os.listdir(depth_path)], key=lambda s: float(s))   
+                    intri_timestamp_list = sorted([s.split("_")[1].replace(".pincam", "") for s in fio.listdir(intri_path)], key=lambda s: float(s))
+                    rgb_timestamp_list = sorted([s.split("_")[1].replace(".png", "") for s in fio.listdir(rgb_path)], key=lambda s: float(s))
+                    depth_timestamp_list = sorted([s.split("_")[1].replace(".png", "") for s in fio.listdir(depth_path)], key=lambda s: float(s))   
                     traj_timestamp_list = []
-                    with open(pose_path, "r") as f:
+                    with fio.open(pose_path, "r") as f:
                         for line in f:
                             parts = line.strip().split()  # 6790.13168783 1.212956130924529 -1.2455780157270364 1.2588744491484622 0.0613927 0.0737052 0.00398328
                             if not parts:
@@ -170,8 +172,8 @@ class ARKitScenesDataset(BaseDataset):
         depth_path = osp.join(self.ARKITSCENES_DIR, scene_path, "lowres_depth", f"{scene_id}_{timestamp_group[3]}.png")
         rgb_image = read_any_file(image_path)
         h,w = rgb_image.shape[:2]
-        depthmap = np.array(Image.open(depth_path).resize((w, h), resample=Image.NEAREST))/1000
-        with open(intri_path, "r") as f:
+        depthmap = np.array(fio.pil_open(depth_path).resize((w, h), resample=Image.NEAREST))/1000
+        with fio.open(intri_path, "r") as f:
             line = f.read().strip()
             w, h, fx, fy, cx, cy = map(float, line.split())
         intrinsic = np.eye(3,dtype=np.float32)
@@ -191,8 +193,8 @@ class ARKitScenesDataset(BaseDataset):
         conf = None
         if self.conf_min >= 0:
             conf_path = osp.join(self.ARKITSCENES_DIR, scene_path, "confidence", f"{scene_id}_{timestamp_group[3]}.png")
-            if osp.exists(conf_path):
-                conf = np.array(Image.open(conf_path).resize((rgb_image.shape[1], rgb_image.shape[0]), resample=Image.NEAREST)).astype(np.uint8)
+            if fio.exists(conf_path):
+                conf = np.array(fio.pil_open(conf_path).resize((rgb_image.shape[1], rgb_image.shape[0]), resample=Image.NEAREST)).astype(np.uint8)
             elif not self._conf_missing_warned:
                 print(f"[{self.dataset_label}] confidence not found (e.g. {conf_path}); conf_min ignored for such frames", flush=True)
                 self._conf_missing_warned = True
@@ -241,7 +243,7 @@ class ARKitScenesDataset(BaseDataset):
 
         pose_dict = {}
         pose_path = osp.join(self.ARKITSCENES_DIR, scene, "lowres_wide.traj") 
-        with open(pose_path, "r") as f:
+        with fio.open(pose_path, "r") as f:
             for line in f:
                 parts = line.strip().split()  # 6790.13168783 1.212956130924529 -1.2455780157270364 1.2588744491484622 0.0613927 0.0737052 0.00398328
                 if not parts:
@@ -277,37 +279,9 @@ def closest_in_b_for_each_a(a:list[str], b:list[str]):
         res.append((x, b[j], abs(float(b[j]) - float(x))))
     return res
 
+
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/ARKitScenes"
-    out_dir = "output_debug/ARKitScenes/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = ARKitScenesDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=24,
-        max_distance=72,
-        split_ratio=1,
-        verbose=False,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    """Visualize gt data. """
-    visualize_gt(views, out_dir, prefix="ARKitScenes_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.arkitscenes_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(ARKitScenesDataset))

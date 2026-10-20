@@ -23,6 +23,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 
@@ -49,7 +50,7 @@ def _load_yaml_file(path):
             "PyYAML is required to read camera.yaml. "
             "Please install it with: pip install pyyaml"
         )
-    with open(path, "r") as f:
+    with fio.open(path, "r") as f:
         return yaml.safe_load(f)
 
 
@@ -80,7 +81,7 @@ def load_trj_poses(trj_path):
     """
     poses = []
 
-    with open(trj_path, "r") as f:
+    with fio.open(trj_path, "r") as f:
         for line_idx, line in enumerate(f):
             line = line.strip()
             if not line:
@@ -166,12 +167,14 @@ class MayaIndoorDataset(BaseDataset):
         self.scene_to_path = {}
         self.scene_meta = {}
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = osp.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
 
-        if not osp.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(
@@ -214,10 +217,10 @@ class MayaIndoorDataset(BaseDataset):
         camera_yaml_path = osp.join(route_path, CAMERA_YAML_NAME)
         trj_path = osp.join(route_path, TRJ_NAME)
         return (
-            osp.isdir(color_dir)
-            and osp.isdir(depth_dir)
-            and osp.isfile(camera_yaml_path)
-            and osp.isfile(trj_path)
+            fio.isdir(color_dir)
+            and fio.isdir(depth_dir)
+            and fio.isfile(camera_yaml_path)
+            and fio.isfile(trj_path)
         )
 
     def _make_sequence_name(self, route_path):
@@ -243,7 +246,7 @@ class MayaIndoorDataset(BaseDataset):
             osp.join(route_path, "vis", "depth", f"{fid}_depth_vis.png"),
         ]
         for p in candidates:
-            if osp.isfile(p):
+            if fio.isfile(p):
                 return p
         return None
 
@@ -270,8 +273,8 @@ class MayaIndoorDataset(BaseDataset):
 
         scene_names = sorted(
             [
-                x for x in os.listdir(self.data_root)
-                if osp.isdir(osp.join(self.data_root, x))
+                x for x in fio.listdir(self.data_root)
+                if fio.isdir(osp.join(self.data_root, x))
             ]
         )
 
@@ -282,8 +285,8 @@ class MayaIndoorDataset(BaseDataset):
 
             result_names = sorted(
                 [
-                    x for x in os.listdir(scene_path)
-                    if osp.isdir(osp.join(scene_path, x)) and x.startswith("result")
+                    x for x in fio.listdir(scene_path)
+                    if fio.isdir(osp.join(scene_path, x)) and x.startswith("result")
                 ]
             )
 
@@ -292,8 +295,8 @@ class MayaIndoorDataset(BaseDataset):
 
                 route_names = sorted(
                     [
-                        x for x in os.listdir(result_path)
-                        if osp.isdir(osp.join(result_path, x)) and x.startswith("route_")
+                        x for x in fio.listdir(result_path)
+                        if fio.isdir(osp.join(result_path, x)) and x.startswith("route_")
                     ],
                     key=self._route_sort_key,
                 )
@@ -313,7 +316,7 @@ class MayaIndoorDataset(BaseDataset):
                         continue
 
                     color_dir = osp.join(route_path, "vis", "color")
-                    color_files = sorted(glob(osp.join(color_dir, "*_color_vis.png")))
+                    color_files = sorted(fio.glob(osp.join(color_dir, "*_color_vis.png")))
                     if len(color_files) == 0:
                         continue
 
@@ -410,7 +413,7 @@ class MayaIndoorDataset(BaseDataset):
         return K.astype(np.float32)
 
     # def _load_depth(self, depth_path):
-    #     depth_img = Image.open(depth_path)
+    #     depth_img = fio.pil_open(depth_path)
     #     depth = np.array(depth_img)
 
     #     if depth.ndim == 3:
@@ -426,7 +429,7 @@ class MayaIndoorDataset(BaseDataset):
     #     return depth.astype(np.float32)
 
     def _load_depth(self, depth_path, D_min=0.0, D_max=100.0):
-        depth_img = Image.open(depth_path)
+        depth_img = fio.pil_open(depth_path)
         depth_uint16 = np.array(depth_img)
 
         if depth_uint16.ndim == 3:
@@ -468,7 +471,7 @@ class MayaIndoorDataset(BaseDataset):
         if depth_path is None:
             raise FileNotFoundError(f"Depth not found for fid={fid}, route={route_path}")
 
-        rgb_image = Image.open(color_path).convert("RGB")
+        rgb_image = fio.pil_open(color_path).convert("RGB")
         depthmap = self._load_depth(depth_path)
 
         W0, H0 = rgb_image.size
@@ -549,49 +552,7 @@ class MayaIndoorDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-
-    data_root = "/efs-m3ga/h00548084/relive3r_raw/Maya/Modern/Indoor/"
-    out_dir = "output_debug/MayaIndoor/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = MayaIndoorDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=8,
-        max_distance=4,
-        min_num_images=8,
-        split_ratio=0.9,
-        verbose=True,
-        shuffle=False,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    if len(dataset) == 0:
-        raise RuntimeError("Dataset is empty. Please check data_root and folder structure.")
-
-    views = dataset[0]
-
-    print(f"[dataset] number of views = {len(views)}")
-    print(f"[dataset] this_views_info = {dataset.this_views_info}")
-
-    for i, v in enumerate(views):
-        img_shape = tuple(v["img"].shape) if torch.is_tensor(v["img"]) else v["img"].size
-
-        print(
-            f"[dataset view {i}] "
-            f"img={img_shape}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={float(v['depthmap'].min())}, "
-            f"depthmax={float(v['depthmap'].max())}, "
-            f"pose_t={v['camera_pose'][:3, 3]}, "
-            f"K={v['camera_intrinsics']}, "
-            f"pts3d={v['pts3d'].shape if 'pts3d' in v else None}, "
-            f"valid={v['valid_mask'].sum() if 'valid_mask' in v else None}, "
-            f"label={v['label']}, "
-            f"instance={v['instance']}"
-        )
-
-    visualize_gt(views, out_dir, prefix="MayaIndoor_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.mayaindoor_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(MayaIndoorDataset))

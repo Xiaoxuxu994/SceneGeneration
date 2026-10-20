@@ -22,6 +22,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from datasets.base.base_dataset import BaseDataset
+from datasets.base import fileio as fio
 from datasets.base.transforms import *
 from datasets.sample_utils.common import threshold_depth_map
 
@@ -58,14 +59,16 @@ class KubricDataset(BaseDataset):
         self._cached_seg_scene = None
         self._cached_segmentations = None
 
-        cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
-        os.makedirs(cache_dir, exist_ok=True)
+        cache_dir = self.cache_dir
+        fio.makedirs(cache_dir)
 
         # 改回原来的轻量 cache
-        root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
+        root_hash = hashlib.md5(fio.abspath(self.data_root).encode()).hexdigest()[:8]
         cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
 
-        if not os.path.exists(cache_path):
+        cache_path = self.cache_file or cache_path
+
+        if not fio.exists(cache_path):
             print(f"[Dataset] Constructing cache {cache_path}..")
             self._scan_scenes()
             self._save_cache(keys=["all_sequences", "scene_to_path", "scene_meta"],save_path=cache_path)
@@ -98,8 +101,8 @@ class KubricDataset(BaseDataset):
     # =========================
     def _scan_scenes(self):
         scene_names = [
-            x for x in os.listdir(self.data_root)
-            if osp.isdir(osp.join(self.data_root, x))
+            x for x in fio.listdir(self.data_root)
+            if fio.isdir(osp.join(self.data_root, x))
         ]
         scene_names = sorted(scene_names)
 
@@ -113,22 +116,22 @@ class KubricDataset(BaseDataset):
             depth_dir = os.path.join(scene_path , "depths")
             cam_file = os.path.join(scene_path , f"{scene}.npy")
 
-            if not (osp.isdir(rgb_dir) and osp.isdir(depth_dir) and osp.isfile(cam_file)):
+            if not (fio.isdir(rgb_dir) and fio.isdir(depth_dir) and fio.isfile(cam_file)):
                 continue
 
             try:
-                cam_data = np.load(str(cam_file), allow_pickle=True).item()["camera"]
+                cam_data = fio.np_load(str(cam_file), allow_pickle=True).item()["camera"]
             except Exception as e:
                 print(f"[Kubric] Skip scene {scene}, failed to load camera file: {e}")
                 continue
 
             rgb_ids = {
                 osp.splitext(osp.basename(x))[0]
-                for x in glob(osp.join(str(rgb_dir), "*.png"))
+                for x in fio.glob(osp.join(str(rgb_dir), "*.png"))
             }
             depth_ids = {
                 osp.splitext(osp.basename(x))[0]
-                for x in glob(osp.join(str(depth_dir), "*.npy"))
+                for x in fio.glob(osp.join(str(depth_dir), "*.npy"))
             }
 
             frame_ids = sorted(list(rgb_ids & depth_ids), key=lambda x: int(x))
@@ -226,7 +229,7 @@ class KubricDataset(BaseDataset):
             return self._cached_segmentations
 
         scene_npy_path = osp.join(scene_path, f"{scene_name}.npy")
-        full_data = np.load(scene_npy_path, allow_pickle=True).item()
+        full_data = fio.np_load(scene_npy_path, allow_pickle=True).item()
         segmentations = full_data["segmentations"]
 
         self._cached_seg_scene = scene_name
@@ -245,8 +248,8 @@ class KubricDataset(BaseDataset):
         impath = osp.join(scene_path, "frames", f"{fid}.png")
         depthpath = osp.join(scene_path, "depths", f"{fid}.npy")
 
-        rgb_image = Image.open(impath).convert("RGB")
-        depthmap = np.load(depthpath).astype(np.float32)
+        rgb_image = fio.pil_open(impath).convert("RGB")
+        depthmap = fio.np_load(depthpath).astype(np.float32)
 
         # 清理 depth
         depthmap = np.nan_to_num(depthmap, nan=0.0, posinf=0.0, neginf=0.0)
@@ -332,39 +335,7 @@ class KubricDataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    from datasets.sample_utils.vis_util import visualize_gt
-
-    data_root = "/mnt/nvme3/z00533370/dataset/sample_data/Kubric"
-    # data_root = "/efs-m3ga/z00533370/reliev3r_data/Kubric/"
-    out_dir = "output_debug/Kubric_seg2/"
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset = KubricDataset(
-        data_root=data_root,
-        mode="train",
-        resolution=[[224, 224]],
-        frame_num=8,
-        max_distance=8,
-        min_num_images=24,
-        split_ratio=0.9,
-        verbose=False,
-        shuffle=False,
-        mask_background=True,
-    )
-
-    print(f"len(dataset) = {len(dataset)}")
-
-    views = dataset[0]
-    print(f"[dataset] number of views = {len(views)}")
-    for i, v in enumerate(views):
-        print(
-            f"[dataset view {i}] "
-            f"img={tuple(v['img'].shape) if torch.is_tensor(v['img']) else v['img'].size}, "
-            f"depth={v['depthmap'].shape}, "
-            f"depthmin={v['depthmap'].min()}, "
-            f"depthmax={v['depthmap'].max()}, "
-            f"pts3d={v['pts3d'].shape}, "
-            f"valid={v['valid_mask'].sum()}"
-        )
-
-    visualize_gt(views, out_dir, prefix="Kubric_GT")
+    # 单独调试（在仓库根目录）：python -m datasets.kubric_dataset --n 3 [--data_root ... --cache_dir ... --remap SRC=DST --vis output_debug/x]
+    # 参数说明见 datasets/base/debug.py
+    from datasets.base.debug import debug_main
+    sys.exit(debug_main(KubricDataset))
