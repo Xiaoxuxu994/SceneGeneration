@@ -83,6 +83,58 @@ def _dump_row(out, row):
         json.dump(row, f, ensure_ascii=False, indent=2, default=_json_default)
 
 
+def dataset_switches(ds):
+    """BaseDataset 上的数据过滤开关（xiaoxu/Pi3_training_v2，见 datasets/FILTER_SWITCHES.md）；旧版 loader 上全部视为关闭。"""
+    return dict(pct_valid_only=bool(getattr(ds, "pct_valid_only", False)),
+                pct_disable=bool(getattr(ds, "pct_disable", False)),
+                use_dataset_masks=bool(getattr(ds, "use_dataset_masks", False)),
+                min_baseline_ratio=float(getattr(ds, "min_baseline_ratio", 0.0) or 0.0),
+                baseline_retries=int(getattr(ds, "baseline_retries", 3)),
+                seq_blacklist=bool(getattr(ds, "seq_blacklist", None)))
+
+
+def _set_depth_filter(sw):
+    try:
+        from datasets.sample_utils.common import set_depth_filter
+    except ImportError:
+        return
+    set_depth_filter(sw["pct_valid_only"], sw["pct_disable"])
+
+
+def _merge_extra_valid(views, valids, sw):
+    if not sw["use_dataset_masks"]:
+        return valids
+    out = []
+    for v, m in zip(views, valids):
+        ev = v.get("extra_valid", None)
+        out.append(m & np.asarray(ev).astype(bool) if ev is not None and np.shape(ev) == m.shape else m)
+    return out
+
+
+def _baseline_over_depth(c2ws, depths, valids):
+    c = np.stack([T[:3, 3] for T in c2ws])
+    if len(c) < 2:
+        return float("inf")
+    d = np.linalg.norm(c[:, None] - c[None], axis=-1)[np.triu_indices(len(c), 1)]
+    meds = [np.median(x[m]) for x, m in zip(depths, valids) if m.any()]
+    return float(np.median(d) / np.median(meds)) if meds and np.median(meds) > 0 else float("inf")
+
+
+def fetch_with_switches(GA, ds, idx, res, seed, z_far, sw):
+    """与训练时 BaseDataset.__getitem__ 一致地取样本：分位开关、extra_valid 合并、视差不足时换种子重选帧。
+    返回 (views, depths, valids, Ks, c2ws, dmasks, 实际使用的 seed)。"""
+    tries = 1 + (sw["baseline_retries"] if sw["min_baseline_ratio"] > 0 else 0)
+    for t in range(tries):
+        sd = seed + 7777 * t
+        _set_depth_filter(sw)
+        views = GA.fetch_views(ds, idx, res, sd)
+        depths, valids, Ks, c2ws, dmasks = GA.unpack(views, z_far)
+        valids = _merge_extra_valid(views, valids, sw)
+        if sw["min_baseline_ratio"] <= 0 or _baseline_over_depth(c2ws, depths, valids) >= sw["min_baseline_ratio"]:
+            break
+    return views, depths, valids, Ks, c2ws, dmasks, sd
+
+
 def run_dataset_mode(args, cfg, thresholds):
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import gt_audit as GA  # 复用 loader 构建、取样（同一 seed 公式）与分位截断开关
@@ -114,6 +166,10 @@ def run_dataset_mode(args, cfg, thresholds):
             _dump_row(args.out, row)
             table.append(row)
             continue
+        sw = dataset_switches(ds)
+        if sw["seq_blacklist"] and hasattr(ds, "_apply_blacklist"):
+            ds._apply_blacklist()
+        row["switches"] = sw
         idxs = np.unique(np.linspace(0, len(ds) - 1, min(args.n, len(ds))).round().astype(int))
         results, samples, ffl, fails = [], [], {}, []
         print(f"==> {name}: {len(idxs)} samples", flush=True)
@@ -121,8 +177,8 @@ def run_dataset_mode(args, cfg, thresholds):
             seed = args.seed * 100003 + int(idx)
             try:
                 GA.set_percentile_threshold(True)
-                views = GA.fetch_views(ds, int(idx), tuple(args.res), seed)
-                depths, valids, Ks, c2ws, dmasks = GA.unpack(views, z_far)
+                views, depths, valids, Ks, c2ws, dmasks, seed = fetch_with_switches(
+                    GA, ds, int(idx), tuple(args.res), seed, z_far, sw)
                 s = Q.prepare_sample(np.stack(depths), np.stack(Ks), np.stack(c2ws), valids=np.stack(valids))
                 r = Q.compute_metrics(s, cfg, with_scale_search=not args.no_scale_search, with_ray2z=True)
                 g, reasons, _ = Q.grade(r["metrics"], thresholds)
@@ -133,10 +189,12 @@ def run_dataset_mode(args, cfg, thresholds):
                 if args.raw_compare:
                     GA.set_percentile_threshold(False)
                     try:
+                        _set_depth_filter(sw)
                         vnp = GA.fetch_views(ds, int(idx), tuple(args.res), seed)
                     finally:
                         GA.set_percentile_threshold(True)
                     d2, v2, K2, T2, _ = GA.unpack(vnp, z_far)
+                    v2 = _merge_extra_valid(vnp, v2, sw)
                     if all(np.allclose(a, b) for a, b in zip(c2ws, T2)):
                         s_np = Q.prepare_sample(np.stack(d2), np.stack(K2), np.stack(T2), valids=np.stack(v2))
                         rules["percentile98"] = Q.filter_fidelity(s_np, s_np.valids & ~s.valids, cfg)

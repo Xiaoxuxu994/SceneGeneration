@@ -42,4 +42,16 @@
 3. `min_baseline_ratio: 0.05`（问题 4）
 4. `seq_blacklist`（问题 2，等全量序列打分出结果）
 
+## 过滤前后对比（数据侧）
+
+`tools/quality_eval.py dataset` 会读取同样的开关（分位、extra_valid 合并、视差重选帧、黑名单），所以直接换配置跑两遍即可：
+
+```bash
+CONFIG=configs/data/datamix_all_v9-5.yaml     OUT=quality_before bash tools/run_quality_eval.sh full --bg
+CONFIG=configs/data/datamix_all_v9-5_fix.yaml OUT=quality_after  bash tools/run_quality_eval.sh full --bg
+```
+
+每个数据集的 `<数据集>.json` 里有 `switches` 字段，记录这次实际生效的开关。
+注意：违例过滤还没有接入训练，过滤后的违例率不会因为它下降；这一项要等离线违例掩码做好再对比。
+
 测试：`python tests/test_dataset_filters.py`（不需要真实数据）。
