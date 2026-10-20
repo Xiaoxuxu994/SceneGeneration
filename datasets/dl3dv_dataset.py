@@ -32,6 +32,9 @@ class DL3DVDataset(BaseDataset):
         conf_thres=0.25,
         depth_thres=1e-4,
         apply_trans=False,
+        rgb_root='/efs-mi-east4-2/datasets/DL3DV/',   # 原始 RGB 目录（原先写死在代码里）
+        depth_interp='lanczos',     # 'nearest'：深度缩放到 RGB 尺寸时用最近邻（lanczos 会在深度边缘造出飞点）
+        pct_twice=True,             # False：98 分位只在裁剪缩放后截一次（旧行为是前后各截一次）
         **kwargs,
     ):
 
@@ -48,6 +51,10 @@ class DL3DVDataset(BaseDataset):
         self.conf_thres = conf_thres
         self.depth_thres = depth_thres
         self.apply_trans = apply_trans
+        self.rgb_root = rgb_root
+        assert depth_interp in ('lanczos', 'nearest'), depth_interp
+        self.depth_interp = depth_interp
+        self.pct_twice = pct_twice
         self.DL3DV_DIR = data_root
 
         self.all_sequences = []
@@ -114,7 +121,7 @@ class DL3DVDataset(BaseDataset):
                     for frame_info in cam_info["frames"]:
                         # rgb_path = osp.join(self.DL3DV_DIR, scene_name, frame_info["file_path"].replace("images","images_use").replace(".jpg", ".png")) # for example
                         scene_seg = scene_name.split('-') # 9K-id
-                        rgb_path = osp.join('/efs-mi-east4-2/datasets/DL3DV/', scene_seg[0], scene_seg[1], 'images_8', osp.basename(frame_info["file_path"])).replace('.jpg', '.png')
+                        rgb_path = osp.join(self.rgb_root, scene_seg[0], scene_seg[1], 'images_8', osp.basename(frame_info["file_path"])).replace('.jpg', '.png')
                         depth_path = osp.join(self.DL3DV_DIR, scene_name, frame_info["mvsanywhere_depth"])
                         depthconf_path = osp.join(self.DL3DV_DIR, scene_name, frame_info["mvsanywhere_depth_confidence"])
         
@@ -153,16 +160,21 @@ class DL3DVDataset(BaseDataset):
     def _load_one_view(self, scene_path, scene_name, frame_info, intrinsic, transmat, fid, resolution, rng):
         # rgb_image = read_any_file(osp.join(scene_path, frame_info["file_path"]).replace("images","images_use").replace(".jpg", ".png")) # for example
         scene_seg = scene_name.split('-') # 9K-id
-        rgb_file = osp.join('/efs-mi-east4-2/datasets/DL3DV/', scene_seg[0], scene_seg[1], 'images_8', osp.basename(frame_info["file_path"])).replace('.jpg', '.png')
+        rgb_file = osp.join(self.rgb_root, scene_seg[0], scene_seg[1], 'images_8', osp.basename(frame_info["file_path"])).replace('.jpg', '.png')
         rgb_image = read_any_file(rgb_file)
         depthmap = read_any_file(osp.join(scene_path, frame_info["mvsanywhere_depth"]), return_dtype=np.float32)
 
         h, w, d = rgb_image.shape
-        depthmap = cv2.resize(depthmap, (w, h), interpolation=cv2.INTER_LANCZOS4)
+        interp = cv2.INTER_NEAREST if self.depth_interp == 'nearest' else cv2.INTER_LANCZOS4
+        depthmap = cv2.resize(depthmap, (w, h), interpolation=interp)
         depthmap = np.nan_to_num(depthmap, nan=0.0, posinf=0.0, neginf=0.0)
         depthmap[(depthmap <= 0)] = 0.0
         depthconfmap = read_any_file(osp.join(scene_path, frame_info["mvsanywhere_depth_confidence"]), return_dtype=np.float32)
-        depthmap = threshold_depth_map(depthmap, min_percentile=0, max_percentile=98)
+        if depthconfmap.shape[:2] != (h, w):
+            # 置信度图要和深度一样先对齐到 RGB 尺寸，否则后面按 RGB 坐标裁剪时会错位
+            depthconfmap = cv2.resize(depthconfmap, (w, h), interpolation=cv2.INTER_NEAREST)
+        if self.pct_twice:
+            depthmap = threshold_depth_map(depthmap, min_percentile=0, max_percentile=98)
         extrinsic = np.array(frame_info["transform_matrix"])
         if self.apply_trans:
             extrinsic = transmat[1] @ transmat[0] @ extrinsic
@@ -189,6 +201,7 @@ class DL3DVDataset(BaseDataset):
             label=osp.basename(scene_path),
             instance=str(fid),
             depth_mask=mask.astype(np.int32),
+            extra_valid=mask,           # use_dataset_masks=True 时并入 valid_mask
         )
 
     # =========================

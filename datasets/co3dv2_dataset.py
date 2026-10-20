@@ -290,18 +290,23 @@ class CO3DV2Dataset(BaseDataset):
         camera_pose[:3, 3] = tvec
         camera_pose = np.linalg.inv(camera_pose)
 
-        rgb_image, depthmap, intrinsics = self._crop_resize_if_necessary(
+        # 自带的 depth_mask 跟深度一起裁剪缩放（最近邻），作为 extra_valid 返回；只在 use_dataset_masks=True 时生效
+        dmask = depth_mask.astype(np.uint8) if (self.load_depth and depth_mask.shape == depthmap.shape) else None
+        out = self._crop_resize_if_necessary(
             rgb_image,
             depthmap,
             camera_intrinsics.copy(),
             resolution,
             rng=rng,
             info=image_path,
+            far_mask=dmask,
         )
+        rgb_image, depthmap, intrinsics = out[:3]
+        extra_valid = (out[3] > 0) if dmask is not None else None
 
         depthmap = threshold_depth_map(depthmap, min_percentile=-1, max_percentile=98)
 
-        return dict(
+        view = dict(
             img=rgb_image,
             depthmap=depthmap.astype(np.float32),
             camera_pose=camera_pose.astype(np.float32),
@@ -310,6 +315,9 @@ class CO3DV2Dataset(BaseDataset):
             label= scene_path, # 'apple_001/apple/110_13048_23163'
             instance=str(fid),
         )
+        if extra_valid is not None:
+            view['extra_valid'] = extra_valid
+        return view
 
     # =========================
     # main interface

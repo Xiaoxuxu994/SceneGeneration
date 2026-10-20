@@ -10,6 +10,24 @@ from .transforms import *
 import pandas as pd
 from .utils import *
 import pickle
+from datasets.sample_utils.common import set_depth_filter
+
+
+class _LowParallax(Exception):
+    """所选帧的基线/深度低于 min_baseline_ratio：对同一条序列重新选帧。"""
+
+
+def baseline_over_depth(views):
+    """相机中心两两距离的中位数 ÷ 各帧有效深度中位数的中位数（与 tools/quality_eval 的定义一致）。"""
+    centers = np.stack([np.asarray(v['camera_pose'])[:3, 3] for v in views])
+    if len(centers) < 2:
+        return float('inf')
+    d = np.linalg.norm(centers[:, None] - centers[None], axis=-1)[np.triu_indices(len(centers), 1)]
+    meds = [np.median(v['depthmap'][v['valid_mask']]) for v in views if v['valid_mask'].any()]
+    if not meds or np.median(meds) <= 0:
+        return float('inf')
+    return float(np.median(d) / np.median(meds))
+
 
 class BaseDataset(EasyDataset):
     def __init__(
@@ -30,8 +48,24 @@ class BaseDataset(EasyDataset):
         force_global_sampling=False,
         shuffle=True,
         use_sparse_depth=False,
+        # ---- 数据过滤开关（默认全部关闭，行为与旧版一致）----
+        pct_valid_only=False,       # 98 分位只在有效像素上算（修复把无效像素 0 算进分位数）
+        pct_disable=False,          # 关掉分位截断，只保留 max_depth / z_far（物体类、合成数据）
+        use_dataset_masks=False,    # 把 loader 返回的 extra_valid（自带 mask / confidence）并入 valid_mask
+        min_baseline_ratio=0.0,     # > 0 时要求所选帧的 基线/深度 ≥ 该值，不满足则对同一序列重新选帧
+        baseline_retries=3,         # 重新选帧的次数上限，用完仍不满足则照常使用
+        seq_blacklist=None,         # 序列黑名单：txt 路径（每行一个序列名）或列表
     ):
         super().__init__()
+        self.pct_valid_only = pct_valid_only
+        self.pct_disable = pct_disable
+        self.use_dataset_masks = use_dataset_masks
+        self.min_baseline_ratio = float(min_baseline_ratio or 0.0)
+        self.baseline_retries = int(baseline_retries)
+        self.seq_blacklist = seq_blacklist
+        self._n_load = 0
+        self._n_fail = 0
+        self._n_low_parallax = 0
         self.frame_num = frame_num
         self.max_distance = max_distance
 
@@ -64,6 +98,7 @@ class BaseDataset(EasyDataset):
         Avoid memory leak caused by python list or python dict
         https://github.com/pytorch/pytorch/issues/13246
         """
+        self._apply_blacklist()
 
         def _is_equivalent(original, converted):
             """
@@ -100,6 +135,32 @@ class BaseDataset(EasyDataset):
                         print(f"[{self.dataset_label}] <{attr_name}> conversion may not be equivalent, skipping.", flush=True)
                 except ValueError as e:
                     print(f"[{self.dataset_label}] Error converting <{attr_name}>: {e}", flush=True)
+
+    def _apply_blacklist(self):
+        """按 seq_blacklist 去掉序列。名字与序列 key、scene_to_path 的值或它们的末级目录名任一相同即剔除
+        （quality_eval 输出的 label 一般就是其中之一）。在 datasets/__init__.py 实例化后的 convert_attributes 里调用。"""
+        bl = self.seq_blacklist
+        if not bl or not hasattr(self, 'sequences'):
+            return
+        if isinstance(bl, str):
+            with open(bl) as f:
+                names = {l.strip() for l in f if l.strip() and not l.startswith('#')}
+        else:
+            names = {str(x) for x in bl}
+        s2p = getattr(self, 'scene_to_path', {})
+
+        def keys(seq):
+            ks = {str(seq), os.path.basename(str(seq))}
+            try:
+                p = str(s2p[seq])
+                ks |= {p, os.path.basename(p.rstrip('/'))}
+            except Exception:
+                pass
+            return ks
+
+        before = len(self.sequences)
+        self.sequences = [s for s in list(self.sequences) if not (keys(s) & names)]
+        print(f"[{self.dataset_label}] seq_blacklist: {before} -> {len(self.sequences)} sequences", flush=True)
 
     def _sample_frame_ids(self, frame_ids, rng):
         """
@@ -355,10 +416,13 @@ class BaseDataset(EasyDataset):
         
         error = None
         views = None
+        low_parallax_tries = 0
         for retry in range(max_retry):              # default: 3
             try:
                 if hasattr(self, "this_views_info"):
                     delattr(self, "this_views_info")
+                set_depth_filter(self.pct_valid_only, self.pct_disable)
+                self._n_load += 1
                 views = self._get_views(idx, resolution, self._rng)
 
                 # assert len(views) == self.frame_num
@@ -383,11 +447,15 @@ class BaseDataset(EasyDataset):
                     assert 'pts3d' not in view
                     assert 'valid_mask' not in view
                     assert np.isfinite(view['depthmap']).all(), f'NaN in depthmap for view {view_name(view)}'
+                    # loader 可返回 extra_valid（自带 mask / confidence，已与深度同尺寸），只在 use_dataset_masks 时生效
+                    extra_valid = view.pop('extra_valid', None)
                     view['z_far'] = self.z_far
                     pts3d, valid_mask = depthmap_to_absolute_camera_coordinates(**view)
 
                     view['pts3d'] = pts3d
                     view['valid_mask'] = valid_mask & np.isfinite(pts3d).all(axis=-1)
+                    if self.use_dataset_masks and extra_valid is not None:
+                        view['valid_mask'] &= np.asarray(extra_valid).astype(bool)
 
                     view['depthmap'][~view['valid_mask']] = 0.0
 
@@ -395,6 +463,11 @@ class BaseDataset(EasyDataset):
 
                     if 'normal' not in view:
                         view['normal'] = None
+
+                if self.min_baseline_ratio > 0 and low_parallax_tries < self.baseline_retries:
+                    if baseline_over_depth(views) < self.min_baseline_ratio:
+                        low_parallax_tries += 1
+                        raise _LowParallax()
 
                     # # check all datatypes
                     # for key, val in view.items():
@@ -417,8 +490,17 @@ class BaseDataset(EasyDataset):
                 # if overlap is False:
                 #     raise ValueError("Views are not overlapped!")
 
+            except _LowParallax:
+                # 视差不足：同一条序列重新选帧，不换 idx、不算加载失败
+                views = None
+                self._n_low_parallax += 1
+                continue
             except Exception as e:
                 views = None
+                self._n_fail += 1
+                if self._n_fail % 200 == 0:
+                    print(f"[{self.dataset_label}] load failures so far: {self._n_fail}/{self._n_load} "
+                          f"(this worker; failed samples are replaced by random ones)", flush=True)
                 if hasattr(self, 'this_views_info'):
                     print(
                         f"Failed to load data from {self.dataset_label}-{idx} ({self.this_views_info}) for error {e}.", flush=True
@@ -440,7 +522,7 @@ class BaseDataset(EasyDataset):
                 break
 
         if views is None:
-            raise error
+            raise error if error is not None else RuntimeError(f"[{self.dataset_label}] no valid sample for idx {origin_idx}")
         
         return views
     

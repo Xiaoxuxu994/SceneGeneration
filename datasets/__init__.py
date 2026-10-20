@@ -1,3 +1,5 @@
+import functools
+
 from .base.transforms import *
 
 from utils.misc import get_world_size, get_rank
@@ -9,6 +11,31 @@ from datasets.base.batched_sampler import DynamicBatchSampler, DynamicDistribute
 __HIGH_QUALITY_DATASETS__ = ['BlinkVision', 'Game', 'GameNew', 'DynamicStereo', 'FlyingThings3D', 'GTA-sfm', 'Hypersim', 'MatrixCity', 'MidAir', 'Monkaa', 'PointOdyssey', 'Sintel', 'Spring', 'TarTanAir', 'Unreal4k', 'VirtualKitti', 'Habitat']
 __MIDDLE_QUALITY_DATASETS__ = ['BlendedMVG', 'BlendedMVS', 'DTU', 'ETH3D', 'ScanNet', 'Scannetpp', 'Taskonomy']
 __INDOOR_DATASETS__ = ['Hypersim', 'ScanNet', 'Scannetpp', 'Taskonomy', 'ARKitScenes', 'Habitat']
+
+
+def _iter_base_datasets(ds):
+    """展开 CatDataset / ResizedDataset / MulDataset，得到底层的各个数据集。"""
+    if hasattr(ds, 'datasets'):
+        for d in ds.datasets:
+            yield from _iter_base_datasets(d)
+    elif hasattr(ds, 'dataset'):
+        yield from _iter_base_datasets(ds.dataset)
+    else:
+        yield ds
+
+
+def _reseed_worker(worker_id, base_seed=0, rank=0):
+    """train.worker_reseed=True 时使用：每个 (rank, worker) 用不同的种子重置全局 np.random 和各数据集的 _rng。
+    否则所有 worker、所有卡拿到的是同一条随机数流（数据集对象用固定种子构造后被原样复制到每个 worker）。"""
+    import numpy as np
+    import torch.utils.data as tud
+    seed = (int(base_seed) * 1000003 + int(rank) * 1009 + int(worker_id)) % (2 ** 32)
+    np.random.seed(seed)
+    info = tud.get_worker_info()
+    if info is not None:
+        for k, d in enumerate(_iter_base_datasets(info.dataset)):
+            if hasattr(d, '_rng'):
+                d._rng = np.random.default_rng(seed + 7919 * (k + 1))
 
 def create_dataloader(cfg, mode):
     data_loader = DataLoader
@@ -105,5 +132,7 @@ def create_dataloader(cfg, mode):
         pin_memory=True,
         persistent_workers=True,
         prefetch_factor=2,
+        worker_init_fn=(functools.partial(_reseed_worker, base_seed=cfg.train.base_seed, rank=rank)
+                        if mode == 'train' and cfg.train.get('worker_reseed', False) else None),
         collate_fn=unified_collate_fn
     )

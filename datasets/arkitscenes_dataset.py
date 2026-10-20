@@ -33,6 +33,7 @@ class ARKitScenesDataset(BaseDataset):
         seq_num=-1,
         min_num_images=24,
         tol=0.0005,
+        conf_min=-1,        # >= 0 时读 ARKit 自带的 confidence（0/1/2），只保留 confidence >= conf_min 的像素（作为 extra_valid）
         **kwargs,
     ):
 
@@ -45,6 +46,8 @@ class ARKitScenesDataset(BaseDataset):
         self.max_distance = max_distance
         self.split_ratio = split_ratio
         self.min_num_images = min_num_images
+        self.conf_min = conf_min
+        self._conf_missing_warned = False
         self.tol = tol
         self.ARKITSCENES_DIR = data_root
 
@@ -185,18 +188,29 @@ class ARKitScenesDataset(BaseDataset):
         T_cw[:3,3] = t
         extrinsic = np.linalg.inv(T_cw)
 
-        rgb_image, depthmap, intrinsic_ = self._crop_resize_if_necessary(
+        conf = None
+        if self.conf_min >= 0:
+            conf_path = osp.join(self.ARKITSCENES_DIR, scene_path, "confidence", f"{scene_id}_{timestamp_group[3]}.png")
+            if osp.exists(conf_path):
+                conf = np.array(Image.open(conf_path).resize((rgb_image.shape[1], rgb_image.shape[0]), resample=Image.NEAREST)).astype(np.uint8)
+            elif not self._conf_missing_warned:
+                print(f"[{self.dataset_label}] confidence not found (e.g. {conf_path}); conf_min ignored for such frames", flush=True)
+                self._conf_missing_warned = True
+
+        out = self._crop_resize_if_necessary(
             rgb_image,
             depthmap,
             intrinsic.copy(),
             resolution,
             rng=rng,
             info=image_path,
+            far_mask=conf,
         )
+        rgb_image, depthmap, intrinsic_ = out[:3]
 
         depthmap = threshold_depth_map(depthmap, min_percentile=-1, max_percentile=98)
 
-        return dict(
+        view = dict(
             img=rgb_image,
             depthmap=depthmap.astype(np.float32),
             camera_pose=extrinsic.astype(np.float32),
@@ -205,6 +219,9 @@ class ARKitScenesDataset(BaseDataset):
             label=scene_path,
             instance=str(fid),
         )
+        if conf is not None:
+            view['extra_valid'] = out[3] >= self.conf_min
+        return view
 
     # =========================
     # main interface

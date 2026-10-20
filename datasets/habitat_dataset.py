@@ -177,9 +177,10 @@ class HabitatDataset(BaseDataset):
         seq_num=-1,
         min_num_images=24,
         z_far=127.99,
+        pass_z_far=False,   # True：把配置里的 z_far 传给 BaseDataset 生效（旧行为里它被这里截下、实际不起作用）
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(**(dict(kwargs, z_far=z_far) if pass_z_far else kwargs))
         assert data_root is not None
 
         self.dataset_label = "Habitat"

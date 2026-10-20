@@ -40,6 +40,18 @@ def rdepth_to_zdepth(r_depths: torch.Tensor, intrs: torch.Tensor, intr_is_normal
     return (pixel_vec[..., 2:3] * r_depths.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
 
 
+# 分位截断的全局开关：BaseDataset 在每次取样本前按该数据集的配置设置（set_depth_filter），
+# 各 loader 无需改动。默认值与旧行为完全一致。
+PERCENTILE_VALID_ONLY = False   # True：分位数只在 depth > 0 的有效像素上计算（旧行为把无效像素的 0 也算进去）
+PERCENTILE_DISABLED = False     # True：跳过分位截断，只保留 max_depth 截断
+
+
+def set_depth_filter(valid_only=False, disabled=False):
+    global PERCENTILE_VALID_ONLY, PERCENTILE_DISABLED
+    PERCENTILE_VALID_ONLY = bool(valid_only)
+    PERCENTILE_DISABLED = bool(disabled)
+
+
 def threshold_depth_map(
     depth_map: np.ndarray,
     max_percentile: float = -1,
@@ -79,9 +91,17 @@ def threshold_depth_map(
     if max_depth > 0:
         depth_map[depth_map > max_depth] = 0.0
 
+    if PERCENTILE_DISABLED:
+        max_percentile = min_percentile = -1
+
     # Percentile-based thresholds
-    depth_max_thres = np.nanpercentile(depth_map, max_percentile) if max_percentile > 0 else None
-    depth_min_thres = np.nanpercentile(depth_map, min_percentile) if min_percentile > 0 else None
+    src = depth_map
+    if PERCENTILE_VALID_ONLY and (max_percentile > 0 or min_percentile > 0):
+        src = depth_map[np.isfinite(depth_map) & (depth_map > 0)]
+        if src.size == 0:
+            return depth_map
+    depth_max_thres = np.nanpercentile(src, max_percentile) if max_percentile > 0 else None
+    depth_min_thres = np.nanpercentile(src, min_percentile) if min_percentile > 0 else None
 
     # Apply the thresholds if they are > 0
     if depth_max_thres is not None and depth_max_thres > 0:

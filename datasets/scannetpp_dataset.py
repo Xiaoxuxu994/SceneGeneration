@@ -252,7 +252,9 @@ class ScannetppDataset(BaseDataset):
         full_images = poses["images"]
         select_images = frames[idxs]
         sorter = np.argsort(full_images)
-        pose_idxs = np.searchsorted(full_images, select_images, sorter=sorter)
+        # searchsorted 带 sorter 时返回的是排序后数组里的位置，要经 sorter 映射回原始索引；
+        # images 本来有序时两者相同（当前数据就是这样），无序时旧写法会让位姿和内参错配。
+        pose_idxs = sorter[np.searchsorted(full_images, select_images, sorter=sorter)]
 
         views = []
         for fid, pid in zip(idxs, pose_idxs):
