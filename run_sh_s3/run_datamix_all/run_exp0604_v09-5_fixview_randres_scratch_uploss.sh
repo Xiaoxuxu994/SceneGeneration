@@ -99,6 +99,10 @@ export USE_CHECKPOINT=False
 export HYDRA_FULL_ERROR=1
 NAME="exp0604_pi3_3B_datamix_all_v9-5_randresNew_scratch_uploss_pinmemTrue"
 
+# 实验结果（checkpoint、tensorboard）上传到贵阳 efs：${EXP_ROOT}/pi3sup/outputs/${NAME}/
+EXP_ROOT="/efs-mi-pay-gy1/z00533370/exp"
+mkdir -p "${EXP_ROOT}/pi3sup/outputs/${NAME}"
+
 # -----------------------------
 # Auto copy latest ckpt from OBS to local output dir
 # -----------------------------
@@ -206,13 +210,13 @@ echo "==> Training finished"
 GLOBAL_RANK="${RANK:-${RANK_ID:-${OMPI_COMM_WORLD_RANK:-0}}}"
 
 CKPT_DIR=$(ls -d ${TRAIN_URL}/outputs/${NAME}/ckpts/checkpoint_* | sort -V | tail -1)
-CKPT_EFS_DIR="/efs-m3ga/c50041401/exp/pi3sup/outputs/${NAME}/ckpts/$(basename ${CKPT_DIR})"
+CKPT_EFS_DIR="${EXP_ROOT}/pi3sup/outputs/${NAME}/ckpts/$(basename ${CKPT_DIR})"
 
 echo "==> Start uploading checkpoint"
 copy_by_mox "${CKPT_DIR}" "${CKPT_EFS_DIR}"
 echo "==> Finish uploading checkpoint"
 
-LOG_EFS_DIR="/efs-m3ga/c50041401/exp/pi3sup/outputs/${NAME}/${NAME}"
+LOG_EFS_DIR="${EXP_ROOT}/pi3sup/outputs/${NAME}/${NAME}"
 LOG_DIR="${TRAIN_URL}/outputs/${NAME}/${NAME}"
 
 # tensorboard 只在 global rank 0 上传

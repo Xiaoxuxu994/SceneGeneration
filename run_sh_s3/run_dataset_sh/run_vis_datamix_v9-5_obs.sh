@@ -7,7 +7,7 @@
 #   bash run_sh_s3/run_dataset_sh/run_vis_datamix_v9-5_obs.sh                       # 全部数据集，check + vis
 #   STAGE=check bash run_sh_s3/run_dataset_sh/run_vis_datamix_v9-5_obs.sh           # 只做读取检查（快）
 #   DATASETS="Hypersim CO3DV2" N=3 bash run_sh_s3/run_dataset_sh/run_vis_datamix_v9-5_obs.sh
-#   OBS_OUT=obs://bucket-471/z00533370/vis/datamix_v9-5 bash run_sh_s3/run_dataset_sh/run_vis_datamix_v9-5_obs.sh  # 结果传回 OBS
+#   OBS_OUT=obs://bucket-471/z00533370/vis/datamix_v9-5 bash run_sh_s3/run_dataset_sh/run_vis_datamix_v9-5_obs.sh  # 另外再传一份到 OBS
 #
 # 可用环境变量：
 #   CODE_DIR   代码目录（默认本脚本所在仓库；ModelArts 上为 /home/ma-user/modelarts/user-job-dir/Pi3）
@@ -15,7 +15,8 @@
 #   DATASETS   ALL = 配置 weights 里的全部数据集
 #   STAGE      all | check | vis
 #   N=2  FRAMES=8  RES_W=512  RES_H=336  PARALLEL=4（vis 阶段同时跑几个数据集）
-#   OUT_DIR    输出目录（默认 ModelArts 的 outputs 下，否则 ./dataset_vis_out）
+#   VIS_ROOT   输出根目录（默认 /efs-mi-pay-gy1/z00533370/data_vis）
+#   OUT_DIR    输出目录（默认 ${VIS_ROOT}/<配置名>，例如 .../data_vis/datamix_all_v9-5_obs）
 #   OBS_OUT    非空时把 OUT_DIR 整个复制到这个 obs:// 目录
 #
 # 输出：
@@ -39,13 +40,8 @@ FRAMES="${FRAMES:-8}"
 RES_W="${RES_W:-512}"
 RES_H="${RES_H:-336}"
 PARALLEL="${PARALLEL:-4}"
-if [ -z "${OUT_DIR:-}" ]; then
-    if [ -d /home/ma-user/modelarts/outputs ]; then
-        OUT_DIR="/home/ma-user/modelarts/outputs/dataset_vis_$(basename "${CONFIG}" .yaml)"
-    else
-        OUT_DIR="./dataset_vis_out/$(basename "${CONFIG}" .yaml)"
-    fi
-fi
+VIS_ROOT="${VIS_ROOT:-/efs-mi-pay-gy1/z00533370/data_vis}"
+OUT_DIR="${OUT_DIR:-${VIS_ROOT}/$(basename "${CONFIG}" .yaml)}"
 mkdir -p "${OUT_DIR}/logs"
 
 if [ "${DATASETS}" = "ALL" ]; then
