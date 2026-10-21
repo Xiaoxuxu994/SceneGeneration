@@ -20,7 +20,7 @@
 ## 3. 贵阳 OBS 配置
 
 - 路径对照：`configs/data/obs_paths_guiyang.yaml`（来自 Reliev3R_dataset2.xlsx，含每个数据集的 status / note）。
-- 缓存目录：`obs://bucket-471/z00533370/dataset/data_cache`，已写进每个数据集块的 `cache_dir`。
+- 缓存目录：`obs://bucket-471/z00533370/dataset/dataset_cache`，已写进每个数据集块的 `cache_dir`。
 - 生成的配置：`configs/data/datamix_all_v9-5_obs.yaml`、`configs/data/datamix_all_v9-5_fix_obs.yaml`；
   ARKitScenes、ScanNet、DL3DV 暂不使用，已从 weights 去掉（23 个数据集，权重合计 74,200）。
 - 训练：`data=datamix_all_v9-5_obs`。

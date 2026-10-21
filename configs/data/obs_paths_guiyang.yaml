@@ -4,7 +4,7 @@
 # 再给每个数据集加 path_remap: {src: dst}，读取时自动改读 OBS。
 # status: ok = 已就绪；unused = 暂不使用（生成 _obs 配置时从 weights 里去掉）。
 # 缓存：所有数据集的索引缓存 pkl 都在 CACHE_DIR 下（文件名与 efs 上的缓存相同）。
-CACHE_DIR: obs://bucket-471/z00533370/dataset/data_cache
+CACHE_DIR: obs://bucket-471/z00533370/dataset/dataset_cache
 ASE:             {status: ok,    src: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE,           dst: obs://bucket-471/y00959808/data/sr_datasets/processed/ASE}
 Objaverse:       {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/objaverse_wai,                dst: obs://bucket-mi-east4-sf/z00533370/dataset/objaverse_wai, note: "已确认（表格漏写 obs:// 前缀）"}
 OmniObject3DNew: {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New,             dst: obs://bucket-471/z00533370/dataset/Omniobject3d-New, note: "已解压（读 blender_renders_decode 子目录）"}

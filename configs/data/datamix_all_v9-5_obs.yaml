@@ -1,7 +1,7 @@
 # @package _global_
 # datamix_all_v9-5_obs：datamix_all_v9-5 改读贵阳 OBS（xiaoxu/Pi3_training_v2），由 configs/data/obs_paths_guiyang.yaml 生成。
 # data_root 保持 efs 路径（缓存文件名按它的哈希命名），每个数据集加 path_remap {efs 前缀: 贵阳 obs 前缀} 与 cache_dir。
-# 缓存目录：obs://bucket-471/z00533370/dataset/data_cache
+# 缓存目录：obs://bucket-471/z00533370/dataset/dataset_cache
 # 暂不使用（已从 weights 去掉）：ScanNet, ARKitScenes, DL3DV。其余 23 个数据集权重与 datamix_all_v9-5 相同，合计 74200。
 train_dataset:
   length: 10000000
@@ -44,7 +44,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim: obs://bucket-471/y00959808/data/sr_datasets/processed/Hypersim
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   TarTanAir:
     _target_: datasets.tartanair_dataset.TarTanAirDataset
     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir
@@ -60,7 +60,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir: obs://bucket-471/y00959808/data/sr_datasets/processed/TartanAir
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   ASE:
     _target_: datasets.ase_dataset.ASEDataset
     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE
@@ -76,7 +76,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE: obs://bucket-471/y00959808/data/sr_datasets/processed/ASE
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   MatrixCity:
     _target_: datasets.matrixcity_dataset.MatrixCityDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/MatrixCity
@@ -92,7 +92,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/MatrixCity: obs://bucket-471/z00533370/dataset/MatrixCity
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   MVSSynth:
     _target_: datasets.mvssynth_dataset.MVSSynthDataset
     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
@@ -108,7 +108,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540: obs://bucket-471/y00959808/data/sr_datasets/processed/MVS-Synth
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   BlendedMVS:
     _target_: datasets.blendedmvs_dataset.BlendedMVSDataset
     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS
@@ -132,7 +132,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS: obs://bucket-471/y00959808/data/sr_datasets/processed/BlendedMVS
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   VirtualKitti:
     _target_: datasets.vkitti_dataset.VKittiDataset
     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2
@@ -148,7 +148,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2: obs://bucket-471/y00959808/data/sr_datasets/processed/vKitti2
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   GTA-sfm:
     _target_: datasets.gta_sfm_dataset.GTASfMDataset
     data_root: /efs-m3ga/h00548084/relive3r_raw/GTA-SfM/
@@ -164,7 +164,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/h00548084/relive3r_raw/GTA-SfM: obs://bucket-471/z00533370/dataset/GTA-SfM
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   MegaDepth:
     _target_: datasets.megadepth_dataset.MegaDepthDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/MegaDepth/
@@ -180,7 +180,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/MegaDepth: obs://bucket-471/y00959808/data/sr_datasets/processed/MegaDepth
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Scannetpp:
     _target_: datasets.scannetpp_dataset.ScannetppDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/scannetpp
@@ -204,7 +204,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/scannetpp: obs://bucket-471/y00959808/data/sr_datasets/processed/scannetpp
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   CO3D:
     _target_: datasets.co3d_dataset.CO3DDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/co3d
@@ -220,7 +220,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/co3d: obs://bucket-471/y00959808/data/sr_datasets/processed/co3d
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Replica:
     _target_: datasets.replica_dataset.ReplicaDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/Replica
@@ -236,7 +236,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Replica: obs://bucket-471/y00959808/data/sr_datasets/processed/Replica
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Taskonomy:
     _target_: datasets.taskonomy_dataset.TaskonomyDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/taskonomy/
@@ -252,7 +252,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/taskonomy: obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Mapillary:
     _target_: datasets.mapillary_dataset.MapillaryDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/Mapillary_Metropolis
@@ -268,7 +268,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Mapillary_Metropolis: obs://bucket-471/y00959808/data/sr_datasets/processed/Mapillary_Metropolis
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Spring:
     _target_: datasets.spring_dataset.SpringDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/Spring_decode/spring/train/
@@ -284,7 +284,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Spring_decode: obs://bucket-471/z00533370/dataset/Spring_decode
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Unreal4k:
     _target_: datasets.unreal4k_dataset.Unreal4KDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/UnrealStereo4K_480P_decode/
@@ -300,7 +300,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/UnrealStereo4K_480P_decode: obs://bucket-471/z00533370/dataset/UnrealStereo4K_480P_decode
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   OmniObject3DNew:
     _target_: datasets.omniobject3d_dataset.OmniObject3DNewDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New/blender_renders_decode
@@ -316,7 +316,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New: obs://bucket-471/z00533370/dataset/Omniobject3d-New
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Matterport3D:
     _target_: datasets.matterport3d_dataset.Matterport3DDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
@@ -332,7 +332,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode: obs://bucket-471/dataset/Mattport3D
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Habitat:
     _target_: datasets.habitat_dataset.HabitatDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/habitat/
@@ -348,7 +348,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/habitat: obs://bucket-471/y00959808/data/sr_datasets/processed/habitat
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Wildrgbd:
     _target_: datasets.wildrgbd_dataset.WildrgbdDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/wildrgbd_s3/
@@ -364,7 +364,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/wildrgbd_s3: obs://bucket-471/y00959808/data/sr_datasets/processed/wildrgbd
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   TartanGround:
     _target_: datasets.tartanground_dataset.TartanGroundDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/TartanGround/
@@ -380,7 +380,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/TartanGround: obs://bucket-471/y00959808/data/sr_datasets/processed/TartanGround
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Objaverse:
     _target_: datasets.objaverse_dataset.ObjaverseWAIDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/objaverse_wai
@@ -396,7 +396,7 @@ train_dataset:
     mode: train
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/objaverse_wai: obs://bucket-mi-east4-sf/z00533370/dataset/objaverse_wai
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   CO3DV2:
     _target_: datasets.co3dv2_dataset.CO3DV2Dataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode
@@ -413,7 +413,7 @@ train_dataset:
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode: obs://bucket-471/dataset/CO3D-v2CO3D-v2
       /efs-m3ga/z00818731/co3dv2-cams: obs://bucket-471/y00959808/data/sr_datasets/processed/co3dv2-cams
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
 train_dataloader:
   drop_last: true
   shuffle: true
@@ -458,7 +458,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim: obs://bucket-471/y00959808/data/sr_datasets/processed/Hypersim
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   TarTanAir:
     _target_: datasets.tartanair_dataset.TarTanAirDataset
     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir
@@ -475,7 +475,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir: obs://bucket-471/y00959808/data/sr_datasets/processed/TartanAir
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   ASE:
     _target_: datasets.ase_dataset.ASEDataset
     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE
@@ -492,7 +492,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE: obs://bucket-471/y00959808/data/sr_datasets/processed/ASE
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   MatrixCity:
     _target_: datasets.matrixcity_dataset.MatrixCityDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/MatrixCity
@@ -509,7 +509,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/MatrixCity: obs://bucket-471/z00533370/dataset/MatrixCity
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   MVSSynth:
     _target_: datasets.mvssynth_dataset.MVSSynthDataset
     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
@@ -526,7 +526,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540: obs://bucket-471/y00959808/data/sr_datasets/processed/MVS-Synth
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   BlendedMVS:
     _target_: datasets.blendedmvs_dataset.BlendedMVSDataset
     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS
@@ -543,7 +543,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS: obs://bucket-471/y00959808/data/sr_datasets/processed/BlendedMVS
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   VirtualKitti:
     _target_: datasets.vkitti_dataset.VKittiDataset
     data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2
@@ -560,7 +560,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2: obs://bucket-471/y00959808/data/sr_datasets/processed/vKitti2
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   GTA-sfm:
     _target_: datasets.gta_sfm_dataset.GTASfMDataset
     data_root: /efs-m3ga/h00548084/relive3r_raw/GTA-SfM/
@@ -577,7 +577,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/h00548084/relive3r_raw/GTA-SfM: obs://bucket-471/z00533370/dataset/GTA-SfM
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   MegaDepth:
     _target_: datasets.megadepth_dataset.MegaDepthDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/MegaDepth/
@@ -594,7 +594,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/MegaDepth: obs://bucket-471/y00959808/data/sr_datasets/processed/MegaDepth
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Scannetpp:
     _target_: datasets.scannetpp_dataset.ScannetppDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/scannetpp
@@ -611,7 +611,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/scannetpp: obs://bucket-471/y00959808/data/sr_datasets/processed/scannetpp
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   CO3D:
     _target_: datasets.co3d_dataset.CO3DDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/co3d
@@ -628,7 +628,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/co3d: obs://bucket-471/y00959808/data/sr_datasets/processed/co3d
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Replica:
     _target_: datasets.replica_dataset.ReplicaDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/Replica
@@ -645,7 +645,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Replica: obs://bucket-471/y00959808/data/sr_datasets/processed/Replica
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Taskonomy:
     _target_: datasets.taskonomy_dataset.TaskonomyDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/taskonomy/
@@ -662,7 +662,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/taskonomy: obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Mapillary:
     _target_: datasets.mapillary_dataset.MapillaryDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/Mapillary_Metropolis
@@ -679,7 +679,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Mapillary_Metropolis: obs://bucket-471/y00959808/data/sr_datasets/processed/Mapillary_Metropolis
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Spring:
     _target_: datasets.spring_dataset.SpringDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/Spring_decode/spring/train/
@@ -696,7 +696,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Spring_decode: obs://bucket-471/z00533370/dataset/Spring_decode
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Unreal4k:
     _target_: datasets.unreal4k_dataset.Unreal4KDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/UnrealStereo4K_480P_decode/
@@ -713,7 +713,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/UnrealStereo4K_480P_decode: obs://bucket-471/z00533370/dataset/UnrealStereo4K_480P_decode
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   OmniObject3DNew:
     _target_: datasets.omniobject3d_dataset.OmniObject3DNewDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New/blender_renders_decode
@@ -730,7 +730,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New: obs://bucket-471/z00533370/dataset/Omniobject3d-New
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Matterport3D:
     _target_: datasets.matterport3d_dataset.Matterport3DDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
@@ -747,7 +747,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode: obs://bucket-471/dataset/Mattport3D
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Habitat:
     _target_: datasets.habitat_dataset.HabitatDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/habitat/
@@ -764,7 +764,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/habitat: obs://bucket-471/y00959808/data/sr_datasets/processed/habitat
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Wildrgbd:
     _target_: datasets.wildrgbd_dataset.WildrgbdDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/wildrgbd_s3/
@@ -781,7 +781,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/wildrgbd_s3: obs://bucket-471/y00959808/data/sr_datasets/processed/wildrgbd
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   TartanGround:
     _target_: datasets.tartanground_dataset.TartanGroundDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/TartanGround/
@@ -798,7 +798,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/TartanGround: obs://bucket-471/y00959808/data/sr_datasets/processed/TartanGround
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Objaverse:
     _target_: datasets.objaverse_dataset.ObjaverseWAIDataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/objaverse_wai
@@ -815,7 +815,7 @@ test_dataset:
     mode: test
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/objaverse_wai: obs://bucket-mi-east4-sf/z00533370/dataset/objaverse_wai
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   CO3DV2:
     _target_: datasets.co3dv2_dataset.CO3DV2Dataset
     data_root: /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode
@@ -833,7 +833,7 @@ test_dataset:
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode: obs://bucket-471/dataset/CO3D-v2CO3D-v2
       /efs-m3ga/z00818731/co3dv2-cams: obs://bucket-471/y00959808/data/sr_datasets/processed/co3dv2-cams
-    cache_dir: obs://bucket-471/z00533370/dataset/data_cache
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
 test_dataloader:
   drop_last: false
   shuffle: true
