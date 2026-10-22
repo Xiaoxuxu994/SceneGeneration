@@ -7,7 +7,7 @@
 CACHE_DIR: obs://bucket-471/z00533370/dataset/dataset_cache
 ASE:             {status: ok,    src: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE,           dst: obs://bucket-471/y00959808/data/sr_datasets/processed/ASE}
 Objaverse:       {status: unused,   src: /efs-m3ga/z00533370/reliev3r_data/objaverse_wai,                dst: obs://bucket-471/z00533370/dataset/objaverse_wai, note: "贵阳桶里的副本还没复制完，暂不使用；东四桶 bucket-mi-east4-sf 从贵阳访问不到（NoSuchBucket）"}
-OmniObject3DNew: {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New,             dst: obs://bucket-471/z00533370/dataset/Omniobject3d-New, note: "已解压（读 blender_renders_decode 子目录）"}
+OmniObject3DNew: {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New,             dst: obs://bucket-471/z00533370/dataset/Omniobject3d-New, note: "已解压；OBS 上 blender_renders_decode/<类别>/<类别>_NNN/，efs 是 blender_renders_decode/<类别>_NNN/，配置里用 re: 规则映射"}
 GTA-sfm:         {status: ok,    src: /efs-m3ga/h00548084/relive3r_raw/GTA-SfM,                       dst: obs://bucket-471/z00533370/dataset/GTA-SfM}
 Hypersim:        {status: ok,    src: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim,      dst: obs://bucket-471/y00959808/data/sr_datasets/processed/Hypersim}
 MatrixCity:      {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/MatrixCity,                   dst: obs://bucket-471/z00533370/dataset/MatrixCity}

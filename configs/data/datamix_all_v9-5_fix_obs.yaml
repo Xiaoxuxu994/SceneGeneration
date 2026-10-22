@@ -362,6 +362,7 @@ train_dataset:
     min_baseline_ratio: 0.05
     baseline_retries: 3
     path_remap:
+      're:^/efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New/blender_renders_decode/(([^/]+)_[0-9]+)/': 'obs://bucket-471/z00533370/dataset/Omniobject3d-New/blender_renders_decode/\2/\1/'   # OBS 上多一层类别目录：anise/anise_001/
       /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New: obs://bucket-471/z00533370/dataset/Omniobject3d-New
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Matterport3D:
@@ -794,6 +795,7 @@ test_dataset:
       _target_: datasets.base.transforms.ImgToTensor
     mode: test
     path_remap:
+      're:^/efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New/blender_renders_decode/(([^/]+)_[0-9]+)/': 'obs://bucket-471/z00533370/dataset/Omniobject3d-New/blender_renders_decode/\2/\1/'   # OBS 上多一层类别目录：anise/anise_001/
       /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New: obs://bucket-471/z00533370/dataset/Omniobject3d-New
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Matterport3D:
