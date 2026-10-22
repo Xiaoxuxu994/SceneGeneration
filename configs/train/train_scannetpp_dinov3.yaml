@@ -1,0 +1,43 @@
+# @package _global_
+# Shared training recipe for the ScanNet++-only loop-transformer study (A: unshared 36-block decoder,
+# B: looped decoder). Both runs use exactly this file; only the model config differs.
+#
+# Budget (32 NPUs): up to 32 images / NPU -> ~1024 images / step; 30 epochs x 1000 steps = 30k steps
+# ~= 31M image samples (same order as Reliev3R's 60k x 512 from-scratch run). OneCycle: 5% warmup,
+# cosine decay; decoder/heads lr 1e-4, DINOv3 encoder lr 1e-5.
+
+trainer: trainers.pi3_trainer.Pi3Trainer
+
+train:
+  image_num_range: [2, 16]
+  max_img_per_gpu: 32           # reduce to 24 if the 0.6B unshared model OOMs; keep A and B identical
+
+  random_reslution: true
+  aspect_ratio_range: [0.5, 2.0]
+  pixel_count_range: [100000, 255000]
+  patch_size: 16                # DINOv3
+  num_resolution: -1
+  width_range: [400, 600]
+
+  num_epoch: 30
+  iters_per_epoch: 1000
+  print_freq: 20
+  num_workers: 4
+
+  optimizer:
+    lr: 1e-4
+    encoder_lr: 1e-5
+  lr_scheduler:
+    pct_start: 0.05
+    div_factor: 25
+    final_div_factor: 100
+
+test:
+  num_workers: 4
+  iters_per_test: 50            # 50 x 32 NPUs batches on the held-out 10% scenes, once per epoch
+
+# NOTE: log.* is set on the command line in run_sh_s3/run_scannetpp/common.sh, because configs/general
+# (which defines log.ckpt_interval) is composed after this file and would override it.
+
+model:
+  ckpt: null

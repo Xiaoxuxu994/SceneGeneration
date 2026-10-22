@@ -384,7 +384,16 @@ class Pi3(nn.Module):
                     'builder': dinov3_vits16,
                     'model_dir': 'ckpts/dinov3_vits16',
                     'default_decoder': None,
-                    'variants': {},
+                    'variants': {
+                        # Pi3-1B decoder (same as dinov2_large_0.95B) on top of DINOv3 ViT-S/16
+                        '1B': dict(
+                            dec_embed_dim=1024,
+                            dec_num_heads=16,
+                            mlp_ratio=4,
+                            dec_depth=36,
+                            head_depth=5,
+                        ),
+                    },
                 },
                 'small+':{
                     'builder': dinov3_vits16plus,

@@ -237,7 +237,7 @@ class DinoVisionTransformer(nn.Module):
             else:
                 rope_sincos = [None for r in rope]
             if self.training and USE_CHECKPOINT == 'True':
-                x = checkpoint(blk, x, rope_sincos, use_reentrant=True)
+                x = checkpoint(blk, x, rope_sincos, use_reentrant=False)  # reentrant drops grads: x is a list, not a tensor
             else:
                 x = blk(x, rope_sincos)  
         all_x = x
@@ -285,7 +285,7 @@ class DinoVisionTransformer(nn.Module):
             else:
                 rope_sincos = None
             if self.training and USE_CHECKPOINT == 'True':
-                x = checkpoint(blk, x, rope_sincos, use_reentrant=True)
+                x = checkpoint(blk, x, rope_sincos, use_reentrant=False)  # non-reentrant, same as forward_features_list
             else:
                 x = blk(x, rope_sincos)  
             if i in blocks_to_take:

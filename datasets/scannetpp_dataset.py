@@ -81,7 +81,8 @@ class ScannetppDataset(BaseDataset):
         cache_dir = "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache"
         os.makedirs(cache_dir, exist_ok=True)
         root_hash = hashlib.md5(osp.abspath(self.data_root).encode()).hexdigest()[:8]
-        cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache.pkl")
+        # v2: frame lists rebuilt after the Thumbs.db / DSC-wrap / pose-index fixes (old caches are ignored)
+        cache_path = os.path.join(cache_dir, f"{self.dataset_label}_{root_hash}_cache_v2.pkl")
         if not os.path.exists(cache_path):
             print(f'[Dataset] Constructing cache {cache_path}..')
             self._scan_scenes()
@@ -114,32 +115,48 @@ class ScannetppDataset(BaseDataset):
     # =========================
     # scan / cache
     # =========================
+    @staticmethod
+    def _frame_order(frames):
+        """Temporal order of DSLR frames named [<hash>_]DSC<5 digits>.
+
+        The camera counter wraps 09999 -> 00001 and the preprocessing then switches the hash prefix, so
+        sorting by the last 5 digits puts the wrapped tail first. If a scene spans the wrap (numbers near
+        both ends), frames with small numbers are moved after the large ones.
+        """
+        def num(s):
+            try:
+                return int(s[-5:])
+            except (ValueError, TypeError):
+                return 0
+
+        nums = [num(f) for f in frames]
+        wrapped = bool(nums) and min(nums) < 1000 and max(nums) > 9000
+        key = (lambda f: num(f) + (10000 if num(f) < 5000 else 0)) if wrapped else num
+        return sorted(frames, key=key)
+
     def _scan_scenes(self):
-        sequence_list_path = f"{self.ScanNetPP_DIR}/sequence_list.pkl"
+        # v2 list (see _frame_order / image-extension filter); the old sequence_list.pkl is left untouched
+        sequence_list_path = f"{self.ScanNetPP_DIR}/sequence_list_v2.pkl"
         if osp.exists(sequence_list_path):
             with open(sequence_list_path, "rb") as f:
                 sequence_list, data_store = pickle.load(f)
         else:
-
-            def dsc_sort_key(s):
-                try:
-                    return int(s[-5:])
-                except (ValueError, TypeError):
-                    return 0
-
             data_store = {}
             sequence_list = []
 
-            scenes = sorted(os.listdir(self.ScanNetPP_DIR))
+            scenes = sorted(d for d in os.listdir(self.ScanNetPP_DIR) if osp.isdir(osp.join(self.ScanNetPP_DIR, d)))
 
             for scene in scenes:
                 rgb_dir = osp.join(self.ScanNetPP_DIR, scene, "images")
                 depth_dir = osp.join(self.ScanNetPP_DIR, scene, "depth")
+                if not (osp.isdir(rgb_dir) and osp.isdir(depth_dir)):
+                    continue
 
-                rgb_files = [os.path.splitext(f)[0] for f in os.listdir(rgb_dir)]
-                depth_files = [os.path.splitext(f)[0] for f in os.listdir(depth_dir)]
+                # only real image files (e.g. skips Windows Thumbs.db, which exists in both folders)
+                rgb_files = [osp.splitext(f)[0] for f in os.listdir(rgb_dir) if f.lower().endswith((".jpg", ".jpeg", ".png"))]
+                depth_files = [osp.splitext(f)[0] for f in os.listdir(depth_dir) if f.lower().endswith(".png")]
 
-                frames = sorted(list(set(rgb_files) & set(depth_files)), key=dsc_sort_key)
+                frames = self._frame_order(list(set(rgb_files) & set(depth_files)))
                 if len(frames) < self.min_num_images:
                     continue
 
@@ -246,13 +263,12 @@ class ScannetppDataset(BaseDataset):
         poses_trajectories = poses["trajectories"]
         poses_intrinsics = poses["intrinsics"]
 
-        frames = meta["frames_name"]
-        frames = np.array(frames)
+        frames = np.array(meta["frames_name"])
         idxs = np.array(idxs)
-        full_images = poses["images"]
-        select_images = frames[idxs]
-        sorter = np.argsort(full_images)
-        pose_idxs = np.searchsorted(full_images, select_images, sorter=sorter)
+        # name -> row in scene_metadata (np.searchsorted with `sorter` returns positions in the *sorted*
+        # array, which only matched the metadata rows because those happened to be sorted already)
+        name_to_row = {str(n): i for i, n in enumerate(poses["images"])}
+        pose_idxs = [name_to_row[str(f)] for f in frames[idxs]]
 
         views = []
         for fid, pid in zip(idxs, pose_idxs):
