@@ -36,7 +36,7 @@ train:
 test:
   num_workers: 4
   max_img_per_gpu: 8            # 1 sample (8 views) per test batch: metrics are computed on batch element 0
-  iters_per_test: 100           # 100 x 16 NPUs = 1600 held-out samples, once per epoch
+  iters_per_test: 125           # 125 x 16 NPUs = all 2000 held-out clips (fixed set), once per epoch
 
 # NOTE: log.* is set on the command line in run_sh_s3/run_scannetpp/common.sh, because configs/general
 # (which defines log.ckpt_interval) is composed after this file and would override it.

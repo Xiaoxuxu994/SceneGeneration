@@ -109,6 +109,10 @@ class ResizedDataset (EasyDataset):
 
     def __getitem__(self, idx):
         assert hasattr(self, '_idxs_mapping'), 'You need to call dataset.set_epoch() to use ResizedDataset.__getitem__()'
+        if str(getattr(self.dataset, 'mode', 'train')).lower() != 'train':
+            # test: several samples map to the same scene; key the view sampling on the sample index so that
+            # every sample is a fixed, distinct clip (see BaseDataset.__getitem__)
+            self.dataset._eval_sample_key = int(idx[0] if isinstance(idx, tuple) else idx)
         if isinstance(idx, tuple):
             if len(idx) == 2:
                 idx, other = idx

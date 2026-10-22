@@ -40,8 +40,10 @@ the script exits if it is missing. Everything except NAME / MODEL lives in `comm
 - fixed 8 views per sample, 32 samples (256 images) / NPU -> 4096 images / step on 16 NPUs;
   random resolution 100k-255k px (patch 16);
 - 15 epochs x 500 iters = 7.5k steps ~= 31M image samples; ckpt every 2 epochs;
-- test once per epoch: 100 iters x 16 NPUs = 1600 held-out samples, 1 sample (8 views, 512x336) per test batch
-  (`test.max_img_per_gpu: 8`; metrics are computed on batch element 0, so larger test batches would skip samples);
+- test once per epoch on a fixed set: 2000 clips (8 views, 512x336) from the held-out scenes, all of them every time
+  (125 iters x 16 NPUs, 1 clip per test batch via `test.max_img_per_gpu: 8`, since metrics use batch element 0);
+  no shuffling, and each clip's frames are drawn from an RNG keyed on its sample index, so every evaluation and
+  every run sees exactly the same clips;
 - AdamW, OneCycle (5% warmup, cosine), decoder / heads lr 1e-4, encoder lr 1e-5; loss weights as exp0603.
 
 Measured on 910B3 (1 NPU, bf16, checkpointing on): 32 samples x 8 views at 432x592 take ~10.4 s/step and ~32 GiB

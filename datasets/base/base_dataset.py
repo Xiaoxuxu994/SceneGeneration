@@ -353,13 +353,17 @@ class BaseDataset(EasyDataset):
         # over-loaded code
         resolution = self._resolutions[ar_idx]  # DO NOT CHANGE THIS (compatible with BatchedRandomSampler)
         
+        # test: a fresh RNG per sample (sample index from ResizedDataset, else the scene index), so the selected
+        # frames do not depend on worker state or on how many times the test set was evaluated before
+        eval_key = getattr(self, "_eval_sample_key", origin_idx)
         error = None
         views = None
         for retry in range(max_retry):              # default: 3
             try:
                 if hasattr(self, "this_views_info"):
                     delattr(self, "this_views_info")
-                views = self._get_views(idx, resolution, self._rng)
+                rng = self._rng if is_train else np.random.default_rng([2024, eval_key, retry])
+                views = self._get_views(idx, resolution, rng)
 
                 # assert len(views) == self.frame_num
                 if self.shuffle and is_train:

@@ -51,4 +51,4 @@ test_dataset:
 
 test_dataloader:
     drop_last: False
-    shuffle: True
+    shuffle: False           # fixed test set: same 2000 clips in the same order every evaluation
