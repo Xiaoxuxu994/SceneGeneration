@@ -425,6 +425,15 @@ class Pi3(nn.Module):
                     'model_dir': 'ckpts/dinov3_vith16plus',
                     'default_decoder': None,
                     'variants': {
+                        # 编码器同 3Bv2（DINOv3 ViT-H+/16），decoder 与原始 Pi3（dinov2_large_0.95B）相同：
+                        # 1024 维 / 16 头 / 36 层，head 5 层；用于在全量数据上快速迭代，共 1.43B 参数（编码器 0.84B），见 tools/count_params.py
+                        '1.43B': dict(
+                            dec_embed_dim=1024,
+                            dec_num_heads=16,
+                            mlp_ratio=4,
+                            dec_depth=36,
+                            head_depth=5,
+                        ),
                         '3Bv2': dict(
                             dec_embed_dim=2048,
                             dec_num_heads=32,
