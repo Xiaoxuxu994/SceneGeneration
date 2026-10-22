@@ -286,6 +286,7 @@ train_dataset:
     min_baseline_ratio: 0.05
     baseline_retries: 3
     path_remap:
+      're:^/efs-m3ga/z00533370/reliev3r_data/taskonomy/(rgb|depth_zbuffer|depth_euclidean|point_info|mask_valid)/([^/]+)/\2/': 'obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy/\1/taskonomy/\2/'   # OBS 上是 rgb/taskonomy/<场景>/，efs 是 rgb/<场景>/<场景>/
       /efs-m3ga/z00533370/reliev3r_data/taskonomy: obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Mapillary:
@@ -724,6 +725,7 @@ test_dataset:
       _target_: datasets.base.transforms.ImgToTensor
     mode: test
     path_remap:
+      're:^/efs-m3ga/z00533370/reliev3r_data/taskonomy/(rgb|depth_zbuffer|depth_euclidean|point_info|mask_valid)/([^/]+)/\2/': 'obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy/\1/taskonomy/\2/'   # OBS 上是 rgb/taskonomy/<场景>/，efs 是 rgb/<场景>/<场景>/
       /efs-m3ga/z00533370/reliev3r_data/taskonomy: obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Mapillary:

@@ -29,5 +29,5 @@ CO3D:            {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/co3d,   
 CO3DV2:          {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode,                dst: obs://bucket-471/z00533370/dataset/CO3Dv2_decode, extra: {/efs-m3ga/z00818731/co3dv2-cams: obs://bucket-471/y00959808/data/sr_datasets/processed/co3dv2-cams}, note: "解压版目录；obs://bucket-471/dataset/CO3D-v2CO3D-v2 结构不同"}
 Mapillary:       {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/Mapillary_Metropolis,         dst: obs://bucket-471/y00959808/data/sr_datasets/processed/Mapillary_Metropolis}
 MegaDepth:       {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/MegaDepth,                    dst: obs://bucket-471/y00959808/data/sr_datasets/processed/MegaDepth}
-Taskonomy:       {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/taskonomy,                    dst: obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy}
+Taskonomy:       {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/taskonomy,                    dst: obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy, note: "OBS 各子目录多一层 taskonomy/、场景名不重复：rgb/taskonomy/<场景>/ 对应 efs 的 rgb/<场景>/<场景>/，配置里用 re: 规则映射"}
 Wildrgbd:        {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/wildrgbd_s3,                  dst: obs://bucket-471/y00959808/data/sr_datasets/processed/wildrgbd}

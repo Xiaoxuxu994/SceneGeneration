@@ -8,11 +8,14 @@
 - 路径前缀映射（path remap）：数据集缓存 pkl 里存的往往是建缓存时的本地绝对路径（如 /efs-m3ga/...）。
   配置 `path_remap: {"/efs-m3ga/xxx": "obs://bucket/xxx"}` 后，所有读取会先按最长前缀替换，再判断走本地还是 OBS，
   不需要重建缓存。BaseDataset 在构造和每次取样本前调用 set_path_remap()，不同数据集的映射互不影响。
+  目录层级对不上、前缀替换解决不了时，用正则规则：键写成 "re:<正则>"，值是替换串（\\1 引用分组），
+  先于前缀规则按配置顺序尝试，第一条匹配的生效。例如 Taskonomy 的 rgb/<场景>/<场景>/x → rgb/taskonomy/<场景>/x。
 """
 import builtins
 import glob as _glob
 import io
 import os
+import re
 import tempfile
 
 os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")   # 必须在 import cv2 之前；cv2.imdecode 读 EXR 需要
@@ -67,22 +70,28 @@ def _obs_read_tick():
 # ---------------------------------------------------------------------------
 # 路径映射
 # ---------------------------------------------------------------------------
-_REMAP = []   # [(src_prefix, dst_prefix)]，按 src 长度降序
+_REMAP = []      # [(src_prefix, dst_prefix)]，按 src 长度降序
+_REMAP_RE = []   # [(compiled_regex, repl)]，按配置顺序
 
 
 def set_path_remap(remap=None):
-    """remap: dict {src_prefix: dst_prefix}、[(src, dst), ...] 或 None。"""
-    global _REMAP
+    """remap: dict {src_prefix: dst_prefix}、[(src, dst), ...] 或 None。键以 "re:" 开头的是正则规则。"""
+    global _REMAP, _REMAP_RE
     if remap is None or len(remap) == 0:     # 不用 `not remap`：pd.Series / ndarray 的真值有歧义
-        _REMAP = []
+        _REMAP, _REMAP_RE = [], []
         return
     items = list(remap.items()) if hasattr(remap, "items") else [tuple(x) for x in remap]
-    _REMAP = sorted(((str(a), str(b)) for a, b in items), key=lambda x: -len(x[0]))
+    _REMAP_RE = [(re.compile(str(a)[3:]), str(b)) for a, b in items if str(a).startswith("re:")]
+    _REMAP = sorted(((str(a), str(b)) for a, b in items if not str(a).startswith("re:")), key=lambda x: -len(x[0]))
 
 
 def resolve(path):
     if not isinstance(path, str):
         return path
+    for pat, repl in _REMAP_RE:
+        new, n = pat.subn(repl, path, count=1)
+        if n:
+            return new
     for src, dst in _REMAP:
         if path == src or path.startswith(src.rstrip("/") + "/"):
             return dst.rstrip("/") + path[len(src.rstrip("/")):]

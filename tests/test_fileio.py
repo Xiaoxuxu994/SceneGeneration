@@ -145,6 +145,18 @@ def test_remap_survives_convert_attributes():
     assert fio.resolve("/efs/data/x") == "/efs/data/x"
 
 
+def test_regex_remap_rules():
+    rm = {r"re:^/efs/tk/(rgb|point_info)/([^/]+)/\2/": r"obs://b/tk/\1/taskonomy/\2/", "/efs/tk": "obs://b/tk"}
+    fio.set_path_remap(rm)
+    try:
+        assert fio.resolve("/efs/tk/rgb/akiak/akiak/p_rgb.png") == "obs://b/tk/rgb/taskonomy/akiak/p_rgb.png"
+        assert fio.resolve("/efs/tk/point_info/akiak/akiak/p.json") == "obs://b/tk/point_info/taskonomy/akiak/p.json"
+        assert fio.resolve("/efs/tk/sequence_list.pkl") == "obs://b/tk/sequence_list.pkl"     # 正则不匹配时走前缀规则
+        assert fio.resolve("/efs/tk/rgb/a/b/x.png") == "obs://b/tk/rgb/a/b/x.png"             # 场景名不重复：不套正则
+    finally:
+        fio.set_path_remap(None)
+
+
 def test_debug_main_runs():
     from datasets.base.debug import debug_main
     rc = debug_main(TDF.ToyDataset, ["--config", "", "--n", "2", "--res", "32", "32", "--frames", "3"])
