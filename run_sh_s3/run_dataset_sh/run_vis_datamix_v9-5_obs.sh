@@ -31,6 +31,7 @@ set -euo pipefail
 CODE_DIR="${CODE_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "${CODE_DIR}"
 export PYTHONPATH="${CODE_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONUNBUFFERED=1   # 日志实时写出（否则输出经 tee / 重定向时 print 被缓冲，看不到进度）
 
 CONFIG="${CONFIG:-configs/data/datamix_all_v9-5_obs.yaml}"
 DATASETS="${DATASETS:-ALL}"
