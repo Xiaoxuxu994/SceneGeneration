@@ -10,7 +10,9 @@ set -euo pipefail
 # -----------------------------
 # Paths (edit here if your buckets / EFS differ)
 # -----------------------------
-CODE_DIR=/home/ma-user/modelarts/user-job-dir/Pi3
+# Repo root = two levels above this script, wherever the job's code directory is (user-job-dir/Pi3,
+# user-job-dir/SceneGeneration, a dev checkout, ...). Override with CODE_DIR=... if needed.
+CODE_DIR="${CODE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 CKPT_LINK_SRC=/efs-mi-east4-2/checkpoints                     # -> ./ckpts (DINOv3 weights live here)
 DINOV3_S_WEIGHTS=ckpts/dinov3_vits16/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
 OBS_OUT_ROOT="obs://bucket-mi-east4-sf/z00533370/project/proj_3dgs/exp_pi3sup/pi3sup/outputs"
@@ -22,10 +24,8 @@ W_UNPROJ_GLOBAL=1.0
 W_NORMALIZED=1.0
 
 # Smoke test: SMOKE=1 bash run_X.sh -> 1 epoch x 50 iters, 5 test iters, separate output name.
-# In smoke mode the code is taken from the current directory (run it from the repo root); no cd to CODE_DIR.
 if [ "${SMOKE:-0}" = "1" ]; then
     NAME="${NAME}_smoke"
-    CODE_DIR="$(pwd)"
     EXTRA_ARGS=(train.num_epoch=1 train.iters_per_epoch=50 test.iters_per_test=5 log.ckpt_interval=1)
 else
     EXTRA_ARGS=()
