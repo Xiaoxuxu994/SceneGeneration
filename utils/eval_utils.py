@@ -15,6 +15,24 @@ logging.getLogger("evo").setLevel(logging.WARNING)
 logging.getLogger("evo.main_rpe").setLevel(logging.WARNING)
 logging.getLogger("evo.main_ape").setLevel(logging.WARNING)
 
+
+# evo changed keyword names across versions. Display-only names (ref_name / est_name) are dropped when the
+# installed version does not accept them; any other unsupported keyword raises, so the metric never silently
+# changes meaning (e.g. align / correct_scale / delta).
+_EVO_DISPLAY_ONLY_KWARGS = {"ref_name", "est_name"}
+
+
+def _evo_call(fn, *args, **kwargs):
+    import inspect
+    params = inspect.signature(fn).parameters
+    if not any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        unsupported = [k for k in kwargs if k not in params]
+        bad = [k for k in unsupported if k not in _EVO_DISPLAY_ONLY_KWARGS]
+        if bad:
+            raise TypeError(f"{fn.__module__}.{fn.__name__} does not accept {bad}; check the installed evo version")
+        kwargs = {k: v for k, v in kwargs.items() if k in params}
+    return fn(*args, **kwargs)
+
 def build_pair_index(N, B=1):
     # B, N = se3.shape[:2]
     i1_, i2_ = torch.combinations(torch.arange(N), 2, with_replacement=False).unbind(-1)
@@ -412,7 +430,8 @@ def eval_metrics(pred_traj, gt_traj=None, seq="", filename="", sample_stride=1, 
     traj_ref = gt_traj
     traj_est = pred_traj
 
-    ate_result = main_ape.ape(
+    ate_result = _evo_call(
+        main_ape.ape,
         traj_ref,
         traj_est,
         est_name="traj",
@@ -429,7 +448,8 @@ def eval_metrics(pred_traj, gt_traj=None, seq="", filename="", sample_stride=1, 
     delta_list = [1]
     rpe_rots, rpe_transs = [], []
     for delta in delta_list:
-        rpe_rots_result = main_rpe.rpe(
+        rpe_rots_result = _evo_call(
+            main_rpe.rpe,
             traj_ref,
             traj_est,
             est_name="traj",
@@ -446,7 +466,8 @@ def eval_metrics(pred_traj, gt_traj=None, seq="", filename="", sample_stride=1, 
         rpe_rots.append(rot)
 
     for delta in delta_list:
-        rpe_transs_result = main_rpe.rpe(
+        rpe_transs_result = _evo_call(
+            main_rpe.rpe,
             traj_ref,
             traj_est,
             est_name="traj",

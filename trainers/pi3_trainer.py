@@ -171,21 +171,25 @@ class Pi3Trainer(BaseTrainer):
             # ---------------------------
             # camera metrics
             # ---------------------------
+            pr_cam_norm = pred_norm["camera_poses"][0].detach()
+            gt_cam_norm = gt["camera_poses"][0]
+            # relative-angle metrics and trajectory metrics are independent: a failure in one must not drop the other
             try:
-                pr_cam_norm = pred_norm["camera_poses"][0].detach()
-                gt_cam_norm = gt["camera_poses"][0]
                 rra_acc, rta_acc, auc_at_thre = eval_angle(pr_cam_norm, gt_cam_norm)
-                ate, rpe_trans, rpe_rot = eval_trajectory(pr_cam_norm, gt_cam_norm)
-
                 metrics["cam_rra_acc"] = float(rra_acc)
                 metrics["cam_rta_acc"] = float(rta_acc)
                 metrics["cam_auc_at_thre"] = float(auc_at_thre)
+            except Exception as e:
+                if self.accelerator.is_main_process:
+                    self.log_info(f"[validate] camera angle metric skipped: {e}")
+            try:
+                ate, rpe_trans, rpe_rot = eval_trajectory(pr_cam_norm, gt_cam_norm)
                 metrics["cam_ate"] = float(ate)
                 metrics["cam_rpe_trans"] = float(rpe_trans)
                 metrics["cam_rpe_rot"] = float(rpe_rot)
             except Exception as e:
                 if self.accelerator.is_main_process:
-                    self.log_info(f"[validate] camera metric skipped: {e}")
+                    self.log_info(f"[validate] camera trajectory metric skipped: {e}")
 
             # ---------------------------
             # depth metrics
