@@ -107,6 +107,8 @@ class BaseDataset(EasyDataset):
         self.stride_candidates = stride_candidates
         self.force_global_sampling = force_global_sampling
 
+    _KEEP_PY_ATTRS = ("path_remap", "seq_blacklist")
+
     def convert_attributes(self):
         """
         Avoid memory leak caused by python list or python dict
@@ -125,6 +127,8 @@ class BaseDataset(EasyDataset):
 
         for attr_name in dir(self):
             if attr_name.startswith("__") or callable(getattr(self, attr_name)):
+                continue
+            if attr_name in self._KEEP_PY_ATTRS:     # 配置项保持原样（path_remap 转成 pd.Series 后 `if not remap` 会报错）
                 continue
             
             attr_value = getattr(self, attr_name)
@@ -157,7 +161,7 @@ class BaseDataset(EasyDataset):
         if not bl or not hasattr(self, 'sequences'):
             return
         if isinstance(bl, str):
-            with open(bl) as f:
+            with fio.open(bl) as f:
                 names = {l.strip() for l in f if l.strip() and not l.startswith('#')}
         else:
             names = {str(x) for x in bl}

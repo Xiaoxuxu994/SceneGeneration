@@ -73,7 +73,7 @@ _REMAP = []   # [(src_prefix, dst_prefix)]，按 src 长度降序
 def set_path_remap(remap=None):
     """remap: dict {src_prefix: dst_prefix}、[(src, dst), ...] 或 None。"""
     global _REMAP
-    if not remap:
+    if remap is None or len(remap) == 0:     # 不用 `not remap`：pd.Series / ndarray 的真值有歧义
         _REMAP = []
         return
     items = list(remap.items()) if hasattr(remap, "items") else [tuple(x) for x in remap]

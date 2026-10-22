@@ -128,6 +128,23 @@ def test_base_dataset_cache_and_remap():
     assert ds2.cache_dir == (os.environ.get("DATASET_CACHE_DIR") or "/efs-mi-east4-2/z00533370/proj_3dgs/3drecon/data/dataset_cache")
 
 
+def test_remap_survives_convert_attributes():
+    # 训练和 debug 都会先 convert_attributes（dict -> pd.Series）再在 getitem 里 set_path_remap
+    _install_fake_moxing()
+    setup_store()
+    ds = TDF.ToyDataset(frame_num=2, path_remap={"/efs/data": "obs://bucket/data"})
+    ds.convert_attributes()
+    assert isinstance(ds.path_remap, dict)
+    fio.set_path_remap(None)
+    fio.set_path_remap(ds.path_remap)
+    assert fio.resolve("/efs/data/x") == "obs://bucket/data/x"
+    import pandas as pd
+    fio.set_path_remap(pd.Series({"/efs/data": "obs://bucket/data"}))
+    assert fio.resolve("/efs/data/x") == "obs://bucket/data/x"
+    fio.set_path_remap(pd.Series(dtype=object))
+    assert fio.resolve("/efs/data/x") == "/efs/data/x"
+
+
 def test_debug_main_runs():
     from datasets.base.debug import debug_main
     rc = debug_main(TDF.ToyDataset, ["--config", "", "--n", "2", "--res", "32", "32", "--frames", "3"])
