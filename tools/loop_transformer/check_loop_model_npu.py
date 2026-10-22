@@ -29,7 +29,7 @@ def _cfg_no_download():
 P.Pi3._build_backbone_cfg = staticmethod(_cfg_no_download)
 from pi3.models.pi3_loop import Pi3Loop  # noqa: E402
 
-KW = dict(pos_type="rope100", model_size="dinov3_small_1B", load_vggt=False, freeze_encoder=False,
+KW = dict(pos_type="rope100", model_size=os.environ.get("MODEL_SIZE", "dinov3_small_w384"), load_vggt=False, freeze_encoder=False,
           use_global_points=False, train_conf=False, num_dec_blk_not_to_checkpoint=0, ckpt=None)
 
 
@@ -45,7 +45,7 @@ def step(m, imgs, opt):
 
 def bench():
     dev = torch.device("npu:0")
-    shapes = [(2, 16, 432, 592), (4, 8, 432, 592), (1, 16, 336, 512)]  # 32 / 32 / 16 images per NPU
+    shapes = [(2, 16, 432, 592), (4, 8, 432, 592), (1, 16, 336, 512), (4, 16, 432, 592)]  # 32 / 32 / 16 / 64 images per NPU
     no_ckpt = os.environ.get("NO_DEC_CKPT") == "1"  # decoder blocks without gradient checkpointing
     kwA = dict(KW, num_dec_blk_not_to_checkpoint=36 if no_ckpt else 0)
     for name, ctor in [("A_unshared36" + ("_nockpt" if no_ckpt else ""), lambda: P.Pi3(**kwA)),

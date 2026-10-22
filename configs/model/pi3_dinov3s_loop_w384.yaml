@@ -1,7 +1,7 @@
 # @package _global_
-# B (loop): same encoder, projection, register tokens and heads as A (pi3_dinov3s_1b.yaml); the 36 unshared
-# decoder blocks are replaced by ONE frame block + ONE global block looped K times (DejaView-style, with
-# zero-init time-interval gates). K = 18 equals A's decoder FLOPs. ~0.18B params.
+# B (loop): same encoder, register tokens and 2-block heads as A (pi3_dinov3s_w384.yaml), width 384 everywhere;
+# the 36 unshared decoder blocks are replaced by ONE frame block + ONE global block looped K times
+# (DejaView-style, zero-init time-interval gates). K = 18 equals A's decoder FLOPs.
 # Inherits loss / optimizer / test settings from model/pi3.yaml.
 
 defaults:
@@ -11,7 +11,7 @@ defaults:
 model:
   _target_: pi3.models.pi3_loop.Pi3Loop
   pos_type: rope100
-  model_size: dinov3_small_1B      # decoder width / heads / head_depth taken from the 1B spec
+  model_size: dinov3_small_w384    # decoder / head width, heads and head_depth taken from the w384 spec
   load_vggt: false
   freeze_encoder: false
   use_global_points: false

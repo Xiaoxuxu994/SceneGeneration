@@ -115,7 +115,12 @@ class Pi3(nn.Module):
         dec_num_heads = dec_cfg['dec_num_heads']
         mlp_ratio =  dec_cfg['mlp_ratio']
         dec_depth = dec_cfg['dec_depth']     
-        head_depth = dec_cfg['head_depth']   
+        head_depth = dec_cfg['head_depth']
+        # Head width / heads / output dims; defaults reproduce the original hard-coded Pi3 heads.
+        head_embed_dim = dec_cfg.get('head_embed_dim', 1024)
+        head_num_heads = dec_cfg.get('head_num_heads', 16)
+        point_out_dim = dec_cfg.get('point_out_dim', 1024)
+        camera_out_dim = dec_cfg.get('camera_out_dim', 512)
 
         # -----------------------------------
         #        Projec & Norm Layer
@@ -165,28 +170,28 @@ class Pi3(nn.Module):
         # ----------------------
         self.point_decoder = TransformerDecoder(
             in_dim=2*self.dec_embed_dim, 
-            dec_embed_dim=1024,
-            dec_num_heads=16,
-            out_dim=1024,
+            dec_embed_dim=head_embed_dim,
+            dec_num_heads=head_num_heads,
+            out_dim=point_out_dim,
             rope=self.rope,
             depth=head_depth,
             use_checkpoint=True
         )
-        self.point_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=3)
+        self.point_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=point_out_dim, output_dim=3)
 
         # ----------------------
         #  Camera Pose Decoder
         # ----------------------
         self.camera_decoder = TransformerDecoder(
             in_dim=2*self.dec_embed_dim, 
-            dec_embed_dim=1024,
-            dec_num_heads=16,                # 8
-            out_dim=512,
+            dec_embed_dim=head_embed_dim,
+            dec_num_heads=head_num_heads,                # 8
+            out_dim=camera_out_dim,
             rope=self.rope,
             depth=head_depth,
             use_checkpoint=True
         )
-        self.camera_head = CameraHead(dim=512)
+        self.camera_head = CameraHead(dim=camera_out_dim)
         
 
         # ----------------------
@@ -196,13 +201,13 @@ class Pi3(nn.Module):
         if use_global_points:
             self.global_points_decoder = ContextTransformerDecoder(
                 in_dim=2*self.dec_embed_dim, 
-                dec_embed_dim=1024,
-                dec_num_heads=16,
-                out_dim=1024,
+                dec_embed_dim=head_embed_dim,
+                dec_num_heads=head_num_heads,
+                out_dim=point_out_dim,
                 rope=self.rope,
                 depth=head_depth,
             )
-            self.global_point_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=3)
+            self.global_point_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=point_out_dim, output_dim=3)
 
         # For ImageNet Normalize
         image_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
@@ -240,7 +245,7 @@ class Pi3(nn.Module):
             #     Conf Decoder
             # ----------------------
             self.conf_decoder = deepcopy(self.point_decoder)
-            self.conf_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=1024, output_dim=1)
+            self.conf_head = LinearPts3d(patch_size=self.patch_size, dec_embed_dim=point_out_dim, output_dim=1)
 
             freeze_all_params([self.encoder, self.decoder, self.point_decoder, self.point_head, self.camera_decoder,  self.camera_head, self.register_token])
             if use_global_points:
@@ -392,6 +397,19 @@ class Pi3(nn.Module):
                             mlp_ratio=4,
                             dec_depth=36,
                             head_depth=5,
+                        ),
+                        # Width kept at the encoder's 384 everywhere (no encoder->decoder projection),
+                        # 36-block decoder (18 frame/global pairs), 2-block point / camera heads.
+                        'w384': dict(
+                            dec_embed_dim=384,
+                            dec_num_heads=6,
+                            mlp_ratio=4,
+                            dec_depth=36,
+                            head_depth=2,
+                            head_embed_dim=384,
+                            head_num_heads=6,
+                            point_out_dim=384,
+                            camera_out_dim=384,
                         ),
                     },
                 },

@@ -1,16 +1,20 @@
 # ScanNet++-only loop-transformer study
 
-Goal: a looped (weight-shared) decoder reaches the accuracy of the unshared Pi3-1B decoder when both use the
-same DINOv3 ViT-S/16 encoder, heads, data and recipe. Reference: DejaView / DVLT (NeurIPS 2026, arXiv 2605.30215).
+Goal: a looped (weight-shared) decoder reaches the accuracy of the unshared decoder when both use the same
+DINOv3 ViT-S/16 encoder, heads, data and recipe. Reference: DejaView / DVLT (NeurIPS 2026, arXiv 2605.30215).
+Width is kept at the encoder's 384 everywhere (no encoder->decoder projection) and both heads have 2 blocks.
 
-| | A `pi3_dinov3s_1b` | B `pi3_dinov3s_loop` |
+| | A `pi3_dinov3s_w384` | B `pi3_dinov3s_loop_w384` |
 |---|---|---|
 | encoder | DINOv3 ViT-S/16 (21.6M) | same |
-| projection | Linear 384->1024 + LN | same |
-| decoder | 36 unshared BlockRope (1024, 16 heads), frame/global alternating — 453.5M | 1 frame + 1 global GatedBlockRope looped K times — 25.2M + 3.4M time gates |
-| heads | Pi3 point / camera decoders (5 blocks) — 134.6M | same |
-| total | 610.2M | 185.2M |
-| decoder FLOPs | 36 blocks | K = 18 -> identical to A |
+| projection | none (encoder width 384 = decoder width) | same |
+| decoder | 36 unshared BlockRope (384, 6 heads), frame/global alternating — 63.9M | 1 frame + 1 global GatedBlockRope looped K times — 3.6M + 1.4M time gates |
+| heads | point / camera decoders, 2 blocks each at 384 (6 heads) + LinearPts3d / CameraHead(384) — 9.5M | same |
+| total | 95.0M | 36.1M |
+| forward FLOPs (1 x 8 views, 336x512) | 1.96 T | 1.96 T at K = 18, 1.42 T at K = 12 |
+
+The earlier width-1024 spec (`dinov3_small_1B`: 36 x 1024 decoder + 5-block heads, 610M / 185M) is still
+registered in `pi3_training.py` but no longer used by A / B.
 
 B details (`pi3/models/pi3_loop.py`, `pi3/models/layers/loop_block.py`):
 - gates `s_attn, s_mlp, s_out = 1 + MLP(gamma(t_k, t_{k+1}))`, t_k = k / K, MLP zero-initialized (gates = 1 at init);
@@ -22,7 +26,7 @@ B details (`pi3/models/pi3_loop.py`, `pi3/models/layers/loop_block.py`):
 ## Launch (ModelArts, 4 nodes x 8 NPUs = 32)
 
 ```bash
-bash run_sh_s3/run_scannetpp/run_A_dinov3s_pi3dec1b.sh
+bash run_sh_s3/run_scannetpp/run_A_dinov3s_dec384.sh
 bash run_sh_s3/run_scannetpp/run_B_dinov3s_loop.sh
 SMOKE=1 bash run_sh_s3/run_scannetpp/run_B_dinov3s_loop.sh   # 1 epoch x 50 iters sanity run
 ```

@@ -26,7 +26,7 @@ def _cfg_no_download():
 P.Pi3._build_backbone_cfg = staticmethod(_cfg_no_download)
 from pi3.models.pi3_loop import Pi3Loop  # noqa: E402
 
-KW = dict(pos_type="rope100", model_size="dinov3_small_1B", load_vggt=False, freeze_encoder=False,
+KW = dict(pos_type="rope100", model_size=os.environ.get("MODEL_SIZE", "dinov3_small_w384"), load_vggt=False, freeze_encoder=False,
           use_global_points=False, train_conf=False, num_dec_blk_not_to_checkpoint=0, ckpt=None)
 
 
@@ -44,7 +44,7 @@ def single():
 
     # gates are exactly 1 at init
     g = B.time_embed(torch.tensor(0.0), torch.tensor(1 / 18))
-    assert g.shape == (6, 1024) and torch.equal(g, torch.ones_like(g)), "gates must be 1 at init"
+    assert g.shape == (6, B.dec_embed_dim) and torch.equal(g, torch.ones_like(g)), "gates must be 1 at init"
 
     # K sampling: deterministic across instances (= ranks), within range, skewed to k_max
     # K depends only on (loop_seed, call counter) -> replaying the counter must give the same sequence

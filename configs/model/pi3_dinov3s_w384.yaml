@@ -1,6 +1,6 @@
 # @package _global_
-# A (baseline): DINOv3 ViT-S/16 encoder (21.6M) + Pi3-1B decoder (36 unshared blocks, dim 1024, 16 heads,
-# frame/global alternating) + Pi3 point / camera heads (5 blocks each). ~0.61B params.
+# A (baseline): DINOv3 ViT-S/16 encoder (21.6M) + 36 unshared decoder blocks at width 384 (6 heads,
+# frame/global alternating, no encoder->decoder projection) + 2-block point / camera heads at width 384.
 # Inherits loss / optimizer / test settings from model/pi3.yaml.
 
 defaults:
@@ -10,7 +10,7 @@ defaults:
 model:
   _target_: pi3.models.pi3_training.Pi3
   pos_type: rope100
-  model_size: dinov3_small_1B      # builder dinov3_vits16, weights in ckpts/dinov3_vits16/
+  model_size: dinov3_small_w384    # builder dinov3_vits16, weights in ckpts/dinov3_vits16/
   load_vggt: false
   freeze_encoder: false
   use_global_points: false
