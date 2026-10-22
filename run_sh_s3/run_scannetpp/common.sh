@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Shared ModelArts launcher for the ScanNet++-only loop-transformer study.
-# Do not run directly: use run_exp1022_00_A_dinov3s_dec384.sh / run_exp1022_00_B_dinov3s_loop384.sh, which set NAME and MODEL.
-# Everything except NAME / MODEL (data, training recipe, loss weights, resources) is identical for A and B.
+# Shared ModelArts launcher for the ScanNet++-only loop-transformer ablation.
+# Do not run directly: use run_exp1022_0*_*.sh, which set NAME and MODEL.
+# Everything except NAME / MODEL (data, training recipe, loss weights, resources) is identical for all runs.
 set -euo pipefail
 
 : "${NAME:?set NAME in the wrapper script}"
@@ -73,15 +73,15 @@ export USE_MEMARTS=0
 export USE_CHECKPOINT=True          # gradient checkpointing inside the DINOv3 encoder
 export HYDRA_FULL_ERROR=1
 
-# Multi-node (32 NPUs = 4 nodes x 8)
+# Multi-node (16 NPUs = 2 nodes x 8)
 MASTER_ADDR="${VC_WORKER_HOSTS%%,*}"
 NNODES="${MA_NUM_HOSTS}"
 NODE_RANK="${VC_TASK_INDEX}"
 NGPUS_PER_NODE="${MA_NUM_GPUS}"
 NUM_PROCESSES=$((NGPUS_PER_NODE * NNODES))
 echo "MASTER_ADDR=${MASTER_ADDR} NNODES=${NNODES} NODE_RANK=${NODE_RANK} NGPUS_PER_NODE=${NGPUS_PER_NODE} NUM_PROCESSES=${NUM_PROCESSES}"
-if [ "${NUM_PROCESSES}" != "32" ]; then
-    echo "[WARN] recipe is sized for 32 NPUs (got ${NUM_PROCESSES}); images/step and LR are not rescaled"
+if [ "${NUM_PROCESSES}" != "16" ]; then
+    echo "[WARN] recipe is sized for 16 NPUs (got ${NUM_PROCESSES}); images/step and LR are not rescaled"
 fi
 
 # -----------------------------

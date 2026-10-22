@@ -1,0 +1,13 @@
+# @package _global_
+# exp1022_02: loop body of 2 (frame, global) pair(s), training K in [5, 9] ~ Beta(2, 1), inference K = 9
+# (effective depth 2 x 9 = 18 pairs, same decoder FLOPs as the 36-block baseline). See pi3_dinov3s_loop_w384.yaml.
+
+defaults:
+  - pi3_dinov3s_loop_w384
+  - _self_
+
+model:
+  loop_layers: 2
+  loop_k_min: 5
+  loop_k_max: 9
+  loop_k_infer: 9

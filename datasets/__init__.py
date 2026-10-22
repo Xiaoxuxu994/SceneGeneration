@@ -82,6 +82,9 @@ def create_dataloader(cfg, mode):
     print(f'Sampling frame number range from {image_num_range}')
     # adapte from vggt
     max_img_per_gpu = cfg.train.max_img_per_gpu if 'max_img_per_gpu' in cfg.train else image_num_range[0]
+    if mode != 'train' and 'max_img_per_gpu' in cfg.test and cfg.test.max_img_per_gpu:
+        # own test batch size (otherwise the test loader inherits the training images / GPU)
+        max_img_per_gpu = cfg.test.max_img_per_gpu
     print(f'Max frame number per rank {max_img_per_gpu}')
     if mode == 'train' and cfg.train.iters_per_epoch > 0:
         print('Needed batch number per epoch (per rank):', (max_img_per_gpu // image_num_range[0]) * cfg.train.iters_per_epoch)

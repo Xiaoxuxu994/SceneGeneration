@@ -1,7 +1,10 @@
 # @package _global_
-# B (loop): same encoder, register tokens and 2-block heads as A (pi3_dinov3s_w384.yaml), width 384 everywhere;
-# the 36 unshared decoder blocks are replaced by ONE frame block + ONE global block looped K times
-# (DejaView-style, zero-init time-interval gates). K = 18 equals A's decoder FLOPs.
+# Base config of the looped decoder (exp1022_01 .. exp1022_04): same encoder, register tokens and 2-block heads
+# as the baseline (pi3_dinov3s_w384.yaml), width 384 everywhere; the 36 unshared decoder blocks are replaced
+# by a loop body of L (frame, global) block pairs applied K times (DejaView / DVLT). Every block owns a
+# DVLT-style gate MLP (2 x 64 sinusoidal features of (t_k, t_{k+1}) -> 64 -> 3 x 384, zero-initialized).
+# L * K_infer = 18 gives exactly the baseline decoder FLOPs. The per-experiment configs
+# pi3_dinov3s_loop_w384_L*_k*.yaml only set loop_layers / loop_k_*.
 # Inherits loss / optimizer / test settings from model/pi3.yaml.
 
 defaults:
@@ -19,10 +22,12 @@ model:
   num_dec_blk_not_to_checkpoint: 0
   ckpt: null
   # loop settings
-  loop_k_min: 12                   # training: K = 12 + round(6 * Beta(2, 1)), same K on all ranks
+  loop_layers: 1                   # L: (frame, global) block pairs in the loop body
+  loop_k_min: 14                   # training: K = k_min + round((k_max - k_min) * Beta(2, 1)), same K on all ranks
   loop_k_max: 18
   loop_k_infer: 18                 # test-time K (compute knob; stay within [k_min, k_max])
   loop_k_beta: [2.0, 1.0]
-  loop_gates: true                 # s_attn / s_mlp / s_out time-interval gates
+  loop_gates: true                 # s_attn / s_mlp / s_out gates, one gate MLP per block
+  loop_gate_hidden: 64             # gate MLP hidden width (DVLT default)
   loop_grad_checkpoint: true       # per sub-block, non-reentrant (shared params under DDP)
   loop_seed: 0

@@ -2,14 +2,14 @@
 
 Same encoder, projection, register tokens, point / camera heads and outputs as `Pi3`; only the
 decoder changes: instead of `dec_depth` independent blocks (alternating frame / global attention),
-ONE frame block + ONE global block are applied K times with shared weights, conditioned on the
-time interval (t_k, t_{k+1}) = (k/K, (k+1)/K) through zero-initialized channel gates.
+a loop body of L (frame, global) block pairs is applied K times with shared weights. Every block owns a
+DVLT-style gate MLP conditioned on the time interval (t_k, t_{k+1}) = (k/K, (k+1)/K), zero-initialized.
 
   training : K = k_min + round((k_max - k_min) * Beta(a, b)), identical on every rank
   inference: K = loop_k_infer (default k_max; can be changed at test time for compute scaling)
 
-K = dec_depth / 2 (18 for the 1B decoder) gives exactly the decoder FLOPs of the unshared model.
-The two blocks keep BlockRope parameter names, so they can be initialized from a regular Pi3 decoder.
+L * K = dec_depth / 2 (18 for a 36-block decoder) gives exactly the decoder FLOPs of the unshared model.
+decoder = [frame_0, global_0, frame_1, global_1, ...]; the blocks keep BlockRope parameter names.
 """
 
 from functools import partial
@@ -22,7 +22,7 @@ from transformers.modeling_utils import load_sharded_checkpoint
 
 from .dinov2.layers import Mlp
 from .layers.attention import FlashAttentionRope
-from .layers.loop_block import GatedBlockRope, IntervalEmbedding
+from .layers.loop_block import GatedBlockRope
 from .pi3_training import Pi3
 
 
@@ -38,11 +38,13 @@ class Pi3Loop(Pi3):
         train_conf=False,
         num_dec_blk_not_to_checkpoint=0,
         ckpt=None,
+        loop_layers=1,
         loop_k_min=12,
         loop_k_max=18,
         loop_k_infer=None,
         loop_k_beta=(2.0, 1.0),
         loop_gates=True,
+        loop_gate_hidden=64,
         loop_grad_checkpoint=True,
         loop_seed=0,
     ):
@@ -63,13 +65,14 @@ class Pi3Loop(Pi3):
             return GatedBlockRope(
                 dim=dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=True, proj_bias=True, ffn_bias=True,
                 drop_path=0.0, norm_layer=partial(nn.LayerNorm, eps=1e-6), act_layer=nn.GELU, ffn_layer=Mlp,
-                init_values=0.01, qk_norm=True, attn_class=FlashAttentionRope, rope=self.rope)
+                init_values=0.01, qk_norm=True, attn_class=FlashAttentionRope, rope=self.rope,
+                gate_hidden_dim=int(loop_gate_hidden), use_gate=loop_gates)
 
-        # decoder[0] = frame-attention block, decoder[1] = global-attention block (shared over all K steps)
-        self.decoder = nn.ModuleList([make_block(), make_block()])
-        # 6 gates: (s_attn, s_mlp, s_out) for the frame block, then for the global block
+        # loop body: decoder[2l] = frame-attention block, decoder[2l + 1] = global-attention block, l < L
+        assert loop_layers >= 1
+        self.loop_layers = int(loop_layers)
+        self.decoder = nn.ModuleList([make_block() for _ in range(2 * self.loop_layers)])
         self.loop_gates = loop_gates
-        self.time_embed = IntervalEmbedding(dim, num_scales=6) if loop_gates else None
 
         assert 1 <= loop_k_min <= loop_k_max
         self.loop_k_min, self.loop_k_max = int(loop_k_min), int(loop_k_max)
@@ -89,10 +92,12 @@ class Pi3Loop(Pi3):
                 del state
             print(f"[Pi3Loop] Load checkpoints from {ckpt}: {res}")
 
-        n_dec = sum(p.numel() for p in self.decoder.parameters())
+        n_gate = sum(p.numel() for n, p in self.decoder.named_parameters() if '.gate.' in n)
+        n_dec = sum(p.numel() for p in self.decoder.parameters()) - n_gate
         n_all = sum(p.numel() for p in self.parameters())
-        print(f"[Pi3Loop] shared decoder {n_dec / 1e6:.1f}M params, K train in [{self.loop_k_min}, {self.loop_k_max}] "
-              f"Beta{self.loop_k_beta}, K infer {self.loop_k_infer}, total {n_all / 1e6:.1f}M params")
+        print(f"[Pi3Loop] loop body {self.loop_layers} pair(s): blocks {n_dec / 1e6:.2f}M + gates {n_gate / 1e6:.2f}M params, "
+              f"K train in [{self.loop_k_min}, {self.loop_k_max}] Beta{self.loop_k_beta}, K infer {self.loop_k_infer}, "
+              f"total {n_all / 1e6:.2f}M params")
 
     def sample_k(self):
         if not self.training:
@@ -129,18 +134,15 @@ class Pi3Loop(Pi3):
         pos_global = pos.reshape(B, N * hw, -1)
 
         K = self.sample_k()
-        frame_blk, global_blk = self.decoder
-        ones = hidden.new_ones(6, C)
         for k in range(K):
-            if self.loop_gates:
-                t0 = torch.tensor(k / K, device=hidden.device)
-                t1 = torch.tensor((k + 1) / K, device=hidden.device)
-                gates = self.time_embed(t0, t1).to(hidden.dtype)
-            else:
-                gates = ones
-            hidden = self._run(frame_blk, hidden.reshape(B * N, hw, C), pos_frame, xpos_max, gates[0:3])
-            frame_out = hidden.reshape(B * N, hw, C)
-            hidden = self._run(global_blk, hidden.reshape(B, N * hw, C), pos_global, xpos_max, gates[3:6])
+            t0, t1 = k / K, (k + 1) / K
+            for l in range(self.loop_layers):
+                frame_blk, global_blk = self.decoder[2 * l], self.decoder[2 * l + 1]
+                hidden = self._run(frame_blk, hidden.reshape(B * N, hw, C), pos_frame, xpos_max,
+                                   frame_blk.gates(t0, t1, hidden))
+                frame_out = hidden.reshape(B * N, hw, C)
+                hidden = self._run(global_blk, hidden.reshape(B, N * hw, C), pos_global, xpos_max,
+                                   global_blk.gates(t0, t1, hidden))
         global_out = hidden.reshape(B * N, hw, C)
         # same head interface as Pi3: [last frame-block output, last global-block output]
         return torch.cat([frame_out, global_out], dim=-1), pos_frame

@@ -34,56 +34,69 @@ def nparams(m, prefix=None):
     return sum(p.numel() for n, p in m.named_parameters() if prefix is None or n.startswith(prefix)) / 1e6
 
 
+# the four loop experiments: (L, k_min, k_max), inference K = k_max -> L * k_max = 18 pairs
+LOOPS = [(1, 14, 18), (2, 5, 9), (6, 2, 3), (1, 1, 18)]
+
+
 def single():
     torch.manual_seed(0)
     A = P.Pi3(**KW)
-    B = Pi3Loop(**KW, loop_k_min=12, loop_k_max=18, loop_k_infer=18, loop_k_beta=[2.0, 1.0], loop_seed=0)
-    for name, m in [("A", A), ("B", B)]:
-        print(f"{name}: total {nparams(m):.1f}M | encoder {nparams(m, 'encoder'):.1f}M | decoder {nparams(m, 'decoder'):.1f}M | "
-              f"heads {nparams(m, 'point_') + nparams(m, 'camera_'):.1f}M | time_embed {nparams(m, 'time_embed'):.2f}M")
+    print(f"base: total {nparams(A):.2f}M | encoder {nparams(A, 'encoder'):.2f}M | decoder {nparams(A, 'decoder'):.2f}M | "
+          f"heads {nparams(A, 'point_') + nparams(A, 'camera_'):.2f}M")
+    imgs = torch.rand(1, 3, 3, 64, 96)  # B=1, N=3, 64x96 -> 4x6 patches
+    models = [("base", A)]
+    for (L, kmin, kmax) in LOOPS:
+        name = f"L{L}_k{kmin}to{kmax}"
+        B = Pi3Loop(**KW, loop_layers=L, loop_k_min=kmin, loop_k_max=kmax, loop_k_infer=kmax, loop_seed=0)
+        n_gate = sum(p.numel() for n, p in B.named_parameters() if ".gate." in n) / 1e6
+        print(f"{name}: total {nparams(B):.2f}M | decoder blocks {nparams(B, 'decoder') - n_gate:.2f}M | gates {n_gate:.3f}M | "
+              f"{len(B.decoder)} blocks")
+        assert len(B.decoder) == 2 * L
 
-    # gates are exactly 1 at init
-    g = B.time_embed(torch.tensor(0.0), torch.tensor(1 / 18))
-    assert g.shape == (6, B.dec_embed_dim) and torch.equal(g, torch.ones_like(g)), "gates must be 1 at init"
+        # gates are exactly 1 at init, one gate MLP per block
+        for blk in B.decoder:
+            g = blk.gates(0.0, 1 / kmax, torch.zeros(1, B.dec_embed_dim))
+            assert g.shape == (3, B.dec_embed_dim) and torch.equal(g, torch.ones_like(g)), "gates must be 1 at init"
 
-    # K sampling: deterministic across instances (= ranks), within range, skewed to k_max
-    # K depends only on (loop_seed, call counter) -> replaying the counter must give the same sequence
-    B.train(); ks = [B.sample_k() for _ in range(2000)]
-    B._loop_calls = 0; ks2 = [B.sample_k() for _ in range(2000)]
-    assert ks == ks2, "K sequence must be identical on every rank"
-    B._loop_calls = 0
-    hist = {k: ks.count(k) for k in range(12, 19)}
-    print("K histogram (train):", hist, "mean", sum(ks) / len(ks))
-    assert min(ks) >= 12 and max(ks) <= 18
-    B.eval(); assert B.sample_k() == 18
+        # K sampling: identical on every rank (depends only on seed + call counter), within range, skewed to k_max
+        B.train(); ks = [B.sample_k() for _ in range(2000)]
+        B._loop_calls = 0; ks2 = [B.sample_k() for _ in range(2000)]
+        assert ks == ks2, "K sequence must be identical on every rank"
+        B._loop_calls = 0
+        assert min(ks) >= kmin and max(ks) <= kmax
+        print(f"  K histogram (train): { {k: ks.count(k) for k in range(kmin, kmax + 1)} } mean {sum(ks) / len(ks):.2f}, "
+              f"mean effective pairs {L * sum(ks) / len(ks):.1f}")
+        B.eval(); assert B.sample_k() == kmax
+        models.append((name, B))
 
-    # forward / backward, both models, small input (B=1, N=3, 64x96 -> 4x6 patches)
-    imgs = torch.rand(1, 3, 3, 64, 96)
-    for name, m in [("A", A), ("B", B)]:
+    for name, m in models:
         m.train()
         out = m(imgs)
         assert set(out) == {"points", "local_points", "conf", "camera_poses", "global_points"}
         assert out["points"].shape == (1, 3, 64, 96, 3) and out["camera_poses"].shape == (1, 3, 4, 4)
         loss = out["points"].abs().mean() + out["camera_poses"].abs().mean()
         loss.backward()
-        gnorm = {n: p.grad.norm().item() for n, p in m.named_parameters() if p.grad is not None and n.startswith(("decoder.0.attn.qkv.weight", "decoder.1.mlp.fc2.weight", "time_embed.mlp.2.weight", "encoder.blocks.0.attn.qkv.weight"))}
         none = [n for n, p in m.named_parameters() if p.requires_grad and p.grad is None]
-        print(f"{name}: forward/backward ok, params without grad: {len(none)} {none[:3]}; grad norms {gnorm}")
+        # the zero-initialized last gate layer must get a gradient, otherwise the gates never move
+        gate_g = [p.grad.norm().item() for n, p in m.named_parameters() if n.endswith("gate.proj.2.weight")]
+        print(f"{name}: forward/backward ok, params without grad: {len(none)} {none[:3]}; "
+              f"gate last-layer grad norms {[round(g, 6) for g in gate_g[:4]]}")
+        assert not none
+        assert all(g > 0 for g in gate_g)
         m.zero_grad()
 
-    # inference with different K (test-time compute knob)
+    # inference with different K (test-time compute knob) and state_dict round trip
+    B = models[1][1]
     B.eval()
     with torch.no_grad():
-        for k in (12, 18):
+        for k in (14, 18):
             B.loop_k_infer = k
             o = B(imgs)
-            print(f"B eval K={k}: depth mean {o['local_points'][..., 2].mean():.4f}")
+            print(f"L1 eval K={k}: depth mean {o['local_points'][..., 2].mean():.4f}")
     B.loop_k_infer = 18
-
-    # state_dict round trip (checkpoint save / resume)
-    sd = B.state_dict()
-    B3 = Pi3Loop(**KW)
-    print("B state_dict reload:", B3.load_state_dict(sd, strict=True))
+    sd = models[2][1].state_dict()
+    B3 = Pi3Loop(**KW, loop_layers=2, loop_k_min=5, loop_k_max=9)
+    print("L2 state_dict reload:", B3.load_state_dict(sd, strict=True))
     print("SINGLE_OK")
 
 
@@ -93,7 +106,7 @@ def ddp():
     dist.init_process_group("gloo")
     rank = dist.get_rank()
     torch.manual_seed(0)
-    m = Pi3Loop(**KW, loop_k_min=12, loop_k_max=18)
+    m = Pi3Loop(**KW, loop_layers=2, loop_k_min=5, loop_k_max=9)
     m.train()
     dm = DDP(m, find_unused_parameters=False)
     opt = torch.optim.AdamW([p for p in dm.parameters() if p.requires_grad], lr=1e-4)
@@ -109,7 +122,7 @@ def ddp():
         if rank == 0:
             print(f"step {step}: loss {loss.item():.4f}, loop call counters per rank {ks}")
     # parameters stay identical across ranks after DDP steps
-    w = m.decoder[0].attn.qkv.weight.detach().clone()
+    w = torch.cat([m.decoder[0].attn.qkv.weight.detach().flatten(), m.decoder[3].gate.proj[2].weight.detach().flatten()])
     ws = [torch.zeros_like(w) for _ in range(dist.get_world_size())]
     dist.all_gather(ws, w)
     if rank == 0:
