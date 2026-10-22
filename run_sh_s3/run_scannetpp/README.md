@@ -37,17 +37,19 @@ the script exits if it is missing. Everything except NAME / MODEL lives in `comm
 
 ## Recipe (`configs/train/train_scannetpp_dinov3.yaml`, `configs/data/scannetpp_only.yaml`)
 - data: `/efs-m3ga/z00533370/reliev3r_data/scannetpp`, scene split 90% train / 10% held-out test (`split_ratio: 0.9`);
-- fixed 8 views per sample, 32 samples (256 images) / NPU -> 4096 images / step on 16 NPUs;
+- fixed 8 views per sample, 16 samples (128 images) / NPU -> 2048 images / step on 16 NPUs
+  (32 samples / NPU ran out of memory in the full Pi3 loss);
   random resolution 100k-255k px (patch 16);
-- 15 epochs x 500 iters = 7.5k steps ~= 31M image samples; ckpt every 2 epochs;
+- 30 epochs x 500 iters = 15k steps ~= 31M image samples; ckpt every 2 epochs;
 - test once per epoch on a fixed set: 2000 clips (8 views, 512x336) from the held-out scenes, all of them every time
   (125 iters x 16 NPUs, 1 clip per test batch via `test.max_img_per_gpu: 8`, since metrics use batch element 0);
   no shuffling, and each clip's frames are drawn from an RNG keyed on its sample index, so every evaluation and
   every run sees exactly the same clips;
 - AdamW, OneCycle (5% warmup, cosine), decoder / heads lr 1e-4, encoder lr 1e-5; loss weights as exp0603.
 
-Measured on 910B3 (1 NPU, bf16, checkpointing on): 32 samples x 8 views at 432x592 take ~10.4 s/step and ~32 GiB
-for the baseline; the loop runs are within ~5% (fixed K = k_max). ~22 h per run without data-loading stalls.
+Measured on 910B3 (1 NPU, bf16, checkpointing on, model fwd/bwd with a trivial loss): 16 samples x 8 views at 432x592
+take ~5.1-5.3 s/step and ~16.5 GiB for all five models; the full Pi3 loss adds dense per-pixel tensors on top
+(32 samples / NPU hit ~45 GiB inside the loss and OOMed). ~22 h per run without data-loading stalls.
 
 ## Fixes included in this branch
 - `pi3/models/dinov3/models/vision_transformer.py`: with `USE_CHECKPOINT=True` the encoder used reentrant checkpointing on a

@@ -2,16 +2,17 @@
 # Shared training recipe for the ScanNet++-only loop-transformer ablation (exp1022_00 .. exp1022_04).
 # Every run uses exactly this file; only the model config differs.
 #
-# Budget (16 NPUs): fixed 8 views, 32 samples (256 images) / NPU -> 4096 images / step;
-# 15 epochs x 500 steps = 7.5k steps ~= 31M image samples. Measured on 910B3 with checkpointing:
-# ~10.4 s/step compute, ~32 GiB peak at 432x592. OneCycle: 5% warmup, cosine decay;
+# Budget (16 NPUs): fixed 8 views, 16 samples (128 images) / NPU -> 2048 images / step;
+# 30 epochs x 500 steps = 15k steps ~= 31M image samples. 32 samples / NPU ran out of memory in the
+# full Pi3 loss (dense per-pixel tensors at 432x592); the model alone is ~16.5 GiB at 128 images and
+# ~5.1-5.3 s/step compute on 910B3 with checkpointing. OneCycle: 5% warmup, cosine decay;
 # decoder/heads lr 1e-4, DINOv3 encoder lr 1e-5.
 
 trainer: trainers.pi3_trainer.Pi3Trainer
 
 train:
   image_num_range: [8, 8]       # fixed 8 views per sample
-  max_img_per_gpu: 256          # 32 samples x 8 views per NPU
+  max_img_per_gpu: 128          # 16 samples x 8 views per NPU (256 OOMs in the loss)
 
   random_reslution: true
   aspect_ratio_range: [0.5, 2.0]
@@ -20,7 +21,7 @@ train:
   num_resolution: -1
   width_range: [400, 600]
 
-  num_epoch: 15
+  num_epoch: 30
   iters_per_epoch: 500
   print_freq: 20
   num_workers: 4
