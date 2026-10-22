@@ -26,9 +26,9 @@ B details (`pi3/models/pi3_loop.py`, `pi3/models/layers/loop_block.py`):
 ## Launch (ModelArts, 4 nodes x 8 NPUs = 32)
 
 ```bash
-bash run_sh_s3/run_scannetpp/run_A_dinov3s_dec384.sh
-bash run_sh_s3/run_scannetpp/run_B_dinov3s_loop.sh
-SMOKE=1 bash run_sh_s3/run_scannetpp/run_B_dinov3s_loop.sh   # 1 epoch x 50 iters sanity run
+bash run_sh_s3/run_scannetpp/run_exp1022_00_A_dinov3s_dec384.sh
+bash run_sh_s3/run_scannetpp/run_exp1022_00_B_dinov3s_loop384.sh
+SMOKE=1 bash run_sh_s3/run_scannetpp/run_exp1022_00_B_dinov3s_loop384.sh   # 1 epoch x 50 iters sanity run
 ```
 Needs `ckpts/dinov3_vits16/dinov3_vits16_pretrain_lvd1689m-08c60483.pth` (ckpts -> /efs-mi-east4-2/checkpoints);
 the script exits if it is missing. Everything except NAME / MODEL lives in `common.sh`, so A and B stay identical.

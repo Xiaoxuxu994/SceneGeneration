@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared ModelArts launcher for the ScanNet++-only loop-transformer study.
-# Do not run directly: use run_A_dinov3s_dec384.sh / run_B_dinov3s_loop.sh, which set NAME and MODEL.
+# Do not run directly: use run_exp1022_00_A_dinov3s_dec384.sh / run_exp1022_00_B_dinov3s_loop384.sh, which set NAME and MODEL.
 # Everything except NAME / MODEL (data, training recipe, loss weights, resources) is identical for A and B.
 set -euo pipefail
 
