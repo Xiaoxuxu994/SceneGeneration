@@ -119,13 +119,12 @@ class ASEDataset(BaseDataset):
             if fio.isdir(osp.join(self.data_root, x)) and x.isdigit()
         ]
 
-        print('all_dirs', all_dirs)
+        print(f'[ASE] scanning {len(all_dirs)} scene dirs under {self.data_root}', flush=True)
 
         scene_names = [x for x in all_dirs if x.isdigit()]
         ignored_names = [x for x in all_dirs if not x.isdigit()]
 
-        print('scene_names', scene_names)
-        print('ignored_names', ignored_names)
+        print(f'[ASE] scenes={len(scene_names)} ignored={len(ignored_names)}', flush=True)
 
         scene_names = sorted(scene_names, key=int)
 
