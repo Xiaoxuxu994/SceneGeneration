@@ -46,6 +46,8 @@ def step(m, imgs, opt):
 def bench():
     dev = torch.device("npu:0")
     shapes = [(2, 16, 432, 592), (4, 8, 432, 592), (1, 16, 336, 512), (4, 16, 432, 592)]  # 32 / 32 / 16 / 64 images per NPU
+    if os.environ.get("SHAPES"):  # e.g. SHAPES="16,8,432,592;24,8,432,592"  (batch, views, H, W)
+        shapes = [tuple(int(v) for v in s.split(",")) for s in os.environ["SHAPES"].split(";")]
     no_ckpt = os.environ.get("NO_DEC_CKPT") == "1"  # decoder blocks without gradient checkpointing
     kwA = dict(KW, num_dec_blk_not_to_checkpoint=36 if no_ckpt else 0)
     for name, ctor in [("A_unshared36" + ("_nockpt" if no_ckpt else ""), lambda: P.Pi3(**kwA)),

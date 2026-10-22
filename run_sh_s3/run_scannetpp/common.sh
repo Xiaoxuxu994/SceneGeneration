@@ -22,16 +22,22 @@ W_UNPROJ_GLOBAL=1.0
 W_NORMALIZED=1.0
 
 # Smoke test: SMOKE=1 bash run_X.sh -> 1 epoch x 50 iters, 5 test iters, separate output name.
+# In smoke mode the code is taken from the current directory (run it from the repo root); no cd to CODE_DIR.
 if [ "${SMOKE:-0}" = "1" ]; then
     NAME="${NAME}_smoke"
+    CODE_DIR="$(pwd)"
     EXTRA_ARGS=(train.num_epoch=1 train.iters_per_epoch=50 test.iters_per_test=5 log.ckpt_interval=1)
 else
     EXTRA_ARGS=()
 fi
 
-echo "==> [${NAME}] model=${MODEL} data=scannetpp_only train=train_scannetpp_dinov3"
+echo "==> [${NAME}] model=${MODEL} data=scannetpp_only train=train_scannetpp_dinov3 code=${CODE_DIR}"
 
 cd "${CODE_DIR}"
+if [ ! -f scripts/train_pi3.py ]; then
+    echo "[ERROR] ${CODE_DIR} is not the SceneGeneration repo root (scripts/train_pi3.py not found)" >&2
+    exit 1
+fi
 export PYTHONPATH="${CODE_DIR}"
 if [ ! -e ckpts ]; then
     ln -s "${CKPT_LINK_SRC}" ckpts
