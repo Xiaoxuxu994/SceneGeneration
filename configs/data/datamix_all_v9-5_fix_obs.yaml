@@ -21,7 +21,6 @@ train_dataset:
     Replica: 500
     OmniObject3DNew: 7000
     Matterport3D: 2000
-    Objaverse: 9000
     Scannetpp: 5000
     Taskonomy: 700
     Wildrgbd: 500
@@ -121,7 +120,7 @@ train_dataset:
     min_baseline_ratio: 0.05
     baseline_retries: 3
     path_remap:
-      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540: obs://bucket-471/y00959808/data/sr_datasets/processed/MVS-Synth
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540: obs://bucket-471/y00959808/data/sr_datasets/processed/MVS-Synth/GTAV_540
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   BlendedMVS:
     _target_: datasets.blendedmvs_dataset.BlendedMVSDataset
@@ -381,7 +380,7 @@ train_dataset:
     min_baseline_ratio: 0.05
     baseline_retries: 3
     path_remap:
-      /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode: obs://bucket-471/dataset/Mattport3D
+      /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode: obs://bucket-471/z00533370/dataset/Mattport3D_decode
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Habitat:
     _target_: datasets.habitat_dataset.HabitatDataset
@@ -456,7 +455,7 @@ train_dataset:
     min_baseline_ratio: 0.05
     baseline_retries: 3
     path_remap:
-      /efs-m3ga/z00533370/reliev3r_data/objaverse_wai: obs://bucket-mi-east4-sf/z00533370/dataset/objaverse_wai
+      /efs-m3ga/z00533370/reliev3r_data/objaverse_wai: obs://bucket-471/z00533370/dataset/objaverse_wai
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   CO3DV2:
     _target_: datasets.co3dv2_dataset.CO3DV2Dataset
@@ -476,7 +475,7 @@ train_dataset:
     baseline_retries: 3
     use_dataset_masks: true
     path_remap:
-      /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode: obs://bucket-471/dataset/CO3D-v2CO3D-v2
+      /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode: obs://bucket-471/z00533370/dataset/CO3Dv2_decode
       /efs-m3ga/z00818731/co3dv2-cams: obs://bucket-471/y00959808/data/sr_datasets/processed/co3dv2-cams
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
 train_dataloader:
@@ -499,7 +498,6 @@ test_dataset:
     Replica: 2000
     OmniObject3DNew: 2000
     Matterport3D: 2000
-    Objaverse: 2000
     Scannetpp: 2000
     Taskonomy: 2000
     Wildrgbd: 2000
@@ -590,7 +588,7 @@ test_dataset:
       _target_: datasets.base.transforms.ImgToTensor
     mode: test
     path_remap:
-      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540: obs://bucket-471/y00959808/data/sr_datasets/processed/MVS-Synth
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540: obs://bucket-471/y00959808/data/sr_datasets/processed/MVS-Synth/GTAV_540
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   BlendedMVS:
     _target_: datasets.blendedmvs_dataset.BlendedMVSDataset
@@ -811,7 +809,7 @@ test_dataset:
       _target_: datasets.base.transforms.ImgToTensor
     mode: test
     path_remap:
-      /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode: obs://bucket-471/dataset/Mattport3D
+      /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode: obs://bucket-471/z00533370/dataset/Mattport3D_decode
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   Habitat:
     _target_: datasets.habitat_dataset.HabitatDataset
@@ -879,7 +877,7 @@ test_dataset:
       _target_: datasets.base.transforms.ImgToTensor
     mode: test
     path_remap:
-      /efs-m3ga/z00533370/reliev3r_data/objaverse_wai: obs://bucket-mi-east4-sf/z00533370/dataset/objaverse_wai
+      /efs-m3ga/z00533370/reliev3r_data/objaverse_wai: obs://bucket-471/z00533370/dataset/objaverse_wai
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
   CO3DV2:
     _target_: datasets.co3dv2_dataset.CO3DV2Dataset
@@ -896,7 +894,7 @@ test_dataset:
       _target_: datasets.base.transforms.ImgToTensor
     mode: test
     path_remap:
-      /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode: obs://bucket-471/dataset/CO3D-v2CO3D-v2
+      /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode: obs://bucket-471/z00533370/dataset/CO3Dv2_decode
       /efs-m3ga/z00818731/co3dv2-cams: obs://bucket-471/y00959808/data/sr_datasets/processed/co3dv2-cams
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
 test_dataloader:

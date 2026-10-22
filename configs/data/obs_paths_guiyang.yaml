@@ -6,7 +6,7 @@
 # 缓存：所有数据集的索引缓存 pkl 都在 CACHE_DIR 下（文件名与 efs 上的缓存相同）。
 CACHE_DIR: obs://bucket-471/z00533370/dataset/dataset_cache
 ASE:             {status: ok,    src: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE,           dst: obs://bucket-471/y00959808/data/sr_datasets/processed/ASE}
-Objaverse:       {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/objaverse_wai,                dst: obs://bucket-mi-east4-sf/z00533370/dataset/objaverse_wai, note: "已确认（表格漏写 obs:// 前缀）"}
+Objaverse:       {status: unused,   src: /efs-m3ga/z00533370/reliev3r_data/objaverse_wai,                dst: obs://bucket-471/z00533370/dataset/objaverse_wai, note: "贵阳桶里的副本还没复制完，暂不使用；东四桶 bucket-mi-east4-sf 从贵阳访问不到（NoSuchBucket）"}
 OmniObject3DNew: {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New,             dst: obs://bucket-471/z00533370/dataset/Omniobject3d-New, note: "已解压（读 blender_renders_decode 子目录）"}
 GTA-sfm:         {status: ok,    src: /efs-m3ga/h00548084/relive3r_raw/GTA-SfM,                       dst: obs://bucket-471/z00533370/dataset/GTA-SfM}
 Hypersim:        {status: ok,    src: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim,      dst: obs://bucket-471/y00959808/data/sr_datasets/processed/Hypersim}
@@ -15,7 +15,7 @@ Habitat:         {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/habitat,
 BlendedMVS:      {status: ok,    src: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS,    dst: obs://bucket-471/y00959808/data/sr_datasets/processed/BlendedMVS}
 TarTanAir:       {status: ok,    src: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir,     dst: obs://bucket-471/y00959808/data/sr_datasets/processed/TartanAir}
 TartanGround:    {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/TartanGround,                 dst: obs://bucket-471/y00959808/data/sr_datasets/processed/TartanGround}
-MVSSynth:        {status: ok,    src: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540, dst: obs://bucket-471/y00959808/data/sr_datasets/processed/MVS-Synth, note: "已确认：OBS 的 MVS-Synth/ 即 efs 的 GTAV_540"}
+MVSSynth:        {status: ok,    src: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540, dst: obs://bucket-471/y00959808/data/sr_datasets/processed/MVS-Synth/GTAV_540, note: "OBS 的 MVS-Synth/ 下有 GTAV_540/720/1080，对应 efs 的 GTAV_540"}
 Spring:          {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/Spring_decode,                dst: obs://bucket-471/z00533370/dataset/Spring_decode}
 Unreal4k:        {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/UnrealStereo4K_480P_decode,   dst: obs://bucket-471/z00533370/dataset/UnrealStereo4K_480P_decode}
 Replica:         {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/Replica,                      dst: obs://bucket-471/y00959808/data/sr_datasets/processed/Replica, note: "已确认：表格 efs 列为笔误，用贵阳路径"}
@@ -24,9 +24,9 @@ Scannetpp:       {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/scannetp
 ScanNet:         {status: unused, src: /efs-m3ga/z00533370/dataset/scannet_v2_decode,                  dst: obs://bucket-471/y00959808/data/sr_datasets/processed/scannet, note: "表格注明与原路径下的 scannet 格式不同，loader 可能读不了；复制进行中"}
 ARKitScenes:     {status: unused, src: /efs-mi-east4-2/z00533370/dataset/arkitscene_decode,            dst: null, note: "表格没有贵阳路径（待确认或不用）"}
 DL3DV:           {status: unused, src: /efs-mi-east4-2/datasets/DL3DV_WAI,                             dst: obs://bucket-471/y00959808/data/sr_datasets/processed/dl3dv, note: "伪标签需确认；RGB 原图目录 rgb_root=/efs-mi-east4-2/datasets/DL3DV/ 没有对应的贵阳路径"}
-Matterport3D:    {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode,         dst: obs://bucket-471/dataset/Mattport3D, note: "已解压"}
+Matterport3D:    {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode,         dst: obs://bucket-471/z00533370/dataset/Mattport3D_decode, note: "obs://bucket-471/dataset/Mattport3D 是原始 scans/tasks，解压版在这里"}
 CO3D:            {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/co3d,                         dst: obs://bucket-471/y00959808/data/sr_datasets/processed/co3d}
-CO3DV2:          {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode,                dst: obs://bucket-471/dataset/CO3D-v2CO3D-v2, extra: {/efs-m3ga/z00818731/co3dv2-cams: obs://bucket-471/y00959808/data/sr_datasets/processed/co3dv2-cams}, note: "已确认目录名就是 CO3D-v2CO3D-v2；baseballglove_001.zip 解压失败"}
+CO3DV2:          {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode,                dst: obs://bucket-471/z00533370/dataset/CO3Dv2_decode, extra: {/efs-m3ga/z00818731/co3dv2-cams: obs://bucket-471/y00959808/data/sr_datasets/processed/co3dv2-cams}, note: "解压版目录；obs://bucket-471/dataset/CO3D-v2CO3D-v2 结构不同"}
 Mapillary:       {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/Mapillary_Metropolis,         dst: obs://bucket-471/y00959808/data/sr_datasets/processed/Mapillary_Metropolis}
 MegaDepth:       {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/MegaDepth,                    dst: obs://bucket-471/y00959808/data/sr_datasets/processed/MegaDepth}
 Taskonomy:       {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/taskonomy,                    dst: obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy}
