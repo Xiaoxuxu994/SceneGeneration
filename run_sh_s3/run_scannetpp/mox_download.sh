@@ -6,6 +6,7 @@
 # Usage (run where moxing is available, e.g. a ModelArts notebook / job):
 #   bash mox_download.sh                                   # the five exp1022 runs: latest ckpt + log
 #   bash mox_download.sh exp1022_03_scannetpp_loop384_L6_k2to3_head2 [more names ...]
+#   RUNS="exp1022_00_... exp1022_03_..." bash mox_download.sh   # same, without positional args (ModelArts jobs)
 #   CKPT=checkpoint_9 bash mox_download.sh <name>          # a specific checkpoint
 #   CKPT=best_model   bash mox_download.sh <name>          # best checkpoint by val loss
 #   CKPT=none         bash mox_download.sh                 # logs only
@@ -18,9 +19,13 @@ EFS_ROOT="${EFS_ROOT:-/efs-m3ga/z00533370/exp/pi3sup/outputs}"
 CKPT="${CKPT:-latest}"
 LOG="${LOG:-1}"
 
-if [ "$#" -gt 0 ]; then
-    NAMES=("$@")
-else
+# Run names: RUNS="a b ..." or positional args. Arguments starting with "-" are ignored, because a ModelArts job
+# appends its hyperparameters (e.g. --HCCL_CONNECT_TIMEOUT=7200) to the boot command.
+NAMES=()
+for arg in ${RUNS:-} "$@"; do
+    case "${arg}" in -*) echo "[INFO] ignoring argument ${arg}" ;; *) NAMES+=("${arg}") ;; esac
+done
+if [ "${#NAMES[@]}" -eq 0 ]; then
     NAMES=(
         exp1022_00_scannetpp_base_dec384x36_k1_head2
         exp1022_01_scannetpp_loop384_L1_k14to18_head2
