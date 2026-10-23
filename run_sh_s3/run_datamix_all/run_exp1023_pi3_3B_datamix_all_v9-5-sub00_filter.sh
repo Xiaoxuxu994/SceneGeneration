@@ -8,7 +8,7 @@
 #   - 单机 8 卡时不依赖 ModelArts 的多机环境变量（没有就按单机处理）
 #
 # 用法：
-#   bash run_sh_s3/run_datamix_all/run_exp1023_v09-5-sub00_3Bv2_randres_scratch_uploss.sh
+#   bash run_sh_s3/run_datamix_all/run_exp1023_pi3_3B_datamix_all_v9-5-sub00_filter.sh
 # 可用环境变量：
 #   CODE_DIR    代码目录（默认本脚本所在仓库）
 #   CKPTS_SRC   预训练权重目录，软链接成 ./ckpts（需含 dinov3_vith16plus/）；默认 /efs-mi-east4-2/checkpoints
