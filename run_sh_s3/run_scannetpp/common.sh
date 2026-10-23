@@ -15,7 +15,7 @@ set -euo pipefail
 CODE_DIR="${CODE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 CKPT_LINK_SRC=/efs-mi-east4-2/checkpoints                     # -> ./ckpts (DINOv3 weights live here)
 DINOV3_S_WEIGHTS=ckpts/dinov3_vits16/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
-OBS_OUT_ROOT="obs://bucket-mi-east4-sf/z00533370/project/proj_3dgs/exp_pi3sup/pi3sup/outputs"
+OBS_OUT_ROOT="obs://bucket-mi-east4-sf/z00533370/project/proj_3dgs/exp_pi3loop"
 EFS_OUT_ROOT="/efs-m3ga/z00533370/exp/pi3sup/outputs"
 TRAIN_URL="/home/ma-user/modelarts/outputs/train_url_0"
 

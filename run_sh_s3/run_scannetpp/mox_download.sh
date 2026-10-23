@@ -13,7 +13,7 @@
 #   LOG=0             bash mox_download.sh <name>          # checkpoint only
 set -uo pipefail
 
-OBS_ROOT="${OBS_ROOT:-obs://bucket-mi-east4-sf/z00533370/project/proj_3dgs/exp_pi3sup/pi3sup/outputs}"
+OBS_ROOT="${OBS_ROOT:-obs://bucket-mi-east4-sf/z00533370/project/proj_3dgs/exp_pi3loop}"
 EFS_ROOT="${EFS_ROOT:-/efs-m3ga/z00533370/exp/pi3sup/outputs}"
 CKPT="${CKPT:-latest}"
 LOG="${LOG:-1}"
