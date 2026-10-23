@@ -39,6 +39,8 @@ from models.vggt_omega.utils.pose_enc import encoding_to_camera
 # -----------------------------------------------
 # from models.pi3_official.pi3.models.pi3 import Pi3 ## official
 from models.pi3.models.pi3 import Pi3 ## ours
+from models.pi3loop.models.pi3_training import Pi3 as Pi3Train  ## SceneGeneration-trained Pi3 (pi3loop)
+from models.pi3loop.models.pi3_loop import Pi3Loop             ## SceneGeneration loop decoder (pi3loop)
 from transformers.modeling_utils import load_sharded_checkpoint
 
 # -----------------------------------------------
@@ -77,6 +79,7 @@ DATA_ROOT_DEFAULTS = {
     "nrgbd":   BENCH_ROOT / "data" / "NRGBD" / "data",
     "scannet": BENCH_ROOT / "data" / "scannet" / "posed_images",
     "scannetpp": BENCH_ROOT / "data" / "scannetppv2_val50",
+    "scannetpp_r3": BENCH_ROOT / "data" / "scannetpp_r3",   # reliev3r layout; override with --data_root
     # "dl3dv":   "/mnt/nvme1/share/chenyouyu/dataset/DL3DV/data/1K/",
     "dl3dv":   "/efs-m3ga/z00818731/dl3dv-new/reliev3r_sample_list_c32.npz",
     "ase":     BENCH_ROOT / "data" / "ASE" /"reliev3r_sample_list_c32_s1.npz.update.npz",
@@ -108,6 +111,10 @@ MODEL_DEFAULTS = {
     },
     "da3": {
         "ckpt": BENCH_ROOT / "ckpts" / "depthanything3",
+        "config": None,
+    },
+    "pi3loop": {
+        "ckpt": None,   # --ckpt required
         "config": None,
     },
 }
@@ -331,6 +338,62 @@ def run_pi3_infer(model, images_cpu, depth_masks, device: torch.device, autocast
         )
         
     return pred_w2c_aligned.squeeze(0).numpy(), pred_depth, pred_points_aligned.squeeze(0).numpy()
+
+
+# ---------------------- running SceneGeneration-trained Pi3 / loop models (pi3loop) ------------------------
+# models/pi3loop = pi3/ of SceneGeneration branch xiaoxu/Pi3_training_loop_transformer (pi3_training.Pi3,
+# pi3_loop.Pi3Loop); the inference / output path is the same as for "pi3" (run_pi3_infer).
+def load_model_pi3loop(ckpt, model_size, loop_layers=0, loop_k=0):
+    """loop_layers == 0 -> pi3_training.Pi3 with the given spec (e.g. dinov3_small_w384; dinov2_large_0.95B loads
+    the official Pi3 weights, confidence head ignored); loop_layers > 0 -> Pi3Loop with that many (frame, global)
+    block pairs applied loop_k times. ckpt: accelerate / DeepSpeed checkpoint dir (checkpoint_N, best_model or its
+    pytorch_model/), mp_rank_00_model_states.pt, .safetensors or a plain state dict; the encoder comes from it."""
+    orig = Pi3Train._build_backbone_cfg
+
+    def no_download():
+        cfg = orig()
+        for enc in cfg.values():
+            for spec in enc.values():
+                b = spec["builder"]
+                spec["builder"] = (lambda b: (lambda pretrained=True, model_dir=None: b(pretrained=False)))(b)
+        return cfg
+
+    Pi3Train._build_backbone_cfg = staticmethod(no_download)
+    try:
+        kw = dict(pos_type="rope100", decoder_size="large", model_size=model_size, load_vggt=False,
+                  freeze_encoder=False, use_global_points=False, train_conf=False,
+                  num_dec_blk_not_to_checkpoint=0, ckpt=None)
+        if loop_layers > 0:
+            assert loop_k > 0, "--loop_k is required for a loop model (--loop_layers > 0)"
+            model = Pi3Loop(**kw, loop_layers=loop_layers, loop_k_min=loop_k, loop_k_max=loop_k, loop_k_infer=loop_k)
+        else:
+            model = Pi3Train(**kw)
+    finally:
+        Pi3Train._build_backbone_cfg = staticmethod(orig)
+
+    p = Path(ckpt)
+    if p.is_dir():
+        cands = [p / "pytorch_model" / "mp_rank_00_model_states.pt", p / "mp_rank_00_model_states.pt",
+                 p / "model.safetensors"]
+        p = next((c for c in cands if c.exists()), None)
+        if p is None:
+            raise FileNotFoundError(f"no weights under {ckpt} (tried {[str(c) for c in cands]})")
+    if p.suffix == ".safetensors":
+        state_dict = load_file(str(p))
+    else:
+        obj = torch.load(str(p), map_location="cpu", weights_only=False)
+        state_dict = obj.get("module", obj.get("model", obj)) if isinstance(obj, dict) else obj
+    state_dict = {(k[7:] if k.startswith("module.") else k): v for k, v in state_dict.items()}
+    res = model.load_state_dict(state_dict, strict=False)
+    missing = [k for k in res.missing_keys if k != "pos_special"]          # constant buffer, absent in official Pi3
+    unexpected = [k for k in res.unexpected_keys if not k.startswith(("conf_decoder.", "conf_head."))]
+    if missing or unexpected:
+        raise RuntimeError(f"[pi3loop] {p} does not match {model_size} (loop_layers={loop_layers}): "
+                           f"missing {missing[:5]} ({len(missing)}), unexpected {unexpected[:5]} ({len(unexpected)})")
+    print(f"[pi3loop] loaded {p}: {model_size}, loop_layers={loop_layers}, loop_k={loop_k}, "
+          f"{sum(x.numel() for x in model.parameters()) / 1e6:.2f}M params")
+    model = model.float().eval()
+    return model
 
 # ---------------------- running da3 infer ------------------------------------------------
 def load_model_da3(ckpt):
@@ -600,7 +663,7 @@ def dump_one_seq(model,
             save_npy(pred_seq_dir, "pred_depth_maps.npy", pred_depth_maps.squeeze(0).squeeze(-1))  # (V,H,W)
             save_npy(pred_seq_dir, "pred_point_maps_by_unprojection.npy", pred_unproj)
 
-        elif model_type == "pi3":
+        elif model_type in ("pi3", "pi3loop"):
             pred_w2c, pred_depth_maps, pred_point_maps = run_pi3_infer(
                 model, batch.images_cpu, gt_depth_masks, device=device, autocast_dtype=autocast_dtype
             )
@@ -675,6 +738,8 @@ def main():
     # # model debug
     p.add_argument("--model", type=str, default="reliev3r", choices=list(MODEL_DEFAULTS.keys()))
     p.add_argument("--model_size", type=str, default="dinov2_large")
+    p.add_argument("--loop_layers", type=int, default=0)  # pi3loop: (frame, global) pairs in the loop body, 0 = no loop
+    p.add_argument("--loop_k", type=int, default=0)       # pi3loop: inference loop steps K
     p.add_argument("--ckpt", type=str, default='/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260108/exp/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/ckpt/20000.ckpt', help="(vggt/pi3/reliev3r) checkpoint path/dir. If not set, inferred from --model.")
     p.add_argument("--config", type=str, default='/mnt/nvme1/share/chenyouyu/codespace/Reliev3R-260108/exp/Reliev3R_260108_v8b2c32s1_n-1_rdepth_Ipred/config.json', help="(reliev3r) config.json. If not set, inferred from --model.")
 
@@ -753,6 +818,8 @@ def main():
         model = load_model_vggt_omega(args.ckpt).to(device)
     elif args.model == "pi3":
         model = load_model_pi3(Path(args.ckpt), model_size=args.model_size).to(device)
+    elif args.model == "pi3loop":
+        model = load_model_pi3loop(args.ckpt, args.model_size, args.loop_layers, args.loop_k).to(device)
     elif args.model == "da3":
         model = load_model_da3(args.ckpt).to(device)
     elif args.model == 'reliev3r':

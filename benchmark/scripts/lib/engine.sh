@@ -131,6 +131,9 @@ for DATASET in "${DATASETS[@]}"; do
     [[ -n "${CKPT}" ]]   && EXTRA_ARGS+=(--ckpt "${CKPT}")
     [[ -n "${CONFIG}" ]] && EXTRA_ARGS+=(--config "${CONFIG}")
     [[ -n "${PREFIX}" ]] && EXTRA_ARGS+=(--prefix "${PREFIX}")
+    [[ -n "${DATA_ROOT:-}" ]]   && EXTRA_ARGS+=(--data_root "${DATA_ROOT}")
+    [[ -n "${LOOP_LAYERS:-}" ]] && EXTRA_ARGS+=(--loop_layers "${LOOP_LAYERS}")
+    [[ -n "${LOOP_K:-}" ]]      && EXTRA_ARGS+=(--loop_k "${LOOP_K}")
 
     echo "[INFER] dataset=${DATASET} split=${SPLIT} mode=${MODE}"
     echo "[INFER] stride=${STRIDE} max_seq_len=${MSL} seq_len=${SEQ_LEN} num_seq=${NUM_SEQ}"

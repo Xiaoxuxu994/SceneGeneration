@@ -94,3 +94,22 @@ python eval_7scenes.py --input_dir models/vggt_official/outputs/7scenes/sample_s
         - nrgbd
         - xxx
 ```
+# Update on 20261024: ScanNet++ held-out split of SceneGeneration + SceneGeneration-trained Pi3 / loop models
+
+Dataset `scannetpp_r3` (`datasets/scannetpp_r3.py`): ScanNet++ DSLR in the reliev3r layout read by the
+SceneGeneration training dataloader (`<scene>/images/*.jpg`, `depth/*.png` in mm, `scene_metadata.npz`).
+`test` = the held-out scenes of training: scenes sorted by name (or `sequence_list_v2.pkl` when present), kept with
+images/ + depth/ and >= 24 frames, last 10% (`split_ratio 0.9`). Frame order = training order. Protocol configs in
+`scripts/config/scannetpp_r3/` are those of `scannetpp` (stride 25, 8 views) with `NUM_SEQ=0` (all held-out scenes).
+Data root: `./data/scannetpp_r3` or `DATA_ROOT=...` (e.g. `/efs-m3ga/z00533370/reliev3r_data/scannetpp`).
+
+Model `pi3loop` (`run_infer.py`, code in `models/pi3loop` = `pi3/` of SceneGeneration branch
+`xiaoxu/Pi3_training_loop_transformer`): `--model_size` spec of `pi3_training.Pi3` (`dinov3_small_w384`,
+`dinov3_small_w384x12`, ...), `--loop_layers L --loop_k K` for `Pi3Loop` (0 = no loop), `--ckpt` a DeepSpeed
+checkpoint dir (`checkpoint_N` / `best_model`) or a state dict. Outputs and metrics as for `pi3`.
+In `scripts/lib/engine.sh` the variables `DATA_ROOT`, `LOOP_LAYERS`, `LOOP_K` are forwarded when set.
+
+```shell
+# inside the benchmark container, from benchmark/ (see ../docker/bench_one.sh for the exp1022_00..05 entries)
+MODEL=pi3loop MODEL_SIZE=dinov3_small_w384 LOOP_LAYERS=6 LOOP_K=3 CKPT=<run>/ckpts/checkpoint_14 ...
+```

@@ -5,6 +5,7 @@ from .dtu import DTUDataset
 from .nrgbd import NRGBDDataset
 from .scannet import ScanNetDataset
 from .scannetpp import ScanNetPPDataset
+from .scannetpp_r3 import ScanNetPPR3Dataset
 # from .dl3dv import DL3DVDataset
 from .ase import ASEDataset
 from .dl3dv import NewDL3DVDataset
@@ -28,6 +29,7 @@ DATASET_REGISTRY = {
     "nrgbd": NRGBDDataset,
     "scannet": ScanNetDataset,
     "scannetpp": ScanNetPPDataset,
+    "scannetpp_r3": ScanNetPPR3Dataset, # SceneGeneration (reliev3r) layout, training held-out split
     # "dl3dv": DL3DVDataset, # no depth gt
     "dl3dv": NewDL3DVDataset, # no depth gt
     "ase": ASEDataset, # currently only support sampled sequences as a .npz file
