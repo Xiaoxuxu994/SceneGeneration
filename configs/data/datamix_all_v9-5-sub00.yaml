@@ -1,0 +1,888 @@
+# @package _global_
+# datamix_all_v9-5-sub00：v9-5 在贵阳 OBS 上现有的子集，用于先起训练看耗时；数据补全后再出 sub01 / 全量。
+# 与 datamix_all_v9-5 相比：
+#   - 数据集参数、各数据集权重、dataloader 设置完全相同，不开任何过滤开关（与原始训练一致）；
+#   - 去掉 ARKitScenes、DL3DV、Objaverse（贵阳 OBS 上还没有 / 没复制完），其余 23 个，train 权重合计 69400；
+#   - ScanNet 用新路径 obs://bucket-471/z00533370/dataset/scannet_v2_decode；
+#   - 每个数据集加 path_remap（efs 前缀 -> 贵阳 OBS）与 cache_dir。data_root 仍是 efs 路径（缓存文件名按它的哈希命名）。
+# cache_dir 默认读 OBS 上的 dataset_cache；设了环境变量 DATASET_CACHE_DIR 时改读那里
+#（训练脚本会先把需要的缓存拷到节点本地盘 /cache/dataset_cache，避免 8 个进程同时从 OBS 拉几 GB 的 pkl）。
+train_dataset:
+  length: 10000000
+  weights:
+    ASE: 17500
+    GTA-sfm: 4300
+    MatrixCity: 3800
+    Hypersim: 3800
+    TarTanAir: 2800
+    TartanGround: 2300
+    BlendedMVS: 3300
+    Spring: 1200
+    Unreal4k: 1000
+    Habitat: 3700
+    MVSSynth: 1300
+    VirtualKitti: 300
+    Replica: 500
+    OmniObject3DNew: 7000
+    Matterport3D: 2000
+    ScanNet: 4200
+    Scannetpp: 5000
+    Taskonomy: 700
+    Wildrgbd: 500
+    CO3D: 1200
+    MegaDepth: 900
+    Mapillary: 900
+    CO3DV2: 1200
+  Hypersim:
+    _target_: datasets.hypersim_dataset.HypersimDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim
+    split_ratio: 1.0
+    max_distance: 16
+    z_far: 128
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim: obs://bucket-471/y00959808/data/sr_datasets/processed/Hypersim
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  TarTanAir:
+    _target_: datasets.tartanair_dataset.TarTanAirDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir
+    split_ratio: 1.0
+    max_distance: 16
+    z_far: 128
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir: obs://bucket-471/y00959808/data/sr_datasets/processed/TartanAir
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  ASE:
+    _target_: datasets.ase_dataset.ASEDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE
+    split_ratio: 0.999
+    max_distance: 16
+    z_far: 80
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE: obs://bucket-471/y00959808/data/sr_datasets/processed/ASE
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  MatrixCity:
+    _target_: datasets.matrixcity_dataset.MatrixCityDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/MatrixCity
+    split_ratio: 1.0
+    max_distance: 16
+    z_far: 160
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/MatrixCity: obs://bucket-471/z00533370/dataset/MatrixCity
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  MVSSynth:
+    _target_: datasets.mvssynth_dataset.MVSSynthDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
+    split_ratio: 1.0
+    max_distance: 16
+    z_far: 160
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540: obs://bucket-471/y00959808/data/sr_datasets/processed/MVS-Synth/GTAV_540
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  BlendedMVS:
+    _target_: datasets.blendedmvs_dataset.BlendedMVSDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS
+    split_ratio: 1.0
+    max_distance: 12
+    random_sample_thres: 0.0
+    stride_sample_thres: 0.2
+    stride_candidates:
+    - 2
+    - 4
+    - 6
+    - 8
+    force_global_sampling: false
+    z_far: 128
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS: obs://bucket-471/y00959808/data/sr_datasets/processed/BlendedMVS
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  VirtualKitti:
+    _target_: datasets.vkitti_dataset.VKittiDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2
+    split_ratio: 1.0
+    max_distance: 16
+    z_far: 128
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2: obs://bucket-471/y00959808/data/sr_datasets/processed/vKitti2
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  GTA-sfm:
+    _target_: datasets.gta_sfm_dataset.GTASfMDataset
+    data_root: /efs-m3ga/h00548084/relive3r_raw/GTA-SfM/
+    split_ratio: 1.0
+    max_distance: 8
+    z_far: 200
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/h00548084/relive3r_raw/GTA-SfM: obs://bucket-471/z00533370/dataset/GTA-SfM
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  MegaDepth:
+    _target_: datasets.megadepth_dataset.MegaDepthDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/MegaDepth/
+    split_ratio: 1.0
+    max_distance: 8
+    z_far: 80
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/MegaDepth: obs://bucket-471/y00959808/data/sr_datasets/processed/MegaDepth
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Scannetpp:
+    _target_: datasets.scannetpp_dataset.ScannetppDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/scannetpp
+    split_ratio: 1.0
+    max_distance: 20
+    random_sample_thres: 0.05
+    stride_sample_thres: 0.5
+    stride_candidates:
+    - 5
+    - 10
+    - 15
+    - 25
+    force_global_sampling: false
+    z_far: 40
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/scannetpp: obs://bucket-471/y00959808/data/sr_datasets/processed/scannetpp
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  CO3D:
+    _target_: datasets.co3d_dataset.CO3DDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/co3d
+    split_ratio: 0.99
+    max_distance: 8
+    z_far: 80
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/co3d: obs://bucket-471/y00959808/data/sr_datasets/processed/co3d
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Replica:
+    _target_: datasets.replica_dataset.ReplicaDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/Replica
+    split_ratio: 1.0
+    max_distance: 8
+    z_far: 40
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/Replica: obs://bucket-471/y00959808/data/sr_datasets/processed/Replica
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Taskonomy:
+    _target_: datasets.taskonomy_dataset.TaskonomyDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/taskonomy/
+    split_ratio: 0.9999
+    max_distance: 8
+    z_far: 80
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      're:^/efs-m3ga/z00533370/reliev3r_data/taskonomy/(rgb|depth_zbuffer|depth_euclidean|point_info|mask_valid)/([^/]+)/\2/': 'obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy/\1/taskonomy/\2/'   # OBS 上是 rgb/taskonomy/<场景>/，efs 是 rgb/<场景>/<场景>/
+      /efs-m3ga/z00533370/reliev3r_data/taskonomy: obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Mapillary:
+    _target_: datasets.mapillary_dataset.MapillaryDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/Mapillary_Metropolis
+    split_ratio: 1.0
+    max_distance: 8
+    z_far: 80
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/Mapillary_Metropolis: obs://bucket-471/y00959808/data/sr_datasets/processed/Mapillary_Metropolis
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Spring:
+    _target_: datasets.spring_dataset.SpringDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/Spring_decode/spring/train/
+    split_ratio: 1.0
+    max_distance: 16
+    z_far: 120
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/Spring_decode: obs://bucket-471/z00533370/dataset/Spring_decode
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Unreal4k:
+    _target_: datasets.unreal4k_dataset.Unreal4KDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/UnrealStereo4K_480P_decode/
+    split_ratio: 1.0
+    max_distance: 8
+    z_far: 200
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/UnrealStereo4K_480P_decode: obs://bucket-471/z00533370/dataset/UnrealStereo4K_480P_decode
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  OmniObject3DNew:
+    _target_: datasets.omniobject3d_dataset.OmniObject3DNewDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New/blender_renders_decode
+    split_ratio: 1.0
+    max_distance: 8
+    z_far: 20
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      're:^/efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New/blender_renders_decode/(([^/]+)_[0-9]+)/': 'obs://bucket-471/z00533370/dataset/Omniobject3d-New/blender_renders_decode/\2/\1/'   # OBS 上多一层类别目录：anise/anise_001/
+      /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New: obs://bucket-471/z00533370/dataset/Omniobject3d-New
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Matterport3D:
+    _target_: datasets.matterport3d_dataset.Matterport3DDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
+    split_ratio: 1.0
+    max_distance: 8
+    z_far: 40
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode: obs://bucket-471/z00533370/dataset/Mattport3D_decode
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Habitat:
+    _target_: datasets.habitat_dataset.HabitatDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/habitat/
+    split_ratio: 0.999
+    max_distance: 16
+    z_far: 80
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/habitat: obs://bucket-471/y00959808/data/sr_datasets/processed/habitat
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Wildrgbd:
+    _target_: datasets.wildrgbd_dataset.WildrgbdDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/wildrgbd_s3/
+    split_ratio: 0.999
+    max_distance: 8
+    z_far: 20
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/wildrgbd_s3: obs://bucket-471/y00959808/data/sr_datasets/processed/wildrgbd
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  TartanGround:
+    _target_: datasets.tartanground_dataset.TartanGroundDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/TartanGround/
+    split_ratio: 1.0
+    max_distance: 16
+    z_far: 160
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/TartanGround: obs://bucket-471/y00959808/data/sr_datasets/processed/TartanGround
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Objaverse:
+    _target_: datasets.objaverse_dataset.ObjaverseWAIDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/objaverse_wai
+    split_ratio: 1.0
+    max_distance: 8
+    z_far: 64
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/objaverse_wai: obs://bucket-471/z00533370/dataset/objaverse_wai
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  CO3DV2:
+    _target_: datasets.co3dv2_dataset.CO3DV2Dataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode
+    split_ratio: 1.0
+    max_distance: 8
+    z_far: 80
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode: obs://bucket-471/z00533370/dataset/CO3Dv2_decode
+      /efs-m3ga/z00818731/co3dv2-cams: obs://bucket-471/y00959808/data/sr_datasets/processed/co3dv2-cams
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  ScanNet:
+    _target_: datasets.scannet_dataset.ScanNetDataset
+    data_root: /efs-m3ga/z00533370/dataset/scannet_v2_decode/
+    split_ratio: 1.0
+    max_distance: 16
+    random_sample_thres: 0.05
+    stride_sample_thres: 0.45
+    stride_candidates:
+    - 5
+    - 10
+    - 15
+    - 25
+    force_global_sampling: false
+    z_far: 40
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/dataset/scannet_v2_decode: obs://bucket-471/z00533370/dataset/scannet_v2_decode
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+train_dataloader:
+  drop_last: true
+  shuffle: true
+test_dataset:
+  weights:
+    ASE: 2000
+    GTA-sfm: 2000
+    MatrixCity: 2000
+    Hypersim: 2000
+    TarTanAir: 2000
+    TartanGround: 2000
+    BlendedMVS: 2000
+    Spring: 2000
+    Unreal4k: 2000
+    Habitat: 2000
+    MVSSynth: 2000
+    VirtualKitti: 2000
+    Replica: 2000
+    OmniObject3DNew: 2000
+    Matterport3D: 2000
+    ScanNet: 2000
+    Scannetpp: 2000
+    Taskonomy: 2000
+    Wildrgbd: 2000
+    CO3D: 2000
+    MegaDepth: 2000
+    Mapillary: 2000
+    CO3DV2: 2000
+  Hypersim:
+    _target_: datasets.hypersim_dataset.HypersimDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim
+    split_ratio: 0.9
+    max_distance: 16
+    z_far: 128
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim: obs://bucket-471/y00959808/data/sr_datasets/processed/Hypersim
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  TarTanAir:
+    _target_: datasets.tartanair_dataset.TarTanAirDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir
+    split_ratio: 0.9
+    max_distance: 16
+    z_far: 128
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir: obs://bucket-471/y00959808/data/sr_datasets/processed/TartanAir
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  ASE:
+    _target_: datasets.ase_dataset.ASEDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE
+    split_ratio: 0.999
+    max_distance: 16
+    z_far: 80
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE: obs://bucket-471/y00959808/data/sr_datasets/processed/ASE
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  MatrixCity:
+    _target_: datasets.matrixcity_dataset.MatrixCityDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/MatrixCity
+    split_ratio: 0.9
+    max_distance: 16
+    z_far: 160
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/MatrixCity: obs://bucket-471/z00533370/dataset/MatrixCity
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  MVSSynth:
+    _target_: datasets.mvssynth_dataset.MVSSynthDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540
+    split_ratio: 0.9
+    max_distance: 16
+    z_far: 160
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540: obs://bucket-471/y00959808/data/sr_datasets/processed/MVS-Synth/GTAV_540
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  BlendedMVS:
+    _target_: datasets.blendedmvs_dataset.BlendedMVSDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS
+    split_ratio: 0.9
+    max_distance: 8
+    z_far: 128
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS: obs://bucket-471/y00959808/data/sr_datasets/processed/BlendedMVS
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  VirtualKitti:
+    _target_: datasets.vkitti_dataset.VKittiDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2
+    split_ratio: 0.9
+    max_distance: 16
+    z_far: 128
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2: obs://bucket-471/y00959808/data/sr_datasets/processed/vKitti2
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  GTA-sfm:
+    _target_: datasets.gta_sfm_dataset.GTASfMDataset
+    data_root: /efs-m3ga/h00548084/relive3r_raw/GTA-SfM/
+    split_ratio: 0.9
+    max_distance: 8
+    z_far: 200
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/h00548084/relive3r_raw/GTA-SfM: obs://bucket-471/z00533370/dataset/GTA-SfM
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  MegaDepth:
+    _target_: datasets.megadepth_dataset.MegaDepthDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/MegaDepth/
+    split_ratio: 0.9
+    max_distance: 8
+    z_far: 80
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/MegaDepth: obs://bucket-471/y00959808/data/sr_datasets/processed/MegaDepth
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Scannetpp:
+    _target_: datasets.scannetpp_dataset.ScannetppDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/scannetpp
+    split_ratio: 0.99
+    max_distance: 8
+    z_far: 40
+    resolution:
+    - - 512
+      - 336
+    frame_num: 8
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/scannetpp: obs://bucket-471/y00959808/data/sr_datasets/processed/scannetpp
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  CO3D:
+    _target_: datasets.co3d_dataset.CO3DDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/co3d
+    split_ratio: 0.99
+    max_distance: 8
+    z_far: 80
+    resolution:
+    - - 512
+      - 336
+    frame_num: 8
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/co3d: obs://bucket-471/y00959808/data/sr_datasets/processed/co3d
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Replica:
+    _target_: datasets.replica_dataset.ReplicaDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/Replica
+    split_ratio: 0.9
+    max_distance: 8
+    z_far: 40
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/Replica: obs://bucket-471/y00959808/data/sr_datasets/processed/Replica
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Taskonomy:
+    _target_: datasets.taskonomy_dataset.TaskonomyDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/taskonomy/
+    split_ratio: 0.9999
+    max_distance: 8
+    z_far: 80
+    resolution:
+    - - 512
+      - 336
+    frame_num: 8
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      're:^/efs-m3ga/z00533370/reliev3r_data/taskonomy/(rgb|depth_zbuffer|depth_euclidean|point_info|mask_valid)/([^/]+)/\2/': 'obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy/\1/taskonomy/\2/'   # OBS 上是 rgb/taskonomy/<场景>/，efs 是 rgb/<场景>/<场景>/
+      /efs-m3ga/z00533370/reliev3r_data/taskonomy: obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Mapillary:
+    _target_: datasets.mapillary_dataset.MapillaryDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/Mapillary_Metropolis
+    split_ratio: 0.9
+    max_distance: 8
+    z_far: 80
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/Mapillary_Metropolis: obs://bucket-471/y00959808/data/sr_datasets/processed/Mapillary_Metropolis
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Spring:
+    _target_: datasets.spring_dataset.SpringDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/Spring_decode/spring/train/
+    split_ratio: 0.9
+    max_distance: 16
+    z_far: 120
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/Spring_decode: obs://bucket-471/z00533370/dataset/Spring_decode
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Unreal4k:
+    _target_: datasets.unreal4k_dataset.Unreal4KDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/UnrealStereo4K_480P_decode/
+    split_ratio: 0.9
+    max_distance: 8
+    z_far: 200
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/UnrealStereo4K_480P_decode: obs://bucket-471/z00533370/dataset/UnrealStereo4K_480P_decode
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  OmniObject3DNew:
+    _target_: datasets.omniobject3d_dataset.OmniObject3DNewDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New/blender_renders_decode
+    split_ratio: 0.99
+    max_distance: 8
+    z_far: 20
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      're:^/efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New/blender_renders_decode/(([^/]+)_[0-9]+)/': 'obs://bucket-471/z00533370/dataset/Omniobject3d-New/blender_renders_decode/\2/\1/'   # OBS 上多一层类别目录：anise/anise_001/
+      /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New: obs://bucket-471/z00533370/dataset/Omniobject3d-New
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Matterport3D:
+    _target_: datasets.matterport3d_dataset.Matterport3DDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode/
+    split_ratio: 0.9
+    max_distance: 8
+    z_far: 40
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode: obs://bucket-471/z00533370/dataset/Mattport3D_decode
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Habitat:
+    _target_: datasets.habitat_dataset.HabitatDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/habitat/
+    split_ratio: 0.999
+    max_distance: 16
+    z_far: 80
+    resolution:
+    - - 512
+      - 336
+    frame_num: 8
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/habitat: obs://bucket-471/y00959808/data/sr_datasets/processed/habitat
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Wildrgbd:
+    _target_: datasets.wildrgbd_dataset.WildrgbdDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/wildrgbd_s3/
+    split_ratio: 0.999
+    max_distance: 8
+    z_far: 20
+    resolution:
+    - - 512
+      - 336
+    frame_num: 8
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/wildrgbd_s3: obs://bucket-471/y00959808/data/sr_datasets/processed/wildrgbd
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  TartanGround:
+    _target_: datasets.tartanground_dataset.TartanGroundDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/TartanGround/
+    split_ratio: 0.99
+    max_distance: 16
+    z_far: 160
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/TartanGround: obs://bucket-471/y00959808/data/sr_datasets/processed/TartanGround
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Objaverse:
+    _target_: datasets.objaverse_dataset.ObjaverseWAIDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/objaverse_wai
+    split_ratio: 0.999
+    max_distance: 8
+    z_far: 64
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/objaverse_wai: obs://bucket-471/z00533370/dataset/objaverse_wai
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  CO3DV2:
+    _target_: datasets.co3dv2_dataset.CO3DV2Dataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode
+    split_ratio: 0.999
+    max_distance: 8
+    z_far: 80
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode: obs://bucket-471/z00533370/dataset/CO3Dv2_decode
+      /efs-m3ga/z00818731/co3dv2-cams: obs://bucket-471/y00959808/data/sr_datasets/processed/co3dv2-cams
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  ScanNet:
+    _target_: datasets.scannet_dataset.ScanNetDataset
+    data_root: /efs-m3ga/z00533370/dataset/scannet_v2_decode/
+    split_ratio: 0.99
+    max_distance: 8
+    z_far: 40
+    resolution:
+    - - 512
+      - 336
+    frame_num: 8
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/dataset/scannet_v2_decode: obs://bucket-471/z00533370/dataset/scannet_v2_decode
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+test_dataloader:
+  drop_last: false
+  shuffle: true
