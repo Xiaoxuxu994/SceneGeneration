@@ -1,0 +1,20 @@
+# @package _global_
+# exp1022_05 control: same as the baseline (pi3_dinov3s_w384.yaml) with 12 unshared decoder blocks (6 frame/global
+# pairs, K = 1). 12 unique blocks = the L6 loop body of exp1022_03, so the parameter count matches exp1022_03
+# (minus its gates) while the decoder runs once (1/3 of the decoder FLOPs). Separates "fewer parameters" from
+# "same parameters applied repeatedly". Inherits loss / optimizer / test settings from model/pi3.yaml.
+
+defaults:
+  - pi3
+  - _self_
+
+model:
+  _target_: pi3.models.pi3_training.Pi3
+  pos_type: rope100
+  model_size: dinov3_small_w384x12 # builder dinov3_vits16, weights in ckpts/dinov3_vits16/
+  load_vggt: false
+  freeze_encoder: false
+  use_global_points: false
+  train_conf: false
+  num_dec_blk_not_to_checkpoint: 0 # checkpoint every decoder block
+  ckpt: null

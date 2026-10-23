@@ -32,6 +32,7 @@ if [ "${#NAMES[@]}" -eq 0 ]; then
         exp1022_02_scannetpp_loop384_L2_k5to9_head2
         exp1022_03_scannetpp_loop384_L6_k2to3_head2
         exp1022_04_scannetpp_loop384_L1_k1to18_head2
+        exp1022_05_scannetpp_base_dec384x12_k1_head2
     )
 fi
 

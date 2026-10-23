@@ -1,5 +1,5 @@
 # @package _global_
-# Shared training recipe for the ScanNet++-only loop-transformer ablation (exp1022_00 .. exp1022_04).
+# Shared training recipe for the ScanNet++-only loop-transformer ablation (exp1022_00 .. exp1022_05).
 # Every run uses exactly this file; only the model config differs.
 #
 # Budget (16 NPUs): fixed 8 views, 16 samples (128 images) / NPU -> 2048 images / step;

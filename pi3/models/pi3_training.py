@@ -411,6 +411,19 @@ class Pi3(nn.Module):
                             point_out_dim=384,
                             camera_out_dim=384,
                         ),
+                        # Same as w384 with a 12-block decoder (6 pairs): the unshared block count of the
+                        # L6 loop body (exp1022_03), run once -> same parameters, 1/3 of the decoder FLOPs.
+                        'w384x12': dict(
+                            dec_embed_dim=384,
+                            dec_num_heads=6,
+                            mlp_ratio=4,
+                            dec_depth=12,
+                            head_depth=2,
+                            head_embed_dim=384,
+                            head_num_heads=6,
+                            point_out_dim=384,
+                            camera_out_dim=384,
+                        ),
                     },
                 },
                 'small+':{

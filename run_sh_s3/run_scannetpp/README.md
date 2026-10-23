@@ -1,4 +1,4 @@
-# ScanNet++-only loop-transformer ablation (exp1022_00 .. exp1022_04)
+# ScanNet++-only loop-transformer ablation (exp1022_00 .. exp1022_05)
 
 Question: how much decoder weight sharing costs (or gains) when encoder, heads, data and recipe are fixed.
 Reference: DejaView / DVLT (NeurIPS 2026, arXiv 2605.30215). Width is 384 everywhere (DINOv3 ViT-S/16
@@ -11,8 +11,13 @@ encoder, no encoder->decoder projection), point / camera heads have 2 blocks at 
 | `exp1022_02` | `pi3_dinov3s_loop_w384_L2_k5to9` | loop body 2 pairs, 7.10M + 0.33M gates | [5, 9] | 9 | 18 pairs |
 | `exp1022_03` | `pi3_dinov3s_loop_w384_L6_k2to3` | loop body 6 pairs, 21.31M + 1.00M gates | [2, 3] | 3 | 18 pairs |
 | `exp1022_04` | `pi3_dinov3s_loop_w384_L1_k1to18` | loop body 1 pair, 3.55M + 0.17M gates | [1, 18] | 18 | 18 pairs |
+| `exp1022_05` control | `pi3_dinov3s_w384x12` | 12 unshared blocks (6 pairs), 21.31M | 1 | 1 | 6 pairs |
 
-All runs have the same forward FLOPs at inference (1.96 T for 1 x 8 views at 336x512).
+`exp1022_00` .. `04` have the same forward FLOPs at inference (1.96 T for 1 x 8 views at 336x512).
+`exp1022_05` (added after the first 15 epochs of 00 .. 04) is the parameter-matched control for `exp1022_03`:
+the same 12 unique blocks run once (1/3 of the decoder FLOPs). 00 had the worst held-out camera metrics while
+fitting the training camera loss as well as the loop runs; 05 tells whether that gap comes from 00's extra
+parameters (05 ~ 03) or from applying the shared blocks repeatedly (05 ~ 00 or worse).
 
 Loop model (`pi3/models/pi3_loop.py`, `pi3/models/layers/loop_block.py`):
 - decoder = `[frame_0, global_0, ..., frame_{L-1}, global_{L-1}]`, applied K times; heads read the last frame / global output;
@@ -30,6 +35,7 @@ bash run_sh_s3/run_scannetpp/run_exp1022_01_loop384_L1_k14to18.sh
 bash run_sh_s3/run_scannetpp/run_exp1022_02_loop384_L2_k5to9.sh
 bash run_sh_s3/run_scannetpp/run_exp1022_03_loop384_L6_k2to3.sh
 bash run_sh_s3/run_scannetpp/run_exp1022_04_loop384_L1_k1to18.sh
+bash run_sh_s3/run_scannetpp/run_exp1022_05_base_dec384x12.sh
 SMOKE=1 bash run_sh_s3/run_scannetpp/run_exp1022_02_loop384_L2_k5to9.sh   # 1 epoch x 50 iters, from the repo root
 ```
 Needs `ckpts/dinov3_vits16/dinov3_vits16_pretrain_lvd1689m-08c60483.pth` (ckpts -> /efs-mi-east4-2/checkpoints);
