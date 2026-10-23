@@ -3,7 +3,8 @@
 # 训练超参与 run_exp0604_v09-5_fixview_randres_scratch_uploss.sh 完全一致，只换了数据配置和实验名，并适配贵阳环境：
 #   - 数据：data=datamix_all_v9-5-sub00（过滤开关见该配置文件头；数据读 OBS；启动前把需要的索引缓存拷到节点本地盘）
 #   - ++train.worker_reseed=true：各卡 / 各 worker 用不同随机数流（旧版所有 worker 同一条流，增强和选帧会重复）
-#   - 断点续训：从贵阳 efs 上本实验的 ckpts 目录找最新 checkpoint（东四 OBS 桶在贵阳访问不到）
+#   - 断点续训：同原脚本，从 ModelArts 自动同步到 OBS 的训练输出里找最新 checkpoint（改成贵阳桶，见 OBS_TRAIN_ROOT），
+#     另外也查 efs 上传目录，取两边编号最大的
 #   - 单机 8 卡时不依赖 ModelArts 的多机环境变量（没有就按单机处理）
 #
 # 用法：
@@ -14,7 +15,9 @@
 #   EXP_ROOT    实验结果根目录（默认 /efs-mi-pay-gy1/z00533370/exp）
 #   TRAIN_URL   训练时的本地输出目录（默认 /home/ma-user/modelarts/outputs/train_url_0）
 #   LOCAL_CACHE 索引缓存的本地目录（默认 /cache/dataset_cache；设成空则直接读 OBS）
-#   AUTO_RESUME 1 = 从 EXP_ROOT 里本实验最新的 checkpoint 续训（默认 1）
+#   OBS_TRAIN_ROOT ModelArts 作业「训练输出」train_url_0 对应的 OBS 目录（必须与作业配置一致），
+#               默认 obs://bucket-471/z00533370/exp/pi3sup/outputs/<NAME>；checkpoint 在 <OBS_TRAIN_ROOT>/outputs/<NAME>/ckpts/
+#   AUTO_RESUME 1 = 从 OBS / efs 上本实验最新的 checkpoint 续训（默认 1）
 set -euo pipefail
 
 echo "==> Start Pi3 training (datamix_all_v9-5-sub00)"
@@ -167,23 +170,66 @@ EXP_ROOT="${EXP_ROOT:-/efs-mi-pay-gy1/z00533370/exp}"
 mkdir -p "${EXP_ROOT}/pi3sup/outputs/${NAME}"
 
 # -----------------------------
-# Auto copy latest ckpt from efs to local output dir
+# Auto copy latest ckpt (OBS / efs) to local output dir
 # -----------------------------
+# 原脚本（0604）从 ModelArts 自动同步到 OBS 的 train_url_0 里找 checkpoint：
+#   obs://bucket-mi-east4-sf/z00533370/project/proj_3dgs/exp_pi3sup/pi3sup/outputs/${NAME}/outputs/${NAME}/ckpts
+# 贵阳访问不到东四桶，改成贵阳桶；OBS_TRAIN_ROOT 必须与本次作业「训练输出」的 OBS 路径一致。
 AUTO_RESUME="${AUTO_RESUME:-1}"
+OBS_TRAIN_ROOT="${OBS_TRAIN_ROOT:-obs://bucket-471/z00533370/exp/pi3sup/outputs/${NAME}}"
+OBS_CKPT_ROOT="${OBS_TRAIN_ROOT}/outputs/${NAME}/ckpts"
 EFS_CKPT_ROOT="${EXP_ROOT}/pi3sup/outputs/${NAME}/ckpts"
 LOCAL_CKPT_ROOT="${TRAIN_URL}/outputs/${NAME}/ckpts"
+LATEST_CKPT_FILE="/tmp/latest_ckpt_${NAME}.txt"
 mkdir -p "${LOCAL_CKPT_ROOT}"
+rm -f "${LATEST_CKPT_FILE}"
+echo "OBS_CKPT_ROOT=${OBS_CKPT_ROOT}"
+echo "EFS_CKPT_ROOT=${EFS_CKPT_ROOT}"
 
 if [ "${AUTO_RESUME}" = "1" ]; then
-    echo "==> Checking latest checkpoint: ${EFS_CKPT_ROOT}"
-    REMOTE_CKPT="$(ls -d "${EFS_CKPT_ROOT}"/checkpoint_* 2>/dev/null | sort -V | tail -1 || true)"
-    if [ -n "${REMOTE_CKPT}" ]; then
+    echo "==> Checking latest checkpoint on OBS and efs"
+
+    python - <<PY
+import re
+import moxing as mox
+
+roots = [r"""${OBS_CKPT_ROOT}""", r"""${EFS_CKPT_ROOT}"""]
+out = r"""${LATEST_CKPT_FILE}"""
+
+latest, latest_id = None, -1
+for root in roots:
+    try:
+        if not mox.file.exists(root):
+            print(f"[AUTO_RESUME] not found: {root}")
+            continue
+        items = mox.file.list_directory(root)
+    except Exception as e:
+        print(f"[AUTO_RESUME] skip {root}: {e}")
+        continue
+    for item in items:
+        path = item if item.startswith("obs://") else root.rstrip("/") + "/" + item.rstrip("/")
+        m = re.match(r"checkpoint_(\\d+)$", path.rstrip("/").split("/")[-1])
+        if m and int(m.group(1)) > latest_id:
+            latest_id, latest = int(m.group(1)), path
+
+if latest:
+    with open(out, "w") as f:
+        f.write(latest)
+    print(f"[AUTO_RESUME] latest ckpt: {latest}")
+else:
+    print("[AUTO_RESUME] no checkpoint found")
+PY
+
+    if [ -s "${LATEST_CKPT_FILE}" ]; then
+        REMOTE_CKPT="$(cat "${LATEST_CKPT_FILE}")"
         LOCAL_CKPT="${LOCAL_CKPT_ROOT}/$(basename "${REMOTE_CKPT}")"
-        echo "==> Copy latest ckpt: ${REMOTE_CKPT} -> ${LOCAL_CKPT}"
-        [ -e "${LOCAL_CKPT}" ] || cp -r "${REMOTE_CKPT}" "${LOCAL_CKPT}"
+        echo "==> Copy latest ckpt:"
+        echo "    ${REMOTE_CKPT}"
+        echo " -> ${LOCAL_CKPT}"
+        if [ ! -e "${LOCAL_CKPT}" ]; then
+            copy_by_mox "${REMOTE_CKPT}" "${LOCAL_CKPT}"
+        fi
         ls -lah "${LOCAL_CKPT_ROOT}" || true
-    else
-        echo "[AUTO_RESUME] no checkpoint found"
     fi
 fi
 
