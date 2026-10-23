@@ -163,7 +163,7 @@ echo "NUM_PROCESSES=${NUM_PROCESSES}"
 export USE_CHECKPOINT=False
 # export ASCEND_LAUNCH_BLOCKING=1
 export HYDRA_FULL_ERROR=1
-NAME="exp1023_pi3_3B_datamix_all_v9-5-sub00_filter_randresNew_scratch_uploss_pinmemTrue"
+NAME="exp1023_pi3_3B_datamix_all_v9-5-sub00_filter"
 
 # 实验结果（checkpoint、tensorboard）上传到贵阳 efs：${EXP_ROOT}/pi3sup/outputs/${NAME}/
 EXP_ROOT="${EXP_ROOT:-/efs-mi-pay-gy1/z00533370/exp}"
