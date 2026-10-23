@@ -2,7 +2,7 @@
 # datamix_all_v9-5_obs：datamix_all_v9-5 改读贵阳 OBS（xiaoxu/Pi3_training_v2），由 configs/data/obs_paths_guiyang.yaml 生成。
 # data_root 保持 efs 路径（缓存文件名按它的哈希命名），每个数据集加 path_remap {efs 前缀: 贵阳 obs 前缀} 与 cache_dir。
 # 缓存目录：obs://bucket-471/z00533370/dataset/dataset_cache
-# 暂不使用（已从 weights 去掉）：ScanNet, ARKitScenes, DL3DV, Objaverse（OBS 上还没复制完）。其余 22 个数据集权重与 datamix_all_v9-5 相同，合计 65200。
+# 暂不使用（已从 weights 去掉）：ARKitScenes, DL3DV, Objaverse（OBS 上还没复制完）。其余 23 个数据集权重与 datamix_all_v9-5 相同，合计 69400。
 train_dataset:
   length: 10000000
   weights:
@@ -21,6 +21,7 @@ train_dataset:
     Replica: 500
     OmniObject3DNew: 7000
     Matterport3D: 2000
+    ScanNet: 4200
     Scannetpp: 5000
     Taskonomy: 700
     Wildrgbd: 500
@@ -415,6 +416,30 @@ train_dataset:
       /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode: obs://bucket-471/z00533370/dataset/CO3Dv2_decode
       /efs-m3ga/z00818731/co3dv2-cams: obs://bucket-471/y00959808/data/sr_datasets/processed/co3dv2-cams
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
+  ScanNet:
+    _target_: datasets.scannet_dataset.ScanNetDataset
+    data_root: /efs-m3ga/z00533370/dataset/scannet_v2_decode/
+    split_ratio: 1.0
+    max_distance: 16
+    random_sample_thres: 0.05
+    stride_sample_thres: 0.45
+    stride_candidates:
+    - 5
+    - 10
+    - 15
+    - 25
+    force_global_sampling: false
+    z_far: 40
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    path_remap:
+      /efs-m3ga/z00533370/dataset/scannet_v2_decode: obs://bucket-471/z00533370/dataset/scannet_v2_decode
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
 train_dataloader:
   drop_last: true
   shuffle: true
@@ -435,6 +460,7 @@ test_dataset:
     Replica: 2000
     OmniObject3DNew: 2000
     Matterport3D: 2000
+    ScanNet: 2000
     Scannetpp: 2000
     Taskonomy: 2000
     Wildrgbd: 2000
@@ -835,6 +861,23 @@ test_dataset:
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode: obs://bucket-471/z00533370/dataset/CO3Dv2_decode
       /efs-m3ga/z00818731/co3dv2-cams: obs://bucket-471/y00959808/data/sr_datasets/processed/co3dv2-cams
+    cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
+  ScanNet:
+    _target_: datasets.scannet_dataset.ScanNetDataset
+    data_root: /efs-m3ga/z00533370/dataset/scannet_v2_decode/
+    split_ratio: 0.99
+    max_distance: 8
+    z_far: 40
+    resolution:
+    - - 512
+      - 336
+    frame_num: 8
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/dataset/scannet_v2_decode: obs://bucket-471/z00533370/dataset/scannet_v2_decode
     cache_dir: obs://bucket-471/z00533370/dataset/dataset_cache
 test_dataloader:
   drop_last: false

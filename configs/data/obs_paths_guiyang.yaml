@@ -21,7 +21,7 @@ Unreal4k:        {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/UnrealSt
 Replica:         {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/Replica,                      dst: obs://bucket-471/y00959808/data/sr_datasets/processed/Replica, note: "已确认：表格 efs 列为笔误，用贵阳路径"}
 VirtualKitti:    {status: ok,    src: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2,       dst: obs://bucket-471/y00959808/data/sr_datasets/processed/vKitti2}
 Scannetpp:       {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/scannetpp,                    dst: obs://bucket-471/y00959808/data/sr_datasets/processed/scannetpp}
-ScanNet:         {status: unused, src: /efs-m3ga/z00533370/dataset/scannet_v2_decode,                  dst: obs://bucket-471/y00959808/data/sr_datasets/processed/scannet, note: "表格注明与原路径下的 scannet 格式不同，loader 可能读不了；复制进行中"}
+ScanNet:         {status: ok,    src: /efs-m3ga/z00533370/dataset/scannet_v2_decode,                  dst: obs://bucket-471/z00533370/dataset/scannet_v2_decode, note: "解压版，目录名与 efs 相同（y00959808/.../processed/scannet 格式不同，不用）"}
 ARKitScenes:     {status: unused, src: /efs-mi-east4-2/z00533370/dataset/arkitscene_decode,            dst: null, note: "表格没有贵阳路径（待确认或不用）"}
 DL3DV:           {status: unused, src: /efs-mi-east4-2/datasets/DL3DV_WAI,                             dst: obs://bucket-471/y00959808/data/sr_datasets/processed/dl3dv, note: "伪标签需确认；RGB 原图目录 rgb_root=/efs-mi-east4-2/datasets/DL3DV/ 没有对应的贵阳路径"}
 Matterport3D:    {status: ok,    src: /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode,         dst: obs://bucket-471/z00533370/dataset/Mattport3D_decode, note: "obs://bucket-471/dataset/Mattport3D 是原始 scans/tasks，解压版在这里"}
