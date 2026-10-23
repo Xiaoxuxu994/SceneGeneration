@@ -1,9 +1,15 @@
 # @package _global_
-# datamix_all_v9-5-sub00：v9-5 在贵阳 OBS 上现有的子集，用于先起训练看耗时；数据补全后再出 sub01 / 全量。
-# 与 datamix_all_v9-5 相比：
-#   - 数据集参数、各数据集权重、dataloader 设置完全相同，不开任何过滤开关（与原始训练一致）；
-#   - 去掉 ARKitScenes、DL3DV、Objaverse（贵阳 OBS 上还没有 / 没复制完），其余 23 个，train 权重合计 69400；
+# datamix_all_v9-5-sub00：v9-5 在贵阳 OBS 上现有的子集 + 数据过滤开关，用于先起训练看耗时和效果；数据补全后再出 sub01 / 全量。
+# 由 datamix_all_v9-5_fix_obs.yaml 得到，与 datamix_all_v9-5 相比：
+#   - 去掉 ARKitScenes、DL3DV、Objaverse（贵阳 OBS 上还没有 / 没复制完），其余 23 个数据集参数与权重不变，train 权重合计 69400；
 #   - ScanNet 用新路径 obs://bucket-471/z00533370/dataset/scannet_v2_decode；
+#   - 打开过滤开关（说明见 datasets/FILTER_SWITCHES.md）：
+#       pct_disable: true      不做 98 分位截断，只保留 z_far（合成 / 渲染类数据集）
+#       pct_valid_only: true   98 分位只在有效像素上算（Matterport3D、ScanNet、MegaDepth、Mapillary）
+#       min_baseline_ratio: 0.05, baseline_retries: 3   视差不足时同一序列重新选帧（全部数据集）
+#       use_dataset_masks: true  自带 depth_masks 并入 valid_mask（CO3DV2）
+#       pass_z_far: true       Habitat 的 z_far 真正生效
+#     违例点、边缘飞点过滤还没有接入训练；
 #   - 每个数据集加 path_remap（efs 前缀 -> 贵阳 OBS）与 cache_dir。data_root 仍是 efs 路径（缓存文件名按它的哈希命名）。
 # cache_dir 默认读 OBS 上的 dataset_cache；设了环境变量 DATASET_CACHE_DIR 时改读那里
 #（训练脚本会先把需要的缓存拷到节点本地盘 /cache/dataset_cache，避免 8 个进程同时从 OBS 拉几 GB 的 pkl）。
@@ -46,6 +52,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim: obs://bucket-471/y00959808/data/sr_datasets/processed/Hypersim
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -62,6 +71,8 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/TartanAir: obs://bucket-471/y00959808/data/sr_datasets/processed/TartanAir
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -78,6 +89,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/ASE: obs://bucket-471/y00959808/data/sr_datasets/processed/ASE
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -94,6 +108,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/MatrixCity: obs://bucket-471/z00533370/dataset/MatrixCity
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -110,6 +127,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/MVS-Synth/GTAV_540: obs://bucket-471/y00959808/data/sr_datasets/processed/MVS-Synth/GTAV_540
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -134,6 +154,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/BlendedMVS: obs://bucket-471/y00959808/data/sr_datasets/processed/BlendedMVS
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -150,6 +173,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/c50041401/datasets/reliev3r_synth_data/vKitti2: obs://bucket-471/y00959808/data/sr_datasets/processed/vKitti2
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -166,6 +192,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/h00548084/relive3r_raw/GTA-SfM: obs://bucket-471/z00533370/dataset/GTA-SfM
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -182,6 +211,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_valid_only: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/MegaDepth: obs://bucket-471/y00959808/data/sr_datasets/processed/MegaDepth
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -206,6 +238,8 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/scannetpp: obs://bucket-471/y00959808/data/sr_datasets/processed/scannetpp
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -222,6 +256,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/co3d: obs://bucket-471/y00959808/data/sr_datasets/processed/co3d
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -238,6 +275,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Replica: obs://bucket-471/y00959808/data/sr_datasets/processed/Replica
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -254,6 +294,8 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       're:^/efs-m3ga/z00533370/reliev3r_data/taskonomy/(rgb|depth_zbuffer|depth_euclidean|point_info|mask_valid)/([^/]+)/\2/': 'obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy/\1/taskonomy/\2/'   # OBS 上是 rgb/taskonomy/<场景>/，efs 是 rgb/<场景>/<场景>/
       /efs-m3ga/z00533370/reliev3r_data/taskonomy: obs://bucket-471/y00959808/data/sr_datasets/processed/taskonomy
@@ -271,6 +313,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_valid_only: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Mapillary_Metropolis: obs://bucket-471/y00959808/data/sr_datasets/processed/Mapillary_Metropolis
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -287,6 +332,8 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Spring_decode: obs://bucket-471/z00533370/dataset/Spring_decode
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -303,6 +350,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/UnrealStereo4K_480P_decode: obs://bucket-471/z00533370/dataset/UnrealStereo4K_480P_decode
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -319,6 +369,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       're:^/efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New/blender_renders_decode/(([^/]+)_[0-9]+)/': 'obs://bucket-471/z00533370/dataset/Omniobject3d-New/blender_renders_decode/\2/\1/'   # OBS 上多一层类别目录：anise/anise_001/
       /efs-m3ga/z00533370/reliev3r_data/Omniobject3d-New: obs://bucket-471/z00533370/dataset/Omniobject3d-New
@@ -336,6 +389,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_valid_only: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/Matterport3D_decode: obs://bucket-471/z00533370/dataset/Mattport3D_decode
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -352,6 +408,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
+    pass_z_far: true
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/habitat: obs://bucket-471/y00959808/data/sr_datasets/processed/habitat
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -368,6 +427,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/wildrgbd_s3: obs://bucket-471/y00959808/data/sr_datasets/processed/wildrgbd
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -384,6 +446,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/TartanGround: obs://bucket-471/y00959808/data/sr_datasets/processed/TartanGround
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -400,6 +465,8 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/objaverse_wai: obs://bucket-471/z00533370/dataset/objaverse_wai
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
@@ -416,6 +483,10 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
+    use_dataset_masks: true
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode: obs://bucket-471/z00533370/dataset/CO3Dv2_decode
       /efs-m3ga/z00818731/co3dv2-cams: obs://bucket-471/y00959808/data/sr_datasets/processed/co3dv2-cams
@@ -441,6 +512,9 @@ train_dataset:
       _target_: datasets.base.transforms.JitterJpegLossBlurring
     aug_focal: 0.9
     mode: train
+    pct_valid_only: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
     path_remap:
       /efs-m3ga/z00533370/dataset/scannet_v2_decode: obs://bucket-471/z00533370/dataset/scannet_v2_decode
     cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}

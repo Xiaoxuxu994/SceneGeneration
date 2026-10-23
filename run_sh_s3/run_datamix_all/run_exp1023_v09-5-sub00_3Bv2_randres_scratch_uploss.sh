@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Pi3 3B（dinov3_huge+_3Bv2）在 datamix_all_v9-5-sub00（贵阳 OBS 上现有的 23 个数据集）上从头训练。
+# Pi3 3B（dinov3_huge+_3Bv2）在 datamix_all_v9-5-sub00（贵阳 OBS 上现有的 23 个数据集，打开数据过滤开关）上从头训练。
 # 训练超参与 run_exp0604_v09-5_fixview_randres_scratch_uploss.sh 完全一致，只换了数据配置和实验名，并适配贵阳环境：
-#   - 数据：data=datamix_all_v9-5-sub00（数据读 OBS；启动前把需要的索引缓存拷到节点本地盘，避免 8 个进程同时从 OBS 拉大 pkl）
+#   - 数据：data=datamix_all_v9-5-sub00（过滤开关见该配置文件头；数据读 OBS；启动前把需要的索引缓存拷到节点本地盘）
+#   - ++train.worker_reseed=true：各卡 / 各 worker 用不同随机数流（旧版所有 worker 同一条流，增强和选帧会重复）
 #   - 断点续训：从贵阳 efs 上本实验的 ckpts 目录找最新 checkpoint（东四 OBS 桶在贵阳访问不到）
 #   - 单机 8 卡时不依赖 ModelArts 的多机环境变量（没有就按单机处理）
 #
@@ -159,7 +160,7 @@ echo "NUM_PROCESSES=${NUM_PROCESSES}"
 export USE_CHECKPOINT=False
 # export ASCEND_LAUNCH_BLOCKING=1
 export HYDRA_FULL_ERROR=1
-NAME="exp1023_pi3_3B_datamix_all_v9-5-sub00_randresNew_scratch_uploss_pinmemTrue"
+NAME="exp1023_pi3_3B_datamix_all_v9-5-sub00_filter_randresNew_scratch_uploss_pinmemTrue"
 
 # 实验结果（checkpoint、tensorboard）上传到贵阳 efs：${EXP_ROOT}/pi3sup/outputs/${NAME}/
 EXP_ROOT="${EXP_ROOT:-/efs-mi-pay-gy1/z00533370/exp}"
@@ -187,7 +188,7 @@ if [ "${AUTO_RESUME}" = "1" ]; then
 fi
 
 # -----------------------------
-# Training Process（参数与 run_exp0604 相同，只有 data / name 不同）
+# Training Process（参数与 run_exp0604 相同，只有 data / name / worker_reseed 不同）
 # -----------------------------
 echo "==> Start training"
 accelerate launch \
@@ -200,6 +201,7 @@ accelerate launch \
   scripts/train_pi3.py \
   train=train_pi3_highres \
   data=datamix_all_v9-5-sub00 \
+  ++train.worker_reseed=true \
   name="${NAME}" \
   work_dir="${TRAIN_URL}" \
   model.use_global_points=False \
