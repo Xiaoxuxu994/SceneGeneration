@@ -375,13 +375,19 @@ def load_model_pi3loop(ckpt, model_size, loop_layers=0, loop_k=0):
         Pi3Train._build_backbone_cfg = staticmethod(orig)
 
     p = Path(ckpt)
-    if p.is_dir():
+    res = None
+    if p.is_dir() and any(p.glob("*.index.json")):
+        # sharded checkpoint (e.g. .../ckpts/model_ckpt78), as loaded by pi3_training.Pi3(ckpt=<dir>) in training
+        res = load_sharded_checkpoint(model, str(p), strict=False)
+    elif p.is_dir():
         cands = [p / "pytorch_model" / "mp_rank_00_model_states.pt", p / "mp_rank_00_model_states.pt",
-                 p / "model.safetensors"]
+                 p / "model.safetensors", p / "pytorch_model.bin"]
         p = next((c for c in cands if c.exists()), None)
         if p is None:
-            raise FileNotFoundError(f"no weights under {ckpt} (tried {[str(c) for c in cands]})")
-    if p.suffix == ".safetensors":
+            raise FileNotFoundError(f"no weights under {ckpt} (tried *.index.json, {[str(c) for c in cands]})")
+    if res is not None:
+        pass
+    elif p.suffix == ".safetensors":
         state_dict = load_file(str(p))
     else:
         try:
@@ -390,8 +396,9 @@ def load_model_pi3loop(ckpt, model_size, loop_layers=0, loop_k=0):
             raise ModuleNotFoundError(f"loading {p} needs the Python package of the training framework: {e}. "
                                       f"Install it (e.g. pip install deepspeed) and re-run.") from e
         state_dict = obj.get("module", obj.get("model", obj)) if isinstance(obj, dict) else obj
-    state_dict = {(k[7:] if k.startswith("module.") else k): v for k, v in state_dict.items()}
-    res = model.load_state_dict(state_dict, strict=False)
+    if res is None:
+        state_dict = {(k[7:] if k.startswith("module.") else k): v for k, v in state_dict.items()}
+        res = model.load_state_dict(state_dict, strict=False)
     missing = [k for k in res.missing_keys if k != "pos_special"]          # constant buffer, absent in official Pi3
     unexpected = [k for k in res.unexpected_keys if not k.startswith(("conf_decoder.", "conf_head."))]
     if missing or unexpected:

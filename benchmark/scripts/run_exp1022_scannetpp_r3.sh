@@ -2,7 +2,7 @@
 # One-command evaluation of the SceneGeneration exp1022 runs (and the official Pi3) on the ScanNet++ held-out split
 # of training (dataset scannetpp_r3), through the regular infer -> eval -> vis engine of this benchmark.
 #
-#   bash benchmark/scripts/run_exp1022_scannetpp_r3.sh                  # official Pi3 + exp1022_00..05, latest ckpts
+#   bash benchmark/scripts/run_exp1022_scannetpp_r3.sh                  # official Pi3, exp1022_00..04, Pi3 3B (exp0604)
 #   SMOKE=1 bash benchmark/scripts/run_exp1022_scannetpp_r3.sh          # first 20 held-out scenes, separate dir
 #   NUM_SCENES=5 bash benchmark/scripts/run_exp1022_scannetpp_r3.sh     # first n held-out scenes (sorted), own dir
 #   MODELS="exp1022_00 exp1022_03" NPU_ID=1 bash benchmark/scripts/run_exp1022_scannetpp_r3.sh
@@ -13,6 +13,7 @@
 #   DATA_ROOT  ScanNet++ in the reliev3r layout (the training data root; split = last 10% of the scenes)
 #   EXP_ROOT   <run>/ckpts/checkpoint_N, as written by run_sh_s3/run_scannetpp/mox_download.sh
 #   PI3_CKPT   official Pi3 weights (model.safetensors)
+#   PI3_3B_CKPT  pi3_3b_exp0604: DINOv3-H+ / 2048x36 Pi3 3B trained with SceneGeneration (sharded checkpoint dir)
 # Results: benchmark/${OUT_ROOT}/scannetpp_r3/test_stride25_maxall_len8_numseq0_<res>/metrics_<model>.xlsx and a
 # combined table summary_exp1022.md next to them. Finished sequences / metrics are reused on re-runs.
 set -euo pipefail
@@ -27,7 +28,8 @@ DATA_ROOT="${DATA_ROOT:-/efs-m3ga/z00533370/reliev3r_data/scannetpp}"
 EXP_ROOT="${EXP_ROOT:-/efs-m3ga/z00533370/exp/pi3sup/outputs}"
 PI3_CKPT="${PI3_CKPT:-./ckpts/Pi3/model.safetensors}"
 CKPT_NAME="${CKPT_NAME:-latest}"
-MODELS="${MODELS:-pi3 exp1022_00 exp1022_01 exp1022_02 exp1022_03 exp1022_04 exp1022_05}"
+# exp1022_05 is defined below but not in the default list until its training has finished (MODELS=exp1022_05)
+MODELS="${MODELS:-pi3 exp1022_00 exp1022_01 exp1022_02 exp1022_03 exp1022_04 pi3_3b_exp0604}"
 NPU_ID="${NPU_ID:-0}"                # one NPU; run several invocations with different MODELS / NPU_ID to parallelise
 DTYPE="${DTYPE:-fp32}"               # as for the other benchmark models
 OUT_ROOT="${OUT_ROOT:-outputs}"
@@ -40,6 +42,10 @@ RUN[exp1022_02]=exp1022_02_scannetpp_loop384_L2_k5to9_head2;   SPEC[exp1022_02]=
 RUN[exp1022_03]=exp1022_03_scannetpp_loop384_L6_k2to3_head2;   SPEC[exp1022_03]=dinov3_small_w384;    LAYERS[exp1022_03]=6; KINF[exp1022_03]=3
 RUN[exp1022_04]=exp1022_04_scannetpp_loop384_L1_k1to18_head2;  SPEC[exp1022_04]=dinov3_small_w384;    LAYERS[exp1022_04]=1; KINF[exp1022_04]=18
 RUN[exp1022_05]=exp1022_05_scannetpp_base_dec384x12_k1_head2;  SPEC[exp1022_05]=dinov3_small_w384x12; LAYERS[exp1022_05]=0; KINF[exp1022_05]=0
+# other SceneGeneration-trained Pi3 models: fixed checkpoint path (CKPT_NAME does not apply)
+declare -A CKPT_PATH
+RUN[pi3_3b_exp0604]=exp0604_pi3_3B_datamix_all_v9-5_randresNew_scratch_uploss_pinmemTrue; SPEC[pi3_3b_exp0604]=dinov3_huge+_3Bv2; LAYERS[pi3_3b_exp0604]=0; KINF[pi3_3b_exp0604]=0
+CKPT_PATH[pi3_3b_exp0604]="${PI3_3B_CKPT:-/efs-m3ga/c50041401/exp/pi3sup/outputs/exp0604_pi3_3B_datamix_all_v9-5_randresNew_scratch_uploss_pinmemTrue/ckpts/model_ckpt78}"
 # extra inference K for KSWEEP=1 (loop runs only)
 KSWEEP_LIST="exp1022_01:14 exp1022_01:16 exp1022_02:5 exp1022_02:7 exp1022_03:2 exp1022_04:6 exp1022_04:12"
 
@@ -89,6 +95,10 @@ if [ -n "${NUM_SCENES}" ]; then
 fi
 
 ckpt_of () {   # <model key> -> checkpoint dir
+    if [ -n "${CKPT_PATH[$1]:-}" ]; then
+        [ -e "${CKPT_PATH[$1]}" ] && echo "${CKPT_PATH[$1]}"
+        return 0
+    fi
     local d="${EXP_ROOT}/${RUN[$1]}/ckpts"
     if [ "${CKPT_NAME}" = "latest" ]; then
         ls -d "${d}"/checkpoint_* 2>/dev/null | sort -V | tail -1
@@ -117,10 +127,14 @@ run_one () {   # <model key> [K]: one model through engine.sh, in a subshell so 
             LOOP_LAYERS=""; LOOP_K=""
         else
             CKPT="$(ckpt_of "${key}" || true)"
-            [ -n "${CKPT}" ] || { echo "[ERROR] no ${CKPT_NAME} checkpoint under ${EXP_ROOT}/${RUN[$key]}/ckpts"; exit 3; }
+            [ -n "${CKPT}" ] || { echo "[ERROR] checkpoint not found for ${key}: ${CKPT_PATH[$key]:-${CKPT_NAME} under ${EXP_ROOT}/${RUN[$key]}/ckpts}"; exit 3; }
             MODEL="pi3loop"; MODEL_SIZE="${SPEC[$key]}"; CONFIG=""
             LOOP_LAYERS="${LAYERS[$key]}"; LOOP_K="${k:-${KINF[$key]}}"
-            PREFIX="${key}$( [ "${CKPT_NAME}" = latest ] || echo "_${CKPT_NAME}" )${k:+_K${k}}"
+            if [ -n "${CKPT_PATH[$key]:-}" ]; then
+                PREFIX="${key}_$(basename "${CKPT}")"
+            else
+                PREFIX="${key}$( [ "${CKPT_NAME}" = latest ] || echo "_${CKPT_NAME}" )${k:+_K${k}}"
+            fi
             echo "[run] ${key}: ${CKPT} (${MODEL_SIZE}, loop_layers=${LOOP_LAYERS}, K=${LOOP_K})"
         fi
         USE_GT_POSE=0; USE_GT_K=0
