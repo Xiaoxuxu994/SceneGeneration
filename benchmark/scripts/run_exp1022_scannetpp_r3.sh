@@ -3,8 +3,8 @@
 # of training (dataset scannetpp_r3), through the regular infer -> eval -> vis engine of this benchmark.
 #
 #   bash benchmark/scripts/run_exp1022_scannetpp_r3.sh                  # official Pi3 + exp1022_00..05, latest ckpts
-#   SMOKE=1 bash benchmark/scripts/run_exp1022_scannetpp_r3.sh          # 2 scenes only, separate output dir
-#   NUM_SCENES=20 bash benchmark/scripts/run_exp1022_scannetpp_r3.sh    # first 20 held-out scenes (sorted), own dir
+#   SMOKE=1 bash benchmark/scripts/run_exp1022_scannetpp_r3.sh          # first 20 held-out scenes, separate dir
+#   NUM_SCENES=5 bash benchmark/scripts/run_exp1022_scannetpp_r3.sh     # first n held-out scenes (sorted), own dir
 #   MODELS="exp1022_00 exp1022_03" NPU_ID=1 bash benchmark/scripts/run_exp1022_scannetpp_r3.sh
 #   KSWEEP=1 bash ...                                                   # + loop runs at smaller inference K
 #   CKPT_NAME=best_model bash ...                                       # checkpoint_N | best_model | latest
@@ -81,8 +81,8 @@ print(f"[deps] ok{' (installed: ' + ' '.join(installed) + ')' if installed else 
 PY
 
 SMOKE="${SMOKE:-0}"
-NUM_SCENES="${NUM_SCENES:-}"         # empty = all held-out scenes; SMOKE=1 means 2
-[ "${SMOKE}" = "1" ] && NUM_SCENES=2
+NUM_SCENES="${NUM_SCENES:-}"         # empty = all held-out scenes; SMOKE=1 means 20 unless NUM_SCENES is set
+[ "${SMOKE}" = "1" ] && NUM_SCENES="${NUM_SCENES:-20}"
 if [ -n "${NUM_SCENES}" ]; then
     [[ "${NUM_SCENES}" =~ ^[1-9][0-9]*$ ]] || { echo "[ERROR] NUM_SCENES must be a positive integer" >&2; exit 1; }
     echo "==> first ${NUM_SCENES} held-out scenes only (outputs in ..._numseq${NUM_SCENES}_<res>)"
