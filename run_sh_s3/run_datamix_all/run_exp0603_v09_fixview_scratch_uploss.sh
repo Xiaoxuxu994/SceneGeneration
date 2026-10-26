@@ -6,10 +6,16 @@ echo "==> Start multi-node Pi3 training"
 cd /home/ma-user/modelarts/user-job-dir/Pi3
 export PYTHONPATH=/home/ma-user/modelarts/user-job-dir/Pi3
 
-# 可选：软链接 checkpoint 目录
-if [ ! -e ckpts ]; then
-    ln -s /efs-mi-east4-2/checkpoints ckpts
+# 软链接预训练权重目录（已有软链接指向旧目录时改指过来）
+CKPTS_SRC="${CKPTS_SRC:-/efs-mi-pay-gy1/z00533370/checkpoints}"
+if [ -L ckpts ]; then
+    [ "$(readlink ckpts)" = "${CKPTS_SRC}" ] || ln -sfn "${CKPTS_SRC}" ckpts
+elif [ ! -e ckpts ]; then
+    ln -s "${CKPTS_SRC}" ckpts
+else
+    echo "[WARN] ckpts 是普通目录，不改动（CKPTS_SRC=${CKPTS_SRC} 未生效）"
 fi
+echo "ckpts -> $(readlink -f ckpts)"
 
 # output
 TRAIN_URL="/home/ma-user/modelarts/outputs/train_url_0"
