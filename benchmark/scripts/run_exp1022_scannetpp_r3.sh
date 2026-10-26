@@ -48,12 +48,35 @@ KSWEEP_LIST="exp1022_01:14 exp1022_01:16 exp1022_02:5 exp1022_02:7 exp1022_03:2 
 [ -f scripts/run_infer.py ] && [ -f datasets/scannetpp_r3.py ] && [ -d models/pi3loop ] || {
     echo "[ERROR] ${BENCH} is not benchmark/ of branch xiaoxu/bench_loop (scannetpp_r3 / pi3loop missing)" >&2; exit 1; }
 [ -d "${DATA_ROOT}" ] || { echo "[ERROR] DATA_ROOT not found: ${DATA_ROOT}" >&2; exit 1; }
-python - <<'PY' || { echo "[ERROR] python packages missing for scripts/run_infer.py (see above)" >&2; exit 1; }
-import importlib.util, sys
-missing = [m for m in ("torch", "torch_npu", "omegaconf", "safetensors", "transformers", "imageio",
-                       "openpyxl", "pandas", "tqdm") if importlib.util.find_spec(m) is None]
-if missing:
-    print("missing:", " ".join(missing)); sys.exit(1)
+# Python packages: import the three benchmark entry scripts (run_infer imports every model family) and install
+# whatever is missing, as run_sh_s3/run_scannetpp/common.sh does for the training job. No version pins, nothing
+# that is already installed is touched; torch / torch_npu / numpy / cv2 are never installed here.
+python - <<'PY' || { echo "[ERROR] could not import the benchmark scripts (see above)" >&2; exit 1; }
+import importlib, subprocess, sys
+sys.path.insert(0, "scripts")
+PIP = {"dotted_dict": "dotted-dict", "hydra": "hydra-core", "yaml": "pyyaml", "PIL": "pillow",
+       "skimage": "scikit-image", "sklearn": "scikit-learn", "google": "protobuf"}
+NEVER = {"torch", "torch_npu", "torchvision", "numpy", "cv2", "scipy", "transformers"}
+installed = []
+for _ in range(20):
+    try:
+        for m in ("run_infer", "run_eval", "run_vis"):
+            importlib.import_module(m)
+        break
+    except ModuleNotFoundError as e:
+        top = (e.name or "").split(".")[0]
+        if not top or top in NEVER or top in installed:
+            print(f"[deps] cannot fix automatically: {e}"); sys.exit(1)
+        pkg = PIP.get(top, top)
+        print(f"[deps] missing {top} -> pip install {pkg}", flush=True)
+        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
+        installed.append(top)
+        for k in [k for k in sys.modules if k.startswith(("run_", "models.", "datasets", "lib."))]:
+            del sys.modules[k]
+        importlib.invalidate_caches()
+else:
+    print("[deps] gave up after 20 installs"); sys.exit(1)
+print(f"[deps] ok{' (installed: ' + ' '.join(installed) + ')' if installed else ''}")
 PY
 
 SMOKE="${SMOKE:-0}"
