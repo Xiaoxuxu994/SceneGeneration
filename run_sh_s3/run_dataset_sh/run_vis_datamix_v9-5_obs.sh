@@ -45,8 +45,31 @@ VIS_ROOT="${VIS_ROOT:-/efs-mi-pay-gy1/z00533370/data_vis}"
 OUT_DIR="${OUT_DIR:-${VIS_ROOT}/$(basename "${CONFIG}" .yaml)}"
 mkdir -p "${OUT_DIR}/logs"
 
-# 依赖：缺的包才安装（新镜像常缺 hydra 等）
-bash run_sh_s3/ensure_deps.sh
+# 依赖：与训练脚本相同（hydra_colorlog 会顺带装上 hydra-core）
+# 可选：安装 hydra_colorlog
+python - <<'PY'
+try:
+    import hydra_colorlog
+except Exception:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "hydra_colorlog"])
+PY
+
+python - <<'PY'
+try:
+    import evo
+except Exception:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "evo"])
+PY
+
+python - <<'PY'
+try:
+    import pyquaternion
+except Exception:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyquaternion"])
+PY
 
 if [ "${DATASETS}" = "ALL" ]; then
     DATASETS="$(python -c "from omegaconf import OmegaConf; print(' '.join(OmegaConf.load('${CONFIG}').train_dataset.weights.keys()))")"
