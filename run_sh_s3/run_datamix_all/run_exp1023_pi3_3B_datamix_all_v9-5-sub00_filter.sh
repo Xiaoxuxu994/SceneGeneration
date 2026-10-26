@@ -47,30 +47,8 @@ TRAIN_URL="${TRAIN_URL:-/home/ma-user/modelarts/outputs/train_url_0}"
 mkdir -p "$TRAIN_URL"
 echo "TRAIN_URL=$TRAIN_URL"
 
-# 可选：安装依赖
-python - <<'PY'
-try:
-    import hydra_colorlog
-except Exception:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "hydra_colorlog"])
-PY
-
-python - <<'PY'
-try:
-    import evo
-except Exception:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "evo"])
-PY
-
-python - <<'PY'
-try:
-    import pyquaternion
-except Exception:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyquaternion"])
-PY
+# 依赖：缺的包才安装（hydra-core、hydra_colorlog、evo、pyquaternion 等，见 run_sh_s3/ensure_deps.sh）
+bash run_sh_s3/ensure_deps.sh
 
 # -----------------------------
 # mox function
