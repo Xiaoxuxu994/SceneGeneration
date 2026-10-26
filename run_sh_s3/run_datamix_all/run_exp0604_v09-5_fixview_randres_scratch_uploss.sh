@@ -8,7 +8,7 @@ export PYTHONPATH=/home/ma-user/modelarts/user-job-dir/Pi3
 
 # 可选：软链接 checkpoint 目录
 if [ ! -e ckpts ]; then
-    ln -s /efs-mi-east4-2/checkpoints ckpts
+    ln -s /efs-mi-pay-gy1/z00533370/checkpoints ckpts
 fi
 
 # output
