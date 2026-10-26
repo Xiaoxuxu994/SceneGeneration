@@ -20,8 +20,9 @@
 #   AUTO_RESUME 1 = 从 OBS / efs 上本实验最新的 checkpoint 续训（默认 1）
 #   NAME        实验名（默认 exp1023_pi3_3B_datamix_all_v9-5-sub00_filter）
 #   UPLOAD      0 = 训练结束后不往 efs 传 checkpoint / tensorboard（冒烟测试用）
+#   DATA        数据配置名（默认 datamix_all_v9-5-sub00；冒烟用 datamix_all_v9-5-sub00_smoke，只有 4 个小数据集）
 # 脚本参数会原样追加到训练命令末尾（hydra 覆盖，后写的生效），例如冒烟测试：
-#   NAME=smoke_exp1023 AUTO_RESUME=0 UPLOAD=0 bash <本脚本> train.num_epoch=1 train.iters_per_epoch=20 train.lr_scheduler.pct_start=0.2 test.iters_per_test=2 train.print_freq=1
+#   DATA=datamix_all_v9-5-sub00_smoke NAME=smoke_exp1023 AUTO_RESUME=0 UPLOAD=0 bash <本脚本> train.num_epoch=1 train.iters_per_epoch=20 train.lr_scheduler.pct_start=0.2 test.iters_per_test=2 train.print_freq=1
 #   （步数很少时要调大 pct_start：OneCycle 预热结束步 = pct_start × 总步数 - 1，等于 0 会除零报错）
 set -euo pipefail
 
@@ -103,7 +104,9 @@ PY
 # -----------------------------
 # 索引缓存拷到本地盘（每个节点一次；同名同大小的跳过）
 # -----------------------------
-DATA_CFG="configs/data/datamix_all_v9-5-sub00.yaml"
+DATA="${DATA:-datamix_all_v9-5-sub00}"
+DATA_CFG="configs/data/${DATA}.yaml"
+echo "DATA=${DATA}"
 LOCAL_CACHE="${LOCAL_CACHE-/cache/dataset_cache}"
 if [ -n "${LOCAL_CACHE}" ]; then
     echo "==> Prefetch dataset caches -> ${LOCAL_CACHE}"
@@ -257,7 +260,7 @@ accelerate launch \
   --num_processes "${NUM_PROCESSES}" \
   scripts/train_pi3.py \
   train=train_pi3_highres \
-  data=datamix_all_v9-5-sub00 \
+  data="${DATA}" \
   ++train.worker_reseed=true \
   name="${NAME}" \
   work_dir="${TRAIN_URL}" \

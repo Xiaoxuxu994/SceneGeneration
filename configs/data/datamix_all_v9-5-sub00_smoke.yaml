@@ -1,0 +1,182 @@
+# @package _global_
+# datamix_all_v9-5-sub00_smoke：冒烟测试用的小数据配置，从 datamix_all_v9-5-sub00 取 4 个缓存小、加载快的数据集
+#（合成室内 Hypersim、合成室外 MatrixCity、真实室内 ScanNet / Scannetpp，覆盖 pct_disable / pct_valid_only / 等步长选帧），
+# 数据集参数、过滤开关、权重与 sub00 完全相同，只是少了其余 19 个数据集。用法见 run_exp1023 启动脚本开头的冒烟示例（DATA=...）。
+train_dataset:
+  length: 10000000
+  weights:
+    MatrixCity: 3800
+    Hypersim: 3800
+    ScanNet: 4200
+    Scannetpp: 5000
+  Hypersim:
+    _target_: datasets.hypersim_dataset.HypersimDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim
+    split_ratio: 1.0
+    max_distance: 16
+    z_far: 128
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim: obs://bucket-471/y00959808/data/sr_datasets/processed/Hypersim
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  MatrixCity:
+    _target_: datasets.matrixcity_dataset.MatrixCityDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/MatrixCity
+    split_ratio: 1.0
+    max_distance: 16
+    z_far: 160
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    pct_disable: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/MatrixCity: obs://bucket-471/z00533370/dataset/MatrixCity
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Scannetpp:
+    _target_: datasets.scannetpp_dataset.ScannetppDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/scannetpp
+    split_ratio: 1.0
+    max_distance: 20
+    random_sample_thres: 0.05
+    stride_sample_thres: 0.5
+    stride_candidates:
+    - 5
+    - 10
+    - 15
+    - 25
+    force_global_sampling: false
+    z_far: 40
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/scannetpp: obs://bucket-471/y00959808/data/sr_datasets/processed/scannetpp
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  ScanNet:
+    _target_: datasets.scannet_dataset.ScanNetDataset
+    data_root: /efs-m3ga/z00533370/dataset/scannet_v2_decode/
+    split_ratio: 1.0
+    max_distance: 16
+    random_sample_thres: 0.05
+    stride_sample_thres: 0.45
+    stride_candidates:
+    - 5
+    - 10
+    - 15
+    - 25
+    force_global_sampling: false
+    z_far: 40
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    pct_valid_only: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
+    path_remap:
+      /efs-m3ga/z00533370/dataset/scannet_v2_decode: obs://bucket-471/z00533370/dataset/scannet_v2_decode
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+train_dataloader:
+  drop_last: true
+  shuffle: true
+test_dataset:
+  weights:
+    MatrixCity: 2000
+    Hypersim: 2000
+    ScanNet: 2000
+    Scannetpp: 2000
+  Hypersim:
+    _target_: datasets.hypersim_dataset.HypersimDataset
+    data_root: /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim
+    split_ratio: 0.9
+    max_distance: 16
+    z_far: 128
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/c50041401/datasets/reliev3r_synth_data/Hypersim: obs://bucket-471/y00959808/data/sr_datasets/processed/Hypersim
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  MatrixCity:
+    _target_: datasets.matrixcity_dataset.MatrixCityDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/MatrixCity
+    split_ratio: 0.9
+    max_distance: 16
+    z_far: 160
+    frame_num: 8
+    resolution:
+    - - 512
+      - 336
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/MatrixCity: obs://bucket-471/z00533370/dataset/MatrixCity
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  Scannetpp:
+    _target_: datasets.scannetpp_dataset.ScannetppDataset
+    data_root: /efs-m3ga/z00533370/reliev3r_data/scannetpp
+    split_ratio: 0.99
+    max_distance: 8
+    z_far: 40
+    resolution:
+    - - 512
+      - 336
+    frame_num: 8
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/reliev3r_data/scannetpp: obs://bucket-471/y00959808/data/sr_datasets/processed/scannetpp
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+  ScanNet:
+    _target_: datasets.scannet_dataset.ScanNetDataset
+    data_root: /efs-m3ga/z00533370/dataset/scannet_v2_decode/
+    split_ratio: 0.99
+    max_distance: 8
+    z_far: 40
+    resolution:
+    - - 512
+      - 336
+    frame_num: 8
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.ImgToTensor
+    mode: test
+    path_remap:
+      /efs-m3ga/z00533370/dataset/scannet_v2_decode: obs://bucket-471/z00533370/dataset/scannet_v2_decode
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
+test_dataloader:
+  drop_last: false
+  shuffle: true
