@@ -11,7 +11,7 @@
 #   bash run_sh_s3/run_datamix_all/run_exp1023_pi3_3B_datamix_all_v9-5-sub00_filter.sh
 # 可用环境变量：
 #   CODE_DIR    代码目录（默认本脚本所在仓库）
-#   CKPTS_SRC   预训练权重目录，软链接成 ./ckpts（需含 dinov3_vith16plus/）；默认 /efs-mi-east4-2/checkpoints
+#   CKPTS_SRC   预训练权重目录，软链接成 ./ckpts（需含 dinov3_vith16plus/）；默认 /efs-mi-pay-gy1/z00533370/checkpoints
 #   EXP_ROOT    实验结果根目录（默认 /efs-mi-pay-gy1/z00533370/exp）
 #   TRAIN_URL   训练时的本地输出目录（默认 /home/ma-user/modelarts/outputs/train_url_0）
 #   LOCAL_CACHE 索引缓存的本地目录（默认 /cache/dataset_cache；设成空则直接读 OBS）
@@ -32,13 +32,19 @@ export PYTHONPATH="${CODE_DIR}"
 echo "CODE_DIR=${CODE_DIR}  ($(git log --oneline -1 2>/dev/null || echo 'not a git repo'))"
 
 # 预训练权重（dinov3_vith16plus）
-CKPTS_SRC="${CKPTS_SRC:-/efs-mi-east4-2/checkpoints}"
-if [ ! -e ckpts ]; then
+CKPTS_SRC="${CKPTS_SRC:-/efs-mi-pay-gy1/z00533370/checkpoints}"
+if [ -L ckpts ]; then
+    # 已有软链接（可能还指向旧的 /efs-mi-east4-2/checkpoints）：改指到 CKPTS_SRC
+    [ "$(readlink ckpts)" = "${CKPTS_SRC}" ] || ln -sfn "${CKPTS_SRC}" ckpts
+elif [ ! -e ckpts ]; then
     ln -s "${CKPTS_SRC}" ckpts
+else
+    echo "[WARN] ckpts 是普通目录，不改动（CKPTS_SRC=${CKPTS_SRC} 未生效）"
 fi
+echo "ckpts -> $(readlink -f ckpts)"
 if ! ls ckpts/dinov3_vith16plus/*.pth >/dev/null 2>&1; then
     echo "[ERROR] 找不到 ckpts/dinov3_vith16plus/*.pth（ckpts -> $(readlink -f ckpts || echo '?')）。"
-    echo "        设置 CKPTS_SRC=<含 dinov3_vith16plus/ 的目录> 后重试（已有错误的 ckpts 软链接请先 rm ckpts）。"
+    echo "        设置 CKPTS_SRC=<含 dinov3_vith16plus/ 的目录> 后重试（ckpts 若是普通目录需先移走）。"
     exit 1
 fi
 
