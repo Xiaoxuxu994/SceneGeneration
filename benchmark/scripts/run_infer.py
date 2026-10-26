@@ -10,7 +10,10 @@ from tqdm import tqdm
 from omegaconf import OmegaConf
 from safetensors.torch import load_file
 import subprocess
-import deepspeed
+try:  # only needed by the commented-out ZeRO conversion below; checkpoints load without it
+    import deepspeed  # noqa: F401
+except ImportError:
+    deepspeed = None
 
 from _bootstrap import BENCH_ROOT 
 
@@ -381,7 +384,11 @@ def load_model_pi3loop(ckpt, model_size, loop_layers=0, loop_k=0):
     if p.suffix == ".safetensors":
         state_dict = load_file(str(p))
     else:
-        obj = torch.load(str(p), map_location="cpu", weights_only=False)
+        try:
+            obj = torch.load(str(p), map_location="cpu", weights_only=False)
+        except ModuleNotFoundError as e:  # objects pickled by the training framework (e.g. deepspeed)
+            raise ModuleNotFoundError(f"loading {p} needs the Python package of the training framework: {e}. "
+                                      f"Install it (e.g. pip install deepspeed) and re-run.") from e
         state_dict = obj.get("module", obj.get("model", obj)) if isinstance(obj, dict) else obj
     state_dict = {(k[7:] if k.startswith("module.") else k): v for k, v in state_dict.items()}
     res = model.load_state_dict(state_dict, strict=False)

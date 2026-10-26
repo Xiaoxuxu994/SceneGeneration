@@ -50,7 +50,7 @@ KSWEEP_LIST="exp1022_01:14 exp1022_01:16 exp1022_02:5 exp1022_02:7 exp1022_03:2 
 [ -d "${DATA_ROOT}" ] || { echo "[ERROR] DATA_ROOT not found: ${DATA_ROOT}" >&2; exit 1; }
 python - <<'PY' || { echo "[ERROR] python packages missing for scripts/run_infer.py (see above)" >&2; exit 1; }
 import importlib.util, sys
-missing = [m for m in ("torch", "torch_npu", "deepspeed", "omegaconf", "safetensors", "transformers", "imageio",
+missing = [m for m in ("torch", "torch_npu", "omegaconf", "safetensors", "transformers", "imageio",
                        "openpyxl", "pandas", "tqdm") if importlib.util.find_spec(m) is None]
 if missing:
     print("missing:", " ".join(missing)); sys.exit(1)
