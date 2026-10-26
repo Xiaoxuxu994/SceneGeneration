@@ -18,6 +18,10 @@
 #   OBS_TRAIN_ROOT ModelArts 作业「训练输出」train_url_0 对应的 OBS 目录（必须与作业配置一致），
 #               默认 obs://bucket-471/z00533370/exp/pi3sup/outputs/<NAME>；checkpoint 在 <OBS_TRAIN_ROOT>/outputs/<NAME>/ckpts/
 #   AUTO_RESUME 1 = 从 OBS / efs 上本实验最新的 checkpoint 续训（默认 1）
+#   NAME        实验名（默认 exp1023_pi3_3B_datamix_all_v9-5-sub00_filter）
+#   UPLOAD      0 = 训练结束后不往 efs 传 checkpoint / tensorboard（冒烟测试用）
+# 脚本参数会原样追加到训练命令末尾（hydra 覆盖，后写的生效），例如冒烟测试：
+#   NAME=smoke_exp1023 AUTO_RESUME=0 UPLOAD=0 bash <本脚本> train.num_epoch=1 train.iters_per_epoch=20 test.iters_per_test=2 train.print_freq=1
 set -euo pipefail
 
 echo "==> Start Pi3 training (datamix_all_v9-5-sub00)"
@@ -163,7 +167,7 @@ echo "NUM_PROCESSES=${NUM_PROCESSES}"
 export USE_CHECKPOINT=False
 # export ASCEND_LAUNCH_BLOCKING=1
 export HYDRA_FULL_ERROR=1
-NAME="exp1023_pi3_3B_datamix_all_v9-5-sub00_filter"
+NAME="${NAME:-exp1023_pi3_3B_datamix_all_v9-5-sub00_filter}"
 
 # 实验结果（checkpoint、tensorboard）上传到贵阳 efs：${EXP_ROOT}/pi3sup/outputs/${NAME}/
 EXP_ROOT="${EXP_ROOT:-/efs-mi-pay-gy1/z00533370/exp}"
@@ -277,9 +281,15 @@ accelerate launch \
   loss.train_loss.w_unproj_global=1.0 \
   loss.train_loss.w_normalized_loss=1.0 \
   loss.test_loss.w_unproj_global=1.0 \
-  loss.test_loss.w_normalized_loss=1.0
+  loss.test_loss.w_normalized_loss=1.0 \
+  "$@"
 
 echo "==> Training finished"
+
+if [ "${UPLOAD:-1}" != "1" ]; then
+    echo "==> UPLOAD=0, skip uploading checkpoint / tensorboard to efs"
+    exit 0
+fi
 
 # 获取 global rank，兼容 torchrun / ModelArts / MPI
 GLOBAL_RANK="${RANK:-${RANK_ID:-${OMPI_COMM_WORLD_RANK:-0}}}"
