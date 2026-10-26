@@ -125,6 +125,8 @@ run_one () {   # <model key> [K]: one model through engine.sh, in a subshell so 
         DEPTH_VMIN=0.1; DEPTH_VMAX=10.0
         REUSE_PRED_IF_EXISTS=1
         source ./scripts/lib/engine.sh
+        # engine.sh does not stop on a failed stage: require the metrics file of this model
+        [ -e "${ROOT_DIR}/metrics_${PRED_SUBDIR}.xlsx" ] || { echo "[ERROR] no ${ROOT_DIR}/metrics_${PRED_SUBDIR}.xlsx"; exit 4; }
     ) > "${LOGDIR}/${tag}.log" 2>&1 && echo "   ok (log ${LOGDIR}/${tag}.log)" || {
         echo "   FAILED, see ${LOGDIR}/${tag}.log"; tail -5 "${LOGDIR}/${tag}.log" | sed 's/^/   | /'; FAILED+=("${tag}"); }
 }

@@ -15,6 +15,22 @@ from evo.core.trajectory import PosePath3D, PoseTrajectory3D
 from evo.tools import file_interface, plot
 from scipy.spatial.transform import Rotation
 
+# Display-only keyword arguments that some evo versions do not accept (e.g. ape(est_name=...)); dropped for those
+# versions so the metrics are unchanged. Any other unsupported argument still raises.
+_EVO_DISPLAY_ONLY_KWARGS = {"ref_name", "est_name"}
+
+
+def _evo_call(fn, *args, **kwargs):
+    import inspect
+    params = inspect.signature(fn).parameters
+    if not any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        unsupported = [k for k in kwargs if k not in params]
+        bad = [k for k in unsupported if k not in _EVO_DISPLAY_ONLY_KWARGS]
+        if bad:
+            raise TypeError(f"{fn.__module__}.{fn.__name__} does not accept {bad}; check the installed evo version")
+        kwargs = {k: v for k, v in kwargs.items() if k in params}
+    return fn(*args, **kwargs)
+
 
 def todevice(batch, device, callback=None, non_blocking=False):
     """Transfer some variables to another device (i.e. GPU, CPU:torch, CPU:numpy).
@@ -253,7 +269,7 @@ def eval_metrics(pred_traj, gt_traj=None, seq="", filename="", sample_stride=1, 
     traj_ref = gt_traj
     traj_est = pred_traj
 
-    ate_result = main_ape.ape(
+    ate_result = _evo_call(main_ape.ape,
         traj_ref,
         traj_est,
         est_name="traj",
@@ -270,7 +286,7 @@ def eval_metrics(pred_traj, gt_traj=None, seq="", filename="", sample_stride=1, 
     delta_list = [1]
     rpe_rots, rpe_transs = [], []
     for delta in delta_list:
-        rpe_rots_result = main_rpe.rpe(
+        rpe_rots_result = _evo_call(main_rpe.rpe,
             traj_ref,
             traj_est,
             est_name="traj",
@@ -287,7 +303,7 @@ def eval_metrics(pred_traj, gt_traj=None, seq="", filename="", sample_stride=1, 
         rpe_rots.append(rot)
 
     for delta in delta_list:
-        rpe_transs_result = main_rpe.rpe(
+        rpe_transs_result = _evo_call(main_rpe.rpe,
             traj_ref,
             traj_est,
             est_name="traj",
@@ -374,7 +390,7 @@ def eval_metrics_first_pose_align_last_pose(
             poses_se3=[pred_traj.poses_se3[-1]], timestamps=[pred_traj.timestamps[-1]]
         )
 
-    ate_result = main_ape.ape(
+    ate_result = _evo_call(main_ape.ape,
         gt_traj,
         pred_traj,
         est_name="traj",
