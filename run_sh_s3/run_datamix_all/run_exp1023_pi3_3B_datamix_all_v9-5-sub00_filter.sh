@@ -31,6 +31,7 @@ echo "==> Start Pi3 training (datamix_all_v9-5-sub00)"
 CODE_DIR="${CODE_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "${CODE_DIR}"
 export PYTHONPATH="${CODE_DIR}"
+export PYTHONUNBUFFERED=1   # print 与 logging 按实际顺序写进日志（否则 print 被缓冲，到进程退出才出现在末尾）
 echo "CODE_DIR=${CODE_DIR}  ($(git log --oneline -1 2>/dev/null || echo 'not a git repo'))"
 
 # 预训练权重（dinov3_vith16plus）
