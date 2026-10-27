@@ -22,6 +22,7 @@
 #   AUTO_RESUME 1 = 从 OBS / efs 上本实验最新的 checkpoint 续训（默认 1）
 #   NAME        实验名（默认 exp1023_pi3_3B_datamix_all_v9-5-sub00_filter）
 #   UPLOAD      0 = 训练结束后不往 efs 传 checkpoint / tensorboard（冒烟测试用）
+#   MEM_LOG_INTERVAL 每隔多少秒打印一次本节点内存（默认 300，0 = 关闭）
 #   DATA        数据配置名（默认 datamix_all_v9-5-sub00；冒烟用 datamix_all_v9-5-sub00_smoke，只有 4 个小数据集）
 # 脚本参数会原样追加到训练命令末尾（hydra 覆盖，后写的生效），例如冒烟测试：
 #   DATA=datamix_all_v9-5-sub00_smoke NAME=smoke_exp1023 AUTO_RESUME=0 UPLOAD=0 bash <本脚本> train.num_epoch=1 train.iters_per_epoch=20 train.lr_scheduler.pct_start=0.2 test.iters_per_test=2 train.print_freq=1
@@ -267,6 +268,19 @@ fi
 # -----------------------------
 # Training Process（参数与 run_exp0604 相同，只有 data / name / worker_reseed 不同）
 # -----------------------------
+# 内存监控：每 MEM_LOG_INTERVAL 秒（默认 300，设 0 关闭）打印本节点内存与占用最多的几个进程，定位 worker 内存增长 / OOM
+MEM_LOG_INTERVAL="${MEM_LOG_INTERVAL:-300}"
+if [ "${MEM_LOG_INTERVAL}" -gt 0 ] 2>/dev/null; then
+    (
+        while sleep "${MEM_LOG_INTERVAL}"; do
+            echo "[mem] $(date '+%F %T') node=${NODE_RANK} $(free -g | awk '/^Mem:/{printf "used=%sG free=%sG avail=%sG total=%sG", $3, $4, $7, $2}')"
+            ps -eo rss,cmd --sort=-rss | grep -E "python" | grep -v grep | head -3 | awk '{printf "[mem]   %.1fG %s %s\n", $1/1048576, $2, $3}'
+        done
+    ) &
+    MEM_LOG_PID=$!
+    trap 'kill ${MEM_LOG_PID} 2>/dev/null || true' EXIT
+fi
+
 echo "==> Start training"
 accelerate launch \
   --config_file configs/accelerate/ddp.yaml \
