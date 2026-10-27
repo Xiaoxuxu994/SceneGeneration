@@ -46,11 +46,13 @@ def create_dataloader(cfg, mode):
         cfg_dataloader = cfg.train_dataloader
         batch_size = cfg.train.batch_size
         num_workers = cfg.train.num_workers
+        sec = cfg.train
     else:
         cfg_dataset = cfg.test_dataset
         cfg_dataloader = cfg.test_dataloader
         batch_size = cfg.test.batch_size
         num_workers = cfg.test.num_workers
+        sec = cfg.test
 
     if isinstance(cfg_dataset, str):
         dataset = eval(cfg_dataset) 
@@ -130,8 +132,10 @@ def create_dataloader(cfg, mode):
         batch_sampler=batch_sampler,
         num_workers=num_workers,
         pin_memory=True,
-        persistent_workers=True,
-        prefetch_factor=2,
+        # persistent_workers=False：每个 epoch 结束后 worker 退出重建，释放 worker 里慢慢涨上去的内存
+        #（缓存 pkl 的 Python 对象在 fork 后因引用计数被逐步复制、moxing 读 OBS 的残留等），默认 True 与原来一致
+        persistent_workers=bool(sec.get('persistent_workers', True)) and num_workers > 0,
+        prefetch_factor=(int(sec.get('prefetch_factor', 2)) if num_workers > 0 else None),
         worker_init_fn=(functools.partial(_reseed_worker, base_seed=cfg.train.base_seed, rank=rank)
                         if mode == 'train' and cfg.train.get('worker_reseed', False) else None),
         collate_fn=unified_collate_fn

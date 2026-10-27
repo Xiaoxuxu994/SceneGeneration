@@ -3,6 +3,8 @@
 # 训练超参与 run_exp0604_v09-5_fixview_randres_scratch_uploss.sh 完全一致，只换了数据配置和实验名，并适配贵阳环境：
 #   - 数据：data=datamix_all_v9-5-sub00（过滤开关见该配置文件头；数据读 OBS；启动前把需要的索引缓存拷到节点本地盘）
 #   - ++train.worker_reseed=true：各卡 / 各 worker 用不同随机数流（旧版所有 worker 同一条流，增强和选帧会重复）
+#   - ++train/test.persistent_workers=false：worker 每个 epoch 重建、验证用的 worker 只在验证时存在，
+#     避免 dataloader worker 内存随时间增长把节点内存撑满（DataLoader worker is killed by signal: Killed）
 #   - 断点续训：同原脚本，从 ModelArts 自动同步到 OBS 的训练输出里找最新 checkpoint（改成贵阳桶，见 OBS_TRAIN_ROOT），
 #     另外也查 efs 上传目录，取两边编号最大的
 #   - 单机 8 卡时不依赖 ModelArts 的多机环境变量（没有就按单机处理）
@@ -277,6 +279,8 @@ accelerate launch \
   train=train_pi3_highres \
   data="${DATA}" \
   ++train.worker_reseed=true \
+  ++train.persistent_workers=false \
+  ++test.persistent_workers=false \
   name="${NAME}" \
   work_dir="${TRAIN_URL}" \
   model.use_global_points=False \
