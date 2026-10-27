@@ -36,15 +36,22 @@ def _ensure_moxing():
     if not _moxing_checked:
         _moxing_checked = True
         try:
+            import logging
             os.environ.setdefault("MOX_SILENT_MODE", "1")
+            # moxing 写的是 root logger，导入时会改 root 的级别 / handler。不能用 runtime.reset_logger(CRITICAL)
+            # 压它的日志：那会把 root 设成 CRITICAL，训练器（hydra 的 logging）此后的 INFO 全被吞掉，
+            # 训练日志里看不到 optimizer / Running training / Epoch 等行。这里导入后把 root 恢复原样。
+            root = logging.getLogger()
+            level, handlers = root.level, list(root.handlers)
             import moxing as mox
             mox.file.set_auth(path_style=True, is_secure=False, retry=10, retry_wait=1)
-            try:   # 压掉 moxing 自身日志，避免多 worker 高频读取时刷屏
-                import logging
-                from moxing.framework.util import runtime
-                runtime.reset_logger(level=logging.CRITICAL)
-            except Exception:
-                pass
+            root.setLevel(level)
+            for h in list(root.handlers):
+                if h not in handlers:
+                    root.removeHandler(h)
+            for h in handlers:
+                if h not in root.handlers:
+                    root.addHandler(h)
             _moxing_mod = mox
         except ImportError:
             _moxing_mod = None
