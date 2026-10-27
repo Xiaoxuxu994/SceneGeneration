@@ -478,7 +478,7 @@ class BaseDataset(EasyDataset):
 
                     view['depthmap'][~view['valid_mask']] = 0.0
 
-                    assert view['valid_mask'].sum() > 0
+                    assert view['valid_mask'].sum() > 0, f"[{self.dataset_label}] empty valid_mask for view {view_name(view)}"
 
                     if 'normal' not in view:
                         view['normal'] = None

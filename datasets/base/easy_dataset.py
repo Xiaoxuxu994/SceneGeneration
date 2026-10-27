@@ -164,7 +164,25 @@ class CatDataset (EasyDataset):
 
         if other is not None:
             new_idx = (new_idx, *other)
-        return dataset[new_idx]
+        try:
+            return dataset[new_idx]
+        except Exception as e:
+            # 某个数据集在自身重试次数内都没取到有效样本（例如连续几帧 valid_mask 全空）：
+            # 换一个数据集取样本，避免一个 worker 抛异常让整个多机训练退出。连续失败 8 次才真正报错。
+            label = getattr(getattr(dataset, "dataset", dataset), "dataset_label", type(dataset).__name__)
+            print(f"[CatDataset] {label} idx={new_idx} failed ({type(e).__name__}: {str(e)[:200]}); "
+                  f"falling back to another dataset", flush=True)
+            last = e
+            sizes = np.diff(np.concatenate([[0], self._cum_sizes]))
+            p = sizes / sizes.sum()
+            for _ in range(8):
+                j = int(np.random.choice(len(self.datasets), p=p))
+                k = int(np.random.randint(0, sizes[j]))
+                try:
+                    return self.datasets[j][(k, *other) if other is not None else k]
+                except Exception as e2:
+                    last = e2
+            raise last
 
     @property
     def _resolutions(self):
