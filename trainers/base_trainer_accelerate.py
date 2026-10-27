@@ -578,7 +578,14 @@ class BaseTrainer:
                             norm += local_norm.item() ** 2
                         return norm ** 0.5
 
-                    grad_norm = get_gradient_norm(self.model.parameters())
+                    # DeepSpeed（ZeRO-2）下梯度在 DeepSpeed 自己的分片缓冲里，param.grad 是 None，
+                    # 逐参数求范数恒为 0；accelerate 的 backward 已经调用了 engine.step()，直接取它算好的全局梯度范数
+                    ds_norm = (self.model.get_global_grad_norm()
+                               if hasattr(self.model, "get_global_grad_norm") else None)
+                    if ds_norm is not None:
+                        grad_norm = float(ds_norm)
+                    else:
+                        grad_norm = get_gradient_norm(self.model.parameters())
                 else:
                     grad_norm = 0.0
 
