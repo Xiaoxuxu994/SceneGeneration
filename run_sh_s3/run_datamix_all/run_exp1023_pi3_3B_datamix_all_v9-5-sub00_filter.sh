@@ -26,6 +26,20 @@
 #   （步数很少时要调大 pct_start：OneCycle 预热结束步 = pct_start × 总步数 - 1，等于 0 会除零报错）
 set -euo pipefail
 
+# ModelArts 会把作业参数以 --key=value 追加到启动命令后面（如 --train_url=... --HCCL_CONNECT_TIMEOUT=7200）。
+# 这些不是 hydra 参数，直接传给 train_pi3.py 会报 unrecognized arguments：这里拦下来，
+#   --train_url=X -> TRAIN_URL=X；其余 --KEY=VALUE -> export KEY=VALUE（HCCL_* 等环境变量）。
+# 不以 -- 开头的参数（hydra 覆盖，如 train.num_epoch=1）原样留给训练命令。
+HYDRA_ARGS=()
+for arg in "$@"; do
+    case "${arg}" in
+        --train_url=*) TRAIN_URL="${arg#--train_url=}"; TRAIN_URL="${TRAIN_URL%/}" ;;
+        --*=*)         kv="${arg#--}"; export "${kv%%=*}=${kv#*=}"; echo "[args] export ${kv%%=*}=${kv#*=}" ;;
+        --*)           echo "[args] ignore ${arg}" ;;
+        *)             HYDRA_ARGS+=("${arg}") ;;
+    esac
+done
+
 echo "==> Start Pi3 training (datamix_all_v9-5-sub00)"
 
 CODE_DIR="${CODE_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
@@ -158,7 +172,7 @@ fi
 export DEVICE_TYPE=ascend
 export TOKENIZERS_PARALLELISM=false
 export HCCL_WHITELIST_DISABLE=1
-export HCCL_CONNECT_TIMEOUT=7200
+export HCCL_CONNECT_TIMEOUT="${HCCL_CONNECT_TIMEOUT:-7200}"
 export USE_MEMARTS=0
 
 # 多机参数（ModelArts 多机作业会设置这些变量；单机手动启动时按单机 8 卡）
@@ -293,7 +307,7 @@ accelerate launch \
   loss.train_loss.w_normalized_loss=1.0 \
   loss.test_loss.w_unproj_global=1.0 \
   loss.test_loss.w_normalized_loss=1.0 \
-  "$@"
+  ${HYDRA_ARGS[@]+"${HYDRA_ARGS[@]}"}
 
 echo "==> Training finished"
 
