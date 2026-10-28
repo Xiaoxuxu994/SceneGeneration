@@ -40,6 +40,22 @@ except Exception:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "hydra_colorlog"])
 PY
 
+python - <<'PY'
+try:
+    import evo
+except Exception:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "evo"])
+PY
+
+python - <<'PY'
+try:
+    import pyquaternion
+except Exception:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyquaternion"])
+PY
+
 # -----------------------------
 # 索引缓存拷到本地盘（每个节点一次；同名同大小的跳过）
 # -----------------------------

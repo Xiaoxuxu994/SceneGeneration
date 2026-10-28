@@ -486,7 +486,7 @@ train_dataset:
     pct_disable: true
     min_baseline_ratio: 0.05
     baseline_retries: 3
-    use_dataset_masks: true
+    use_dataset_masks: false   # 关闭：并入 depth_masks 后几乎每个 8 帧样本都有一帧有效像素为 0，10 次重试全失败（profile 实测单样本 841s）
 train_dataloader:
   drop_last: true
   shuffle: true

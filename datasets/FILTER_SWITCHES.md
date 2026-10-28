@@ -26,7 +26,7 @@
 | DL3DV | `pct_twice: false` | 98 分位只在裁剪后截一次（旧版前后各一次） |
 | DL3DV | `rgb_root` | 原先写死的 RGB 目录改成参数，默认值不变 |
 | DL3DV | `extra_valid` | 返回 `depth_mask`（conf > 0.25），配合 `use_dataset_masks` |
-| CO3DV2 | `extra_valid` | 自带 `depth_masks` 随深度一起裁剪缩放后返回，配合 `use_dataset_masks` |
+| CO3DV2 | `extra_valid` | 自带 `depth_masks` 随深度一起裁剪缩放后返回，配合 `use_dataset_masks` 。**已在 `_fix` / `_fix_obs` / `sub00` 配置里关闭**：并入后几乎每个 8 帧样本都有一帧有效像素为 0，取样本 10 次重试全失败（`tools/profile_data.py` 实测单样本 841s，还会让训练进程抛异常退出）|
 | ARKitScenes | `conf_min: 2` | 读自带的 `confidence/`（0/1/2），只保留 ≥ conf_min 的像素，配合 `use_dataset_masks` |
 | Habitat | `pass_z_far: true` | 配置里的 `z_far` 真正传给 BaseDataset（旧版被构造函数截下，不起作用） |
 

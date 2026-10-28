@@ -7,7 +7,7 @@
 #       pct_disable: true      不做 98 分位截断，只保留 z_far（合成 / 渲染类数据集）
 #       pct_valid_only: true   98 分位只在有效像素上算（Matterport3D、ScanNet、MegaDepth、Mapillary）
 #       min_baseline_ratio: 0.05, baseline_retries: 3   视差不足时同一序列重新选帧（全部数据集）
-#       use_dataset_masks: true  自带 depth_masks 并入 valid_mask（CO3DV2）
+#       use_dataset_masks: CO3DV2 已关闭（并入 depth_masks 后几乎每个样本都有空帧，见 tools/profile_data.py 结果）
 #       pass_z_far: true       Habitat 的 z_far 真正生效
 #     违例点、边缘飞点过滤还没有接入训练；
 #   - 每个数据集加 path_remap（efs 前缀 -> 贵阳 OBS）与 cache_dir。data_root 仍是 efs 路径（缓存文件名按它的哈希命名）。
@@ -486,7 +486,7 @@ train_dataset:
     pct_disable: true
     min_baseline_ratio: 0.05
     baseline_retries: 3
-    use_dataset_masks: true
+    use_dataset_masks: false   # 关闭：并入 depth_masks 后几乎每个 8 帧样本都有一帧有效像素为 0，10 次重试全失败（profile 实测单样本 841s）
     path_remap:
       /efs-m3ga/z00533370/reliev3r_data/CO3Dv2_decode: obs://bucket-471/z00533370/dataset/CO3Dv2_decode
       /efs-m3ga/z00818731/co3dv2-cams: obs://bucket-471/y00959808/data/sr_datasets/processed/co3dv2-cams
