@@ -13,6 +13,7 @@
 #   GPUS      训练卡数，默认按云道环境自动取 MA_NUM_HOSTS × MA_NUM_GPUS（单机 8）
 #   PROCS     并发测试的进程数，默认 每节点卡数 × WORKERS（= 训练时一个节点上的 worker 数）；0 = 跳过
 #   SECONDS_CONC=600  并发测试时长
+#   CONC_EACH=0  >0 时逐个数据集单独做并发测试（每个数据集测这么多秒，例如 120），找出并发下才变慢的数据集
 #   OUT_ROOT  结果目录（默认 /efs-mi-pay-gy1/z00533370/exp/profile_data/<时间>_<节点>x<卡>_w<worker>/node<编号>）
 # 在云道上按训练同样的节点数提交（如 2 节点 = 16 卡），每个节点各自测、同时压 OBS，结果分 node0/node1… 存放。
 #   LOCAL_CACHE 索引缓存拷到的本地目录（默认 /cache/dataset_cache；设成空则直接读 OBS）
@@ -120,6 +121,7 @@ WORKERS="${WORKERS:-4}"                                   # 与训练脚本的 t
 GPUS="${GPUS:-$((NNODES * CARDS_PER_NODE))}"
 PROCS="${PROCS:-$((CARDS_PER_NODE * WORKERS))}"
 SECONDS_CONC="${SECONDS_CONC:-600}"
+CONC_EACH="${CONC_EACH:-0}"                              # >0：逐个数据集做并发测试，每个数据集多少秒
 TAG="${PROFILE_TAG:-$(date +%m%d_%H%M)}"
 OUT_ROOT="${OUT_ROOT:-/efs-mi-pay-gy1/z00533370/exp/profile_data/${TAG}_${NNODES}x${CARDS_PER_NODE}_w${WORKERS}/node${NODE_RANK}}"
 mkdir -p "${OUT_ROOT}"
@@ -129,7 +131,7 @@ echo "             N=${N} PROCS=${PROCS} SECONDS=${SECONDS_CONC} OUT=${OUT_ROOT}
 # shellcheck disable=SC2086
 python tools/profile_data.py --config "${DATA_CFG}" ${DATASETS:+--datasets ${DATASETS}} \
     --n "${N}" --workers "${WORKERS}" --gpus "${GPUS}" --procs "${PROCS}" --seconds "${SECONDS_CONC}" \
-    --cards-per-node "${CARDS_PER_NODE}" \
+    --cards-per-node "${CARDS_PER_NODE}" --conc-each "${CONC_EACH}" \
     --out "${OUT_ROOT}" 2>&1 | tee "${OUT_ROOT}/profile.log"
 
 echo "==> finished: ${OUT_ROOT}/profile.log  ${OUT_ROOT}/profile_per_dataset.tsv"

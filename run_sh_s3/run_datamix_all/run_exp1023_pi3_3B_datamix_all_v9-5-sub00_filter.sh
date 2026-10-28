@@ -5,6 +5,7 @@
 #   - ++train.worker_reseed=true：各卡 / 各 worker 用不同随机数流（旧版所有 worker 同一条流，增强和选帧会重复）
 #   - ++train/test.persistent_workers=false：worker 每个 epoch 重建、验证用的 worker 只在验证时存在，
 #     避免 dataloader worker 内存随时间增长把节点内存撑满（DataLoader worker is killed by signal: Killed）
+#   - ++train.straggler_log_freq=20：每 20 步打印各卡等数据最久的一次和对应数据集（[straggler] 行），定位拖慢整步的数据集
 #   - 断点续训：同原脚本，从 ModelArts 自动同步到 OBS 的训练输出里找最新 checkpoint（改成贵阳桶，见 OBS_TRAIN_ROOT），
 #     另外也查 efs 上传目录，取两边编号最大的
 #   - 单机 8 卡时不依赖 ModelArts 的多机环境变量（没有就按单机处理）
@@ -297,6 +298,7 @@ accelerate launch \
   ++train.worker_reseed=true \
   ++train.persistent_workers=false \
   ++test.persistent_workers=false \
+  ++train.straggler_log_freq=20 \
   name="${NAME}" \
   work_dir="${TRAIN_URL}" \
   model.use_global_points=False \

@@ -10,6 +10,8 @@
      以及 N 张卡时"某张卡这一步抽到慢数据集"的概率；
   3) 可选 --procs P --seconds S：P 个进程同时按权重混合取样（模拟一个节点上 8 卡 × worker 并发读 OBS），
      看并发下每秒能出多少样本、单样本耗时是否被拖慢。
+  4) 可选 --conc-each S：逐个数据集单独做并发测试（P 个进程只取这一个数据集，各 S 秒），
+     得到每个数据集在并发下的单样本耗时和每卡供数速度，找出"并发下才变慢"的数据集。
 
 用法（仓库根目录，和训练同一个环境；缓存先拷到本地盘更接近训练）：
     DATASET_CACHE_DIR=/cache/dataset_cache python tools/profile_data.py --n 6
@@ -113,6 +115,7 @@ def main():
     ap.add_argument("--gpus", type=int, default=128, help="训练卡数（用于估算慢样本拖慢整步的概率）")
     ap.add_argument("--procs", type=int, default=0, help=">0 时做并发测试：多少个进程同时取样（模拟一个节点上 卡数 × worker）")
     ap.add_argument("--cards-per-node", type=int, default=8, help="并发测试折算到每张卡的供数速度")
+    ap.add_argument("--conc-each", type=int, default=0, help=">0 时逐个数据集做并发测试，每个数据集测这么多秒")
     ap.add_argument("--step-s", type=float, default=2.4, help="模型每步计算耗时（8 卡冒烟实测约 2.4s），用来判断数据是否供得上")
     ap.add_argument("--seconds", type=int, default=300)
     ap.add_argument("--seed", type=int, default=0)
@@ -211,6 +214,31 @@ def main():
         single = {r["dataset"]: r["mean_s"] for r in rows}
         for n in sorted(per, key=lambda k: -np.mean(per[k]))[:8]:
             print(f"      {n:16s} 并发 mean {np.mean(per[n]):6.2f}s (n={len(per[n])})  单进程 {single[n]:6.2f}s")
+    # ---------------- 逐数据集并发测试 ----------------
+    if args.conc_each > 0 and args.procs > 0:
+        import multiprocessing as mp
+        ctx = mp.get_context("fork")
+        single = {r["dataset"]: r["mean_s"] for r in rows}
+        need = 1.0 / args.step_s
+        print(f"\n==> 逐数据集并发测试：每个数据集 {args.procs} 个进程同时取样 {args.conc_each}s", flush=True)
+        conc_rows = []
+        for r in rows:
+            n = r["dataset"]
+            t0 = time.time()
+            with ctx.Pool(args.procs) as pool:
+                res = pool.map(_mix_worker, [(i, [n], np.array([1.0]), args.conc_each, args.frames, len(resolutions))
+                                             for i in range(args.procs)])
+            wall = time.time() - t0
+            tt = np.array([t for x in res for _, t in x]) if any(res) else np.array([np.nan])
+            per_card = len(tt) / wall / max(args.cards_per_node, 1)
+            conc_rows.append((n, single[n], float(np.nanmean(tt)), float(np.nanpercentile(tt, 95)), per_card))
+            print(f"    {n:16s} 单进程 {single[n]:6.2f}s | 并发 mean {np.nanmean(tt):6.2f}s p95 {np.nanpercentile(tt, 95):6.2f}s "
+                  f"(x{np.nanmean(tt) / max(single[n], 1e-9):.1f}) | 每卡 {per_card:.3f} 样本/秒 "
+                  f"{'OK' if per_card >= need else '供不上'}", flush=True)
+        with open(os.path.join(args.out, "profile_conc_each.tsv"), "w") as f:
+            f.write("dataset\tsingle_mean_s\tconc_mean_s\tconc_p95_s\tper_card_samples_per_s\n")
+            for row in conc_rows:
+                f.write("\t".join([row[0]] + [f"{v:.3f}" for v in row[1:]]) + "\n")
     print(f"\n==> 结果：{os.path.join(args.out, 'profile_per_dataset.tsv')}")
 
 

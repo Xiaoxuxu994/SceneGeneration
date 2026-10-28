@@ -508,6 +508,10 @@ class BaseTrainer:
             )
         )
 
+        # 慢数据定位：每 straggler_log_freq 步汇总各卡这段时间里"等数据"最久的一次和对应数据集（0 = 关闭）
+        strag_freq = int(self.cfg.train.get("straggler_log_freq", 0) or 0)
+        strag_win, t_prev = [], time.time()
+
         for it, batch in enumerate(metric_logger.log_every(
             self.train_loader, self.cfg.train.print_freq, header
         )):
@@ -515,6 +519,8 @@ class BaseTrainer:
                 break
 
             dataset_name = self._get_dataset_name(batch)
+            if strag_freq > 0:
+                strag_win.append((time.time() - t_prev, dataset_name))
 
             with self.accelerator.accumulate(self.model):
                 # move to device
@@ -636,7 +642,47 @@ class BaseTrainer:
 
                 self.global_step = start_steps
 
+            if strag_freq > 0:
+                if (it + 1) % strag_freq == 0:
+                    self._log_stragglers(strag_win, epoch, it)
+                    strag_win = []
+                t_prev = time.time()
+
         return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+
+    def _log_stragglers(self, window, epoch, it):
+        """各卡把本窗口内等数据最久的一次（耗时、数据集）和平均等待发给 rank 0，rank 0 打印最慢的几张卡
+        与按数据集汇总的最长等待。等数据的卡会让其余所有卡在梯度同步时陪等，所以整步耗时由这里最慢的卡决定。"""
+        if not window:
+            return
+        worst = max(window, key=lambda x: x[0])
+        local = dict(rank=self.accelerator.process_index, worst_s=float(worst[0]), worst_ds=str(worst[1]),
+                     mean_s=float(sum(x[0] for x in window) / len(window)),
+                     per_ds={})
+        for t, d in window:
+            d = str(d)
+            a = local["per_ds"].setdefault(d, [0, 0.0, 0.0])
+            a[0] += 1; a[1] += t; a[2] = max(a[2], t)
+        if dist.is_available() and dist.is_initialized():
+            allv = [None] * dist.get_world_size()
+            dist.all_gather_object(allv, local)
+        else:
+            allv = [local]
+        if not self.accelerator.is_main_process:
+            return
+        allv.sort(key=lambda x: -x["worst_s"])
+        top = "  ".join(f"rank{x['rank']}:{x['worst_s']:.1f}s({x['worst_ds']})" for x in allv[:5])
+        means = [x["mean_s"] for x in allv]
+        self.log_info(f"[straggler] epoch {epoch} it {it + 1 - len(window)}-{it}: slowest data waits {top} | "
+                      f"mean wait per rank min {min(means):.2f}s max {max(means):.2f}s")
+        agg = {}
+        for x in allv:
+            for d, (n, tot, mx) in x["per_ds"].items():
+                b = agg.setdefault(d, [0, 0.0, 0.0])
+                b[0] += n; b[1] += tot; b[2] = max(b[2], mx)
+        rows = sorted(agg.items(), key=lambda kv: -kv[1][2])[:8]
+        self.log_info("[straggler]   by dataset (n / mean wait / max wait): " +
+                      "  ".join(f"{d} {n}/{tot / n:.1f}s/{mx:.1f}s" for d, (n, tot, mx) in rows))
 
     def log_all(self, output, step, prefix=""):        
         if 'log_keys' in output:
