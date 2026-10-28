@@ -49,6 +49,8 @@ CODE_DIR="${CODE_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "${CODE_DIR}"
 export PYTHONPATH="${CODE_DIR}"
 export PYTHONUNBUFFERED=1   # print 与 logging 按实际顺序写进日志（否则 print 被缓冲，到进程退出才出现在末尾）
+export DATA_VIEW_THREADS="${DATA_VIEW_THREADS:-8}"   # 每个样本 8 帧并发读 OBS（1 = 逐帧串行，原来的行为）；见 datasets/base/base_dataset.py
+echo "DATA_VIEW_THREADS=${DATA_VIEW_THREADS}"
 echo "CODE_DIR=${CODE_DIR}  ($(git log --oneline -1 2>/dev/null || echo 'not a git repo'))"
 
 # 预训练权重（dinov3_vith16plus）

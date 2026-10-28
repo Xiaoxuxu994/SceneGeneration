@@ -21,6 +21,25 @@ class _LowParallax(Exception):
     """所选帧的基线/深度低于 min_baseline_ratio：对同一条序列重新选帧。"""
 
 
+# ---------------------------------------------------------------------------
+# 样本内多帧并发读取
+# ---------------------------------------------------------------------------
+# 读 OBS 的耗时主要是每次请求的延迟（约 0.3s/次），各 loader 的 _get_views 都是逐帧串行调用 _load_one_view，
+# 8 帧的延迟叠加起来，一个样本 5–15s（tools/profile_data.py 实测 OBS 占 70–90%）。
+# 环境变量 DATA_VIEW_THREADS=N（>1）时，_get_views 里对 _load_one_view 的调用改为提交到 N 个线程并发执行，
+# 返回值先用占位对象代替，_get_views 结束后再按原顺序取回结果。所有 loader 都是
+#   for ...: views.append(self._load_one_view(..., rng=rng)); return views
+# 这种写法，不需要改 loader。每帧的 rng 由主线程按顺序从样本 rng 派生（结果可复现，线程间不共享 Generator）。
+DATA_VIEW_THREADS = int(os.environ.get("DATA_VIEW_THREADS", "1") or 1)
+
+
+class _PendingView:
+    __slots__ = ("future",)
+
+    def __init__(self, future):
+        self.future = future
+
+
 def baseline_over_depth(views):
     """相机中心两两距离的中位数 ÷ 各帧有效深度中位数的中位数（与 tools/quality_eval 的定义一致）。"""
     centers = np.stack([np.asarray(v['camera_pose'])[:3, 3] for v in views])
@@ -179,6 +198,36 @@ class BaseDataset(EasyDataset):
         before = len(self.sequences)
         self.sequences = [s for s in list(self.sequences) if not (keys(s) & names)]
         print(f"[{self.dataset_label}] seq_blacklist: {before} -> {len(self.sequences)} sequences", flush=True)
+
+    def _view_pool(self):
+        """每个进程（dataloader worker）各自一个线程池；fork 之后线程不会被继承，按 pid 重建。"""
+        pool = getattr(self, "_view_pool_obj", None)
+        if pool is None or getattr(self, "_view_pool_pid", None) != os.getpid():
+            from concurrent.futures import ThreadPoolExecutor
+            pool = ThreadPoolExecutor(max_workers=DATA_VIEW_THREADS, thread_name_prefix="view")
+            self._view_pool_obj, self._view_pool_pid = pool, os.getpid()
+        return pool
+
+    def _get_views_maybe_parallel(self, idx, resolution, rng):
+        if DATA_VIEW_THREADS <= 1 or not hasattr(self, "_load_one_view"):
+            return self._get_views(idx, resolution, rng)
+        pool = self._view_pool()
+        serial = self._load_one_view            # 绑定方法
+
+        def child(r):
+            return np.random.default_rng(int(r.integers(0, 2 ** 63 - 1))) if isinstance(r, np.random.Generator) else r
+
+        def deferred(*args, **kwargs):
+            args = tuple(child(a) for a in args)
+            kwargs = {k: child(v) for k, v in kwargs.items()}
+            return _PendingView(pool.submit(serial, *args, **kwargs))
+
+        self._load_one_view = deferred           # 实例属性遮住类方法，只在这次 _get_views 内生效
+        try:
+            views = self._get_views(idx, resolution, rng)
+        finally:
+            del self._load_one_view
+        return [v.future.result() if isinstance(v, _PendingView) else v for v in views]
 
     def _sample_frame_ids(self, frame_ids, rng):
         """
@@ -442,7 +491,7 @@ class BaseDataset(EasyDataset):
                 set_depth_filter(self.pct_valid_only, self.pct_disable)
                 fio.set_path_remap(getattr(self, "path_remap", None))
                 self._n_load += 1
-                views = self._get_views(idx, resolution, self._rng)
+                views = self._get_views_maybe_parallel(idx, resolution, self._rng)
 
                 # assert len(views) == self.frame_num
                 if self.shuffle and is_train:

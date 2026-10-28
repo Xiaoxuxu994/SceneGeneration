@@ -51,3 +51,10 @@ python -m datasets.scannet_dataset --cache_dir obs://bucket-471/xxx/dataset_cach
 位姿行列式、焦距；`--vis` 时保存点云与图像。全部参数见 `datasets/base/debug.py`。
 
 测试：`python tests/test_fileio.py`（假 moxing，不需要真实数据）。
+
+## 样本内多帧并发读取
+
+`DATA_VIEW_THREADS=N`（环境变量，N>1 生效；训练和 profile 启动脚本默认 8）：`BaseDataset.__getitem__` 里各 loader 对
+`_load_one_view` 的逐帧调用改为提交到 N 个线程并发执行，按原顺序取回。读 OBS 主要耗在每次请求的延迟上（约 0.3s/次），
+8 帧串行时一个样本 5–15s，并发后接近单帧耗时。每帧的 rng 由主线程从样本 rng 依次派生，同一 seed 结果可复现；
+任一帧抛异常时照常进入重试。`debug.py` / `gt_audit.py` 直接调用 `_get_views`，不受影响。测试：`python tests/test_parallel_views.py`。

@@ -29,6 +29,8 @@ CODE_DIR="${CODE_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "${CODE_DIR}"
 export PYTHONPATH="${CODE_DIR}"
 export PYTHONUNBUFFERED=1
+export DATA_VIEW_THREADS="${DATA_VIEW_THREADS:-8}"   # 每个样本 8 帧并发读 OBS（1 = 逐帧串行，原来的行为）；见 datasets/base/base_dataset.py
+echo "DATA_VIEW_THREADS=${DATA_VIEW_THREADS}"
 echo "CODE_DIR=${CODE_DIR}  ($(git log --oneline -1 2>/dev/null || echo 'not a git repo'))"
 
 # 依赖：与训练脚本相同
