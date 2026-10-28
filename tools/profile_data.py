@@ -111,7 +111,9 @@ def main():
     ap.add_argument("--frames", type=int, default=8)
     ap.add_argument("--workers", type=int, default=4, help="训练时每张卡的 dataloader worker 数（用于估算）")
     ap.add_argument("--gpus", type=int, default=128, help="训练卡数（用于估算慢样本拖慢整步的概率）")
-    ap.add_argument("--procs", type=int, default=0, help=">0 时做并发测试：多少个进程同时取样")
+    ap.add_argument("--procs", type=int, default=0, help=">0 时做并发测试：多少个进程同时取样（模拟一个节点上 卡数 × worker）")
+    ap.add_argument("--cards-per-node", type=int, default=8, help="并发测试折算到每张卡的供数速度")
+    ap.add_argument("--step-s", type=float, default=2.4, help="模型每步计算耗时（8 卡冒烟实测约 2.4s），用来判断数据是否供得上")
     ap.add_argument("--seconds", type=int, default=300)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="profile_data_out")
@@ -201,6 +203,10 @@ def main():
         tt = np.array([t for _, t in allr])
         print(f"    共 {len(allr)} 个样本，{len(allr) / wall:.2f} 样本/秒；单样本 mean {tt.mean():.2f}s "
               f"p50 {np.median(tt):.2f}s p95 {np.percentile(tt, 95):.2f}s max {tt.max():.2f}s")
+        per_card = len(allr) / wall / max(args.cards_per_node, 1)
+        need = 1.0 / args.step_s
+        print(f"    折算到每张卡（{args.cards_per_node} 卡/节点）：{per_card:.3f} 样本/秒；模型每步 {args.step_s}s 需要 ≥{need:.3f} 样本/秒 "
+              f"-> {'供得上' if per_card >= need else f'供不上，数据侧每步约 {1.0 / max(per_card, 1e-9):.1f}s'}")
         print("    与单进程相比（并发下变慢说明 OBS / CPU 成为瓶颈）：")
         single = {r["dataset"]: r["mean_s"] for r in rows}
         for n in sorted(per, key=lambda k: -np.mean(per[k]))[:8]:
