@@ -285,6 +285,8 @@ fi
 MEM_LOG_INTERVAL="${MEM_LOG_INTERVAL:-300}"
 if [ "${MEM_LOG_INTERVAL}" -gt 0 ] 2>/dev/null; then
     (
+        # 不继承 set -euo pipefail：ps | head 提前关管道会让 ps 收到 SIGPIPE，pipefail + -e 会让监控循环直接退出
+        set +eu +o pipefail
         while sleep "${MEM_LOG_INTERVAL}"; do
             echo "[mem] $(date '+%F %T') node=${NODE_RANK} $(free -g | awk '/^Mem:/{printf "used=%sG free=%sG avail=%sG total=%sG", $3, $4, $7, $2}')"
             ps -eo rss,cmd --sort=-rss | grep -E "python" | grep -v grep | head -3 | awk '{printf "[mem]   %.1fG %s %s\n", $1/1048576, $2, $3}'
