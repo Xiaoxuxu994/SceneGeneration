@@ -127,6 +127,13 @@ def create_dataloader(cfg, mode):
         rank=rank
     )
 
+    # 数据集缓存（几十 GB 的 Python 对象）在主进程里建好后冻结：fork 出的 dataloader worker 里，
+    # gc 的全量回收会改写所有对象的 gc 头，把共享内存页逐页复制一份（每个 worker 最后都变成一整份缓存，
+    # 节点内存被撑满、worker 被系统 kill）。gc.freeze() 把现有对象移出 gc 管理，worker 里的 gc 不再碰它们。
+    import gc
+    gc.collect()
+    gc.freeze()
+
     return data_loader(
         dataset=dataset,
         batch_sampler=batch_sampler,

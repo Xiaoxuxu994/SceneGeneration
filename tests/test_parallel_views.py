@@ -90,6 +90,42 @@ def test_parallel_exception_goes_to_retry():
         bd.DATA_VIEW_THREADS = 1
 
 
+class HandleToy(SlowToy):
+    """模拟 GTA-sfm：with 打开文件，把句柄传给 _load_one_view；with 结束后句柄失效。"""
+
+    class _H:
+        def __init__(self):
+            self.open = True
+
+        def close(self):
+            self.open = False
+
+    def _load_one_view(self, seq, k, rng, f=None):
+        assert f is None or f.open, "handle used after close"
+        return super()._load_one_view(seq, k, rng)
+
+    def _get_views(self, idx, resolution, rng):
+        seq = self.sequences[idx]
+        views = []
+        f = self._H()
+        try:
+            for k in range(self.frame_num):
+                views.append(self._load_one_view(seq, k, rng=rng, f=f))
+        finally:
+            f.close()
+        return views
+
+
+def test_parallel_with_open_handle_runs_inline():
+    bd.DATA_VIEW_THREADS = 8
+    try:
+        ds = HandleToy(frame_num=8)
+        views = ds._get_views_maybe_parallel(0, (TDF.W, TDF.H), np.random.default_rng(0))
+        assert [v['instance'] for v in views] == [str(k) for k in range(8)]
+    finally:
+        bd.DATA_VIEW_THREADS = 1
+
+
 def test_getitem_parallel_end_to_end():
     bd.DATA_VIEW_THREADS = 8
     try:

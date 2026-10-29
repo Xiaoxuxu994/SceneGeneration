@@ -217,9 +217,16 @@ class BaseDataset(EasyDataset):
         def child(r):
             return np.random.default_rng(int(r.integers(0, 2 ** 63 - 1))) if isinstance(r, np.random.Generator) else r
 
+        def holds_handle(v):
+            # 打开的文件 / h5 句柄（如 GTA-sfm 在 with h5_open(...) as f 里把 f 传进来）：with 结束后句柄就关了，
+            # 不能留到线程里再用，这一帧直接在当前线程同步读
+            return hasattr(v, "close") or type(v).__module__.startswith("h5py")
+
         def deferred(*args, **kwargs):
             args = tuple(child(a) for a in args)
             kwargs = {k: child(v) for k, v in kwargs.items()}
+            if any(holds_handle(v) for v in list(args) + list(kwargs.values())):
+                return serial(*args, **kwargs)
             return _PendingView(pool.submit(serial, *args, **kwargs))
 
         self._load_one_view = deferred           # 实例属性遮住类方法，只在这次 _get_views 内生效
