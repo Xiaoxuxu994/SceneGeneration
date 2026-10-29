@@ -23,6 +23,7 @@
 #   AUTO_RESUME 1 = 从 OBS / efs 上本实验最新的 checkpoint 续训（默认 1）
 #   NAME        实验名（默认 exp1023_pi3_3B_datamix_all_v9-5-sub00_filter）
 #   UPLOAD      0 = 训练结束后不往 efs 传 checkpoint / tensorboard（冒烟测试用）
+#   LOG_DIR     脚本输出另存一份的目录（默认 /efs-mi-pay-gy1/z00533370/exp/logs，文件名 <NAME>_node<N>_<时间>.log）
 #   MEM_LOG_INTERVAL 每隔多少秒打印一次本节点内存（默认 300，0 = 关闭）
 #   DATA        数据配置名（默认 datamix_all_v9-5-sub00；冒烟用 datamix_all_v9-5-sub00_smoke，只有 4 个小数据集）
 # 脚本参数会原样追加到训练命令末尾（hydra 覆盖，后写的生效），例如冒烟测试：
@@ -199,6 +200,15 @@ export USE_CHECKPOINT=False
 # export ASCEND_LAUNCH_BLOCKING=1
 export HYDRA_FULL_ERROR=1
 NAME="${NAME:-exp1023_pi3_3B_datamix_all_v9-5-sub00_filter}"
+
+# 本脚本之后的全部输出同时写一份到 efs，便于直接 grep（不用去 ModelArts 控制台下载日志）：
+#   ${LOG_DIR}/${NAME}_node<节点号>_<启动时间>.log
+LOG_DIR="${LOG_DIR:-/efs-mi-pay-gy1/z00533370/exp/logs}"
+if mkdir -p "${LOG_DIR}" 2>/dev/null; then
+    JOB_LOG="${LOG_DIR}/${NAME}_node${NODE_RANK}_$(date +%m%d_%H%M).log"
+    exec > >(tee -a "${JOB_LOG}") 2>&1
+    echo "JOB_LOG=${JOB_LOG}"
+fi
 
 # 实验结果（checkpoint、tensorboard）上传到贵阳 efs：${EXP_ROOT}/pi3sup/outputs/${NAME}/
 EXP_ROOT="${EXP_ROOT:-/efs-mi-pay-gy1/z00533370/exp}"
