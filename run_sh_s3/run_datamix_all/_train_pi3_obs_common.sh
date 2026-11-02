@@ -1,0 +1,386 @@
+#!/usr/bin/env bash
+# Pi3 3B（dinov3_huge+_3Bv2）在贵阳 OBS 数据上训练的公共启动逻辑。不要直接起正式实验：
+# 每个实验写一个 run_expXXXX_*.sh，在里面固定 NAME（实验名）和 DATA（configs/data/ 下的数据配置名），再调用本脚本。
+# 数据迭代只改 configs/data/<DATA>.yaml（每个数据版本一个文件），不靠命令行覆盖。
+#
+# 训练超参与 run_exp0604_v09-5_fixview_randres_scratch_uploss.sh 完全一致，并适配贵阳环境：
+#   - 数据读 OBS；启动前把 weights 里数据集的索引缓存拷到节点本地盘
+#   - ++train.worker_reseed=true：各卡 / 各 worker 用不同随机数流（旧版所有 worker 同一条流，增强和选帧会重复）
+#   - ++train/test.persistent_workers=false：worker 每个 epoch 重建、验证用的 worker 只在验证时存在，
+#     避免 dataloader worker 内存随时间增长把节点内存撑满（DataLoader worker is killed by signal: Killed）
+#   - ++train.straggler_log_freq=20：每 20 步打印各卡等数据最久的一次和对应数据集（[straggler] 行），定位拖慢整步的数据集
+#   - 断点续训：从 ModelArts 自动同步到 OBS 的训练输出里找最新 checkpoint（见 OBS_TRAIN_ROOT），另外也查 efs 上传目录
+#   - 单机 8 卡时不依赖 ModelArts 的多机环境变量（没有就按单机处理）
+#
+# 必须由调用方设置：
+#   NAME        实验名（决定输出、checkpoint、续训、日志的目录）
+#   DATA        数据配置名（configs/data/<DATA>.yaml）
+# 可用环境变量：
+#   CODE_DIR    代码目录（默认本脚本所在仓库）
+#   CKPTS_SRC   预训练权重目录，软链接成 ./ckpts（需含 dinov3_vith16plus/）；默认 /efs-mi-pay-gy1/z00533370/checkpoints
+#   EXP_ROOT    实验结果根目录（默认 /efs-mi-pay-gy1/z00533370/exp）
+#   TRAIN_URL   训练时的本地输出目录（默认 /home/ma-user/modelarts/outputs/train_url_0）
+#   LOCAL_CACHE 索引缓存的本地目录（默认 /cache/dataset_cache；设成空则直接读 OBS）
+#   OBS_TRAIN_ROOT ModelArts 作业「训练输出」train_url_0 对应的 OBS 目录（必须与作业配置一致），
+#               默认 obs://bucket-471/z00533370/exp/pi3sup/outputs/<NAME>；checkpoint 在 <OBS_TRAIN_ROOT>/outputs/<NAME>/ckpts/
+#   AUTO_RESUME 1 = 从 OBS / efs 上本实验最新的 checkpoint 续训（默认 1）
+#   UPLOAD      0 = 训练结束后不往 efs 传 checkpoint / tensorboard（冒烟测试用）
+#   LOG_DIR     脚本输出另存一份的目录（默认 /efs-mi-pay-gy1/z00533370/exp/logs，文件名 <NAME>_node<N>_<时间>.log）
+#   MEM_LOG_INTERVAL 每隔多少秒打印一次本节点内存（默认 300，0 = 关闭）
+#   DATA_VIEW_THREADS 每个样本内并发读的帧数（默认 8；1 = 逐帧串行）
+# 脚本参数里不以 -- 开头的会原样追加到训练命令末尾（hydra 覆盖），只用于冒烟测试，例如：
+#   NAME=smoke_x DATA=datamix_all_v9-5-sub00_smoke AUTO_RESUME=0 UPLOAD=0 bash <本脚本> \
+#       train.num_epoch=1 train.iters_per_epoch=20 train.lr_scheduler.pct_start=0.2 test.iters_per_test=2 train.print_freq=1
+#   （步数很少时要调大 pct_start：OneCycle 预热结束步 = pct_start × 总步数 - 1，等于 0 会除零报错）
+set -euo pipefail
+
+: "${NAME:?必须设置 NAME（实验名）：请通过 run_expXXXX_*.sh 启动}"
+: "${DATA:?必须设置 DATA（configs/data/ 下的数据配置名）：请通过 run_expXXXX_*.sh 启动}"
+
+# ModelArts 会把作业参数以 --key=value 追加到启动命令后面（如 --train_url=... --HCCL_CONNECT_TIMEOUT=7200）。
+# 这些不是 hydra 参数，直接传给 train_pi3.py 会报 unrecognized arguments：这里拦下来，
+#   --train_url=X -> TRAIN_URL=X；其余 --KEY=VALUE -> export KEY=VALUE（HCCL_* 等环境变量）。
+# 不以 -- 开头的参数（hydra 覆盖，如 train.num_epoch=1）原样留给训练命令。
+HYDRA_ARGS=()
+for arg in "$@"; do
+    case "${arg}" in
+        --train_url=*) TRAIN_URL="${arg#--train_url=}"; TRAIN_URL="${TRAIN_URL%/}" ;;
+        --*=*)         kv="${arg#--}"; export "${kv%%=*}=${kv#*=}"; echo "[args] export ${kv%%=*}=${kv#*=}" ;;
+        --*)           echo "[args] ignore ${arg}" ;;
+        *)             HYDRA_ARGS+=("${arg}") ;;
+    esac
+done
+
+echo "==> Start Pi3 training: NAME=${NAME}  DATA=${DATA}"
+
+CODE_DIR="${CODE_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
+cd "${CODE_DIR}"
+export PYTHONPATH="${CODE_DIR}"
+export PYTHONUNBUFFERED=1   # print 与 logging 按实际顺序写进日志（否则 print 被缓冲，到进程退出才出现在末尾）
+export DATA_VIEW_THREADS="${DATA_VIEW_THREADS:-8}"   # 每个样本 8 帧并发读 OBS（1 = 逐帧串行，原来的行为）；见 datasets/base/base_dataset.py
+echo "DATA_VIEW_THREADS=${DATA_VIEW_THREADS}"
+echo "CODE_DIR=${CODE_DIR}  ($(git log --oneline -1 2>/dev/null || echo 'not a git repo'))"
+
+DATA_CFG="configs/data/${DATA}.yaml"
+if [ ! -f "${DATA_CFG}" ]; then
+    echo "[ERROR] 找不到数据配置 ${DATA_CFG}"
+    exit 1
+fi
+echo "DATA=${DATA}  (${DATA_CFG})"
+
+# 预训练权重（dinov3_vith16plus）
+CKPTS_SRC="${CKPTS_SRC:-/efs-mi-pay-gy1/z00533370/checkpoints}"
+if [ -L ckpts ]; then
+    # 已有软链接（可能还指向旧的 /efs-mi-east4-2/checkpoints）：改指到 CKPTS_SRC
+    [ "$(readlink ckpts)" = "${CKPTS_SRC}" ] || ln -sfn "${CKPTS_SRC}" ckpts
+elif [ ! -e ckpts ]; then
+    ln -s "${CKPTS_SRC}" ckpts
+else
+    echo "[WARN] ckpts 是普通目录，不改动（CKPTS_SRC=${CKPTS_SRC} 未生效）"
+fi
+echo "ckpts -> $(readlink -f ckpts)"
+if ! ls ckpts/dinov3_vith16plus/*.pth >/dev/null 2>&1; then
+    echo "[ERROR] 找不到 ckpts/dinov3_vith16plus/*.pth（ckpts -> $(readlink -f ckpts || echo '?')）。"
+    echo "        设置 CKPTS_SRC=<含 dinov3_vith16plus/ 的目录> 后重试（ckpts 若是普通目录需先移走）。"
+    exit 1
+fi
+
+# output
+TRAIN_URL="${TRAIN_URL:-/home/ma-user/modelarts/outputs/train_url_0}"
+mkdir -p "$TRAIN_URL"
+echo "TRAIN_URL=$TRAIN_URL"
+
+# 可选：安装 hydra_colorlog
+python - <<'PY'
+try:
+    import hydra_colorlog
+except Exception:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "hydra_colorlog"])
+PY
+
+python - <<'PY'
+try:
+    import evo
+except Exception:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "evo"])
+PY
+
+python - <<'PY'
+try:
+    import pyquaternion
+except Exception:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyquaternion"])
+PY
+
+# -----------------------------
+# mox function
+# -----------------------------
+copy_by_mox () {
+    local SRC="$1"
+    local DST="$2"
+
+    if [[ "${DST}" != obs://* ]]; then
+        mkdir -p "${DST}"
+    fi
+    echo "==> mox copy: ${SRC} -> ${DST}"
+
+    python - <<PY
+import moxing as mox
+src = r"""${SRC}"""
+dst = r"""${DST}"""
+mox.file.copy_parallel(src, dst)
+print(f"[mox] copy done: {src} -> {dst}")
+PY
+}
+
+# -----------------------------
+# 索引缓存拷到本地盘（每个节点一次；同名同大小的跳过）
+# -----------------------------
+LOCAL_CACHE="${LOCAL_CACHE-/cache/dataset_cache}"
+if [ -n "${LOCAL_CACHE}" ]; then
+    echo "==> Prefetch dataset caches -> ${LOCAL_CACHE}"
+    python - <<PY
+import hashlib, os, time
+from concurrent.futures import ThreadPoolExecutor
+import moxing as mox
+from omegaconf import OmegaConf
+
+os.environ.pop("DATASET_CACHE_DIR", None)          # 取配置里的 OBS 缓存目录
+cfg = OmegaConf.load(r"""${DATA_CFG}""")
+dst = r"""${LOCAL_CACHE}"""
+os.makedirs(dst, exist_ok=True)
+
+# 缓存文件名 = {dataset_label}_{md5(data_root)[:8]}_cache.pkl；按哈希挑出这次要用的文件（只看 weights 里的数据集）
+need, src_dirs = set(), set()
+for sec in ("train_dataset", "test_dataset"):
+    for name in cfg[sec].weights:
+        b = cfg[sec][name]
+        need.add(hashlib.md5(os.path.abspath(str(b.data_root)).encode()).hexdigest()[:8])
+        src_dirs.add(str(OmegaConf.to_container(b, resolve=True)["cache_dir"]))
+assert len(src_dirs) == 1, src_dirs
+src = src_dirs.pop()
+files = [f for f in mox.file.list_directory(src) if any(f.endswith(f"_{h}_cache.pkl") for h in need)]
+print(f"[cache] {len(files)} files for {len(need)} data roots from {src}", flush=True)
+
+def fetch(f):
+    s, d = f"{src}/{f}", os.path.join(dst, f)
+    size = mox.file.get_size(s)
+    if os.path.exists(d) and os.path.getsize(d) == size:
+        return f, size, 0.0, "skip"
+    t = time.time()
+    mox.file.copy(s, d + ".tmp")
+    os.replace(d + ".tmp", d)
+    return f, size, time.time() - t, "copied"
+
+t0 = time.time()
+with ThreadPoolExecutor(8) as ex:
+    for f, size, dt, st in ex.map(fetch, files):
+        print(f"[cache] {st:6s} {f}  {size / 1e9:.2f} GB  {dt:.0f}s", flush=True)
+print(f"[cache] done in {time.time() - t0:.0f}s", flush=True)
+PY
+    export DATASET_CACHE_DIR="${LOCAL_CACHE}"
+    echo "DATASET_CACHE_DIR=${DATASET_CACHE_DIR}"
+fi
+
+# 关键环境
+export DEVICE_TYPE=ascend
+export TOKENIZERS_PARALLELISM=false
+export HCCL_WHITELIST_DISABLE=1
+export HCCL_CONNECT_TIMEOUT="${HCCL_CONNECT_TIMEOUT:-7200}"
+export USE_MEMARTS=0
+
+# 多机参数（ModelArts 多机作业会设置这些变量；单机手动启动时按单机 8 卡）
+MASTER_ADDR="${VC_WORKER_HOSTS:-127.0.0.1}"
+MASTER_ADDR="${MASTER_ADDR%%,*}"
+NNODES="${MA_NUM_HOSTS:-1}"
+NODE_RANK="${VC_TASK_INDEX:-0}"
+NGPUS_PER_NODE="${MA_NUM_GPUS:-8}"
+NUM_PROCESSES=$((NGPUS_PER_NODE * NNODES))
+
+echo "MASTER_ADDR=${MASTER_ADDR}"
+echo "NNODES=${NNODES}"
+echo "NODE_RANK=${NODE_RANK}"
+echo "NGPUS_PER_NODE=${NGPUS_PER_NODE}"
+echo "NUM_PROCESSES=${NUM_PROCESSES}"
+
+export USE_CHECKPOINT=False
+# export ASCEND_LAUNCH_BLOCKING=1
+export HYDRA_FULL_ERROR=1
+
+# 本脚本之后的全部输出同时写一份到 efs，便于直接 grep（不用去 ModelArts 控制台下载日志）：
+#   ${LOG_DIR}/${NAME}_node<节点号>_<启动时间>.log
+LOG_DIR="${LOG_DIR:-/efs-mi-pay-gy1/z00533370/exp/logs}"
+if mkdir -p "${LOG_DIR}" 2>/dev/null; then
+    JOB_LOG="${LOG_DIR}/${NAME}_node${NODE_RANK}_$(date +%m%d_%H%M).log"
+    exec > >(tee -a "${JOB_LOG}") 2>&1
+    echo "JOB_LOG=${JOB_LOG}"
+fi
+
+# 实验结果（checkpoint、tensorboard）上传到贵阳 efs：${EXP_ROOT}/pi3sup/outputs/${NAME}/
+EXP_ROOT="${EXP_ROOT:-/efs-mi-pay-gy1/z00533370/exp}"
+mkdir -p "${EXP_ROOT}/pi3sup/outputs/${NAME}"
+
+# -----------------------------
+# Auto copy latest ckpt (OBS / efs) to local output dir
+# -----------------------------
+# 原脚本（0604）从 ModelArts 自动同步到 OBS 的 train_url_0 里找 checkpoint：
+#   obs://bucket-mi-east4-sf/z00533370/project/proj_3dgs/exp_pi3sup/pi3sup/outputs/${NAME}/outputs/${NAME}/ckpts
+# 贵阳访问不到东四桶，改成贵阳桶；OBS_TRAIN_ROOT 必须与本次作业「训练输出」的 OBS 路径一致。
+AUTO_RESUME="${AUTO_RESUME:-1}"
+OBS_TRAIN_ROOT="${OBS_TRAIN_ROOT:-obs://bucket-471/z00533370/exp/pi3sup/outputs/${NAME}}"
+OBS_CKPT_ROOT="${OBS_TRAIN_ROOT}/outputs/${NAME}/ckpts"
+EFS_CKPT_ROOT="${EXP_ROOT}/pi3sup/outputs/${NAME}/ckpts"
+LOCAL_CKPT_ROOT="${TRAIN_URL}/outputs/${NAME}/ckpts"
+LATEST_CKPT_FILE="/tmp/latest_ckpt_${NAME}.txt"
+mkdir -p "${LOCAL_CKPT_ROOT}"
+rm -f "${LATEST_CKPT_FILE}"
+echo "OBS_CKPT_ROOT=${OBS_CKPT_ROOT}"
+echo "EFS_CKPT_ROOT=${EFS_CKPT_ROOT}"
+
+if [ "${AUTO_RESUME}" = "1" ]; then
+    echo "==> Checking latest checkpoint on OBS and efs"
+
+    python - <<PY
+import re
+import moxing as mox
+
+roots = [r"""${OBS_CKPT_ROOT}""", r"""${EFS_CKPT_ROOT}"""]
+out = r"""${LATEST_CKPT_FILE}"""
+
+latest, latest_id = None, -1
+for root in roots:
+    try:
+        if not mox.file.exists(root):
+            print(f"[AUTO_RESUME] not found: {root}")
+            continue
+        items = mox.file.list_directory(root)
+    except Exception as e:
+        print(f"[AUTO_RESUME] skip {root}: {e}")
+        continue
+    for item in items:
+        path = item if item.startswith("obs://") else root.rstrip("/") + "/" + item.rstrip("/")
+        m = re.match(r"checkpoint_(\\d+)$", path.rstrip("/").split("/")[-1])
+        if m and int(m.group(1)) > latest_id:
+            latest_id, latest = int(m.group(1)), path
+
+if latest:
+    with open(out, "w") as f:
+        f.write(latest)
+    print(f"[AUTO_RESUME] latest ckpt: {latest}")
+else:
+    print("[AUTO_RESUME] no checkpoint found")
+PY
+
+    if [ -s "${LATEST_CKPT_FILE}" ]; then
+        REMOTE_CKPT="$(cat "${LATEST_CKPT_FILE}")"
+        LOCAL_CKPT="${LOCAL_CKPT_ROOT}/$(basename "${REMOTE_CKPT}")"
+        echo "==> Copy latest ckpt:"
+        echo "    ${REMOTE_CKPT}"
+        echo " -> ${LOCAL_CKPT}"
+        if [ ! -e "${LOCAL_CKPT}" ]; then
+            copy_by_mox "${REMOTE_CKPT}" "${LOCAL_CKPT}"
+        fi
+        ls -lah "${LOCAL_CKPT_ROOT}" || true
+    fi
+fi
+
+# -----------------------------
+# Training Process（参数与 run_exp0604 相同，只有 data / name / worker_reseed / persistent_workers / straggler 不同）
+# -----------------------------
+# 内存监控：每 MEM_LOG_INTERVAL 秒（默认 300，设 0 关闭）打印本节点内存与占用最多的几个进程，定位 worker 内存增长 / OOM
+MEM_LOG_INTERVAL="${MEM_LOG_INTERVAL:-300}"
+if [ "${MEM_LOG_INTERVAL}" -gt 0 ] 2>/dev/null; then
+    (
+        # 不继承 set -euo pipefail：ps | head 提前关管道会让 ps 收到 SIGPIPE，pipefail + -e 会让监控循环直接退出
+        set +eu +o pipefail
+        while sleep "${MEM_LOG_INTERVAL}"; do
+            echo "[mem] $(date '+%F %T') node=${NODE_RANK} $(free -g | awk '/^Mem:/{printf "used=%sG free=%sG avail=%sG total=%sG", $3, $4, $7, $2}')"
+            ps -eo rss,cmd --sort=-rss | grep -E "python" | grep -v grep | head -3 | awk '{printf "[mem]   %.1fG %s %s\n", $1/1048576, $2, $3}'
+        done
+    ) &
+    MEM_LOG_PID=$!
+    trap 'kill ${MEM_LOG_PID} 2>/dev/null || true' EXIT
+fi
+
+echo "==> Start training"
+accelerate launch \
+  --config_file configs/accelerate/ddp.yaml \
+  --main_process_ip "${MASTER_ADDR}" \
+  --main_process_port 29540 \
+  --machine_rank "${NODE_RANK}" \
+  --num_machines "${NNODES}" \
+  --num_processes "${NUM_PROCESSES}" \
+  scripts/train_pi3.py \
+  train=train_pi3_highres \
+  data="${DATA}" \
+  ++train.worker_reseed=true \
+  ++train.persistent_workers=false \
+  ++test.persistent_workers=false \
+  ++train.straggler_log_freq=20 \
+  name="${NAME}" \
+  work_dir="${TRAIN_URL}" \
+  model.use_global_points=False \
+  model.freeze_encoder=false \
+  model.num_dec_blk_not_to_checkpoint=16 \
+  train.optimizer.lr=1e-4 \
+  train.optimizer.encoder_lr=1e-5 \
+  train.lr_scheduler.pct_start=0.05 \
+  train.lr_scheduler.div_factor=25 \
+  train.lr_scheduler.final_div_factor=100 \
+  train.num_workers=4 \
+  test.num_workers=4 \
+  train.num_epoch=80 \
+  train.iters_per_epoch=2500 \
+  test.iters_per_test=20 \
+  train.print_freq=20 \
+  log.ckpt_interval=1 \
+  log.max_checkpoints=99999 \
+  'train.image_num_range=[8,8]' \
+  train.max_img_per_gpu=8 \
+  train.random_reslution=True \
+  'train.aspect_ratio_range=[0.5, 2.0]' \
+  'train.pixel_count_range=[100000, 255000]' \
+  train.patch_size=16 \
+  train.num_resolution=-1 \
+  'train.width_range=[400,600]' \
+  loss.train_loss.w_unproj_global=1.0 \
+  loss.train_loss.w_normalized_loss=1.0 \
+  loss.test_loss.w_unproj_global=1.0 \
+  loss.test_loss.w_normalized_loss=1.0 \
+  ${HYDRA_ARGS[@]+"${HYDRA_ARGS[@]}"}
+
+echo "==> Training finished"
+
+if [ "${UPLOAD:-1}" != "1" ]; then
+    echo "==> UPLOAD=0, skip uploading checkpoint / tensorboard to efs"
+    exit 0
+fi
+
+# 获取 global rank，兼容 torchrun / ModelArts / MPI
+GLOBAL_RANK="${RANK:-${RANK_ID:-${OMPI_COMM_WORLD_RANK:-0}}}"
+
+CKPT_DIR=$(ls -d ${TRAIN_URL}/outputs/${NAME}/ckpts/checkpoint_* | sort -V | tail -1)
+CKPT_EFS_DIR="${EXP_ROOT}/pi3sup/outputs/${NAME}/ckpts/$(basename ${CKPT_DIR})"
+
+echo "==> Start uploading checkpoint"
+copy_by_mox "${CKPT_DIR}" "${CKPT_EFS_DIR}"
+echo "==> Finish uploading checkpoint"
+
+LOG_EFS_DIR="${EXP_ROOT}/pi3sup/outputs/${NAME}/${NAME}"
+LOG_DIR="${TRAIN_URL}/outputs/${NAME}/${NAME}"
+
+# tensorboard 只在 global rank 0 上传
+if [ "${GLOBAL_RANK}" = "0" ]; then
+    echo "==> Start uploading tensorboard log"
+    if [ -d "${LOG_DIR}" ]; then
+        copy_by_mox "${LOG_DIR}" "${LOG_EFS_DIR}"
+        echo "==> Finish uploading tensorboard log"
+    else
+        echo "[WARN] Tensorboard log dir not found, skip: ${LOG_DIR}"
+    fi
+else
+    echo "[rank ${GLOBAL_RANK}] skip uploading tensorboard log"
+fi
