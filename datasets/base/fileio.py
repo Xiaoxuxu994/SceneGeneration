@@ -256,6 +256,31 @@ def save_pickle(obj, path):
         pickle.dump(obj, f)
 
 
+def write_bytes(path, data):
+    """把 bytes 写到本地或 obs://（预处理脚本用）。本地会先建目录。"""
+    p = resolve(path)
+    if is_obs(p):
+        mox = _mox()
+        last = None
+        for _ in range(3):
+            try:
+                mox.file.write(p, data, binary=True)
+                return
+            except Exception as e:
+                last = e
+        raise RuntimeError(f"obs 写入失败（重试 3 次）: {p}") from last
+    os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
+    with builtins.open(p, "wb") as f:
+        f.write(data)
+
+
+def np_save_bytes(arr):
+    """np.save 到内存，返回 bytes（配合 write_bytes 写 .npy 到 OBS）。"""
+    bio = io.BytesIO()
+    np.save(bio, arr)
+    return bio.getvalue()
+
+
 def read_csv(path, *args, **kwargs):
     import pandas as pd
     if isinstance(path, str):

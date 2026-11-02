@@ -34,17 +34,26 @@ class GTASfMDataset(BaseDataset):
         split_ratio=0.9,  
         seq_num=-1,
         min_num_images=24,
+        preproc_root=None,
         **kwargs,
     ):
         '''
             https://wang-kx.github.io/pdf/flow_motion_depth_sup.pdf
             z_far=200
+
+            preproc_root：tools/preprocess_gta_sfm.py 的输出目录（本地或 obs://）。设置后不再每个样本下载整个
+            场景 hdf5（平均 158MB），改为按帧读：
+                <preproc_root>/<scene>/image_<fid>.img   h5 里原样的编码图像字节
+                <preproc_root>/<scene>/depth_<fid>.npy
+                <preproc_root>/<scene>/cams.pkl          {fid: (K, pose)}
+            索引缓存不变；没有打开的句柄，各帧可并发读（DATA_VIEW_THREADS）。
         '''
         super().__init__(**kwargs)
         assert data_root is not None
 
         self.dataset_label = "GTA-sfm"
         self.data_root = data_root
+        self.preproc_root = preproc_root
         self.verbose = verbose
         self.max_distance = max_distance
         self.split_ratio = split_ratio
@@ -188,14 +197,18 @@ class GTASfMDataset(BaseDataset):
     # =========================
     # load one view
     # =========================
-    def _load_one_view(self, f, h5_path, scene_name, fid, resolution, rng):
+    def _load_one_view(self, f, h5_path, scene_name, fid, resolution, rng, preproc_dir=None, cams=None):
 
-        image_raw = np.asarray(f[f"image_{fid}"])
-        depthmap = np.asarray(f[f"depth_{fid}"]).astype(np.float32)
-        intrinsic = np.asarray(f[f"K_{fid}"]).astype(np.float32)
-        camera_pose = np.asarray(f[f"pose_{fid}"]).astype(np.float32)
-
-        image_bytes = image_raw.reshape(-1).astype(np.uint8).tobytes()
+        if preproc_dir is not None:
+            image_bytes = fio.read_bytes(osp.join(preproc_dir, f"image_{fid}.img"))
+            depthmap = fio.np_load(osp.join(preproc_dir, f"depth_{fid}.npy")).astype(np.float32)
+            intrinsic, camera_pose = (np.asarray(x, dtype=np.float32) for x in cams[str(fid)])
+        else:
+            image_raw = np.asarray(f[f"image_{fid}"])
+            depthmap = np.asarray(f[f"depth_{fid}"]).astype(np.float32)
+            intrinsic = np.asarray(f[f"K_{fid}"]).astype(np.float32)
+            camera_pose = np.asarray(f[f"pose_{fid}"]).astype(np.float32)
+            image_bytes = image_raw.reshape(-1).astype(np.uint8).tobytes()
         with fio.pil_open(BytesIO(image_bytes)) as im:
             rgb_image = im.convert("RGB")
 
@@ -243,6 +256,24 @@ class GTASfMDataset(BaseDataset):
         }
 
         views = []
+        if self.preproc_root:
+            preproc_dir = osp.join(self.preproc_root, scene)
+            cams = fio.load_pickle(osp.join(preproc_dir, "cams.pkl"))
+            for fid in idxs:
+                views.append(
+                    self._load_one_view(
+                        f=None,
+                        h5_path=h5_path,
+                        scene_name=scene,
+                        fid=fid,
+                        resolution=resolution,
+                        rng=rng,
+                        preproc_dir=preproc_dir,
+                        cams=cams,
+                    )
+                )
+            return views
+
         with fio.h5_open(h5_path, "r") as f:
             for fid in idxs:
                 views.append(

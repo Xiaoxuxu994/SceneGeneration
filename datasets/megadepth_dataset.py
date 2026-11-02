@@ -61,8 +61,16 @@ class MegaDepthDataset(BaseDataset):
         seq_num=-1,
         min_num_images=24,
         sample_method=None,
+        preproc_root=None,
         **kwargs,
     ):
+        """
+        preproc_root：tools/preprocess_megadepth.py 的输出目录（本地或 obs://）。设置后改读预处理数据：
+            <preproc_root>/<scene>/images/<name>.jpg   长边缩到 max_side 的 RGB
+            <preproc_root>/<scene>/depths/<name>.npy   同尺寸深度（最近邻缩放）
+            <preproc_root>/<scene>/cams.pkl            {name: (K 3x3 已按缩放调整, extrinsic 3x4)}
+        不再每个样本读原始分辨率 jpg + h5 和几十 MB 的 COLMAP images.txt。索引缓存不变。
+        """
 
         super().__init__(**kwargs)
         assert data_root is not None
@@ -74,6 +82,7 @@ class MegaDepthDataset(BaseDataset):
         self.split_ratio = split_ratio
         self.min_num_images = min_num_images
         self.sample_method = sample_method
+        self.preproc_root = preproc_root
 
         self.MEGADEPTH_DIR = data_root + "/Undistorted_SfM"
         self.MEGADEPTH_SPLIT_DIR = data_root + "/final_list"
@@ -201,13 +210,17 @@ class MegaDepthDataset(BaseDataset):
     # =========================
     # load one view
     # =========================
-    def _load_one_view(self, scene_path, frames_name, fid, intri_extri_dict, resolution, rng):
+    def _load_one_view(self, scene_path, frames_name, fid, intri_extri_dict, resolution, rng, preproc_dir=None):
         image_name = frames_name[fid]
-        impath = osp.join(scene_path, "images", f"{image_name}.jpg")
-        depthpath = osp.join(scene_path, "depths", f"{image_name}.h5")
-
-        rgb_image = read_any_file(impath)
-        depthmap = read_any_file(depthpath)
+        if preproc_dir is not None:
+            impath = osp.join(preproc_dir, "images", f"{image_name}.jpg")
+            rgb_image = read_any_file(impath)
+            depthmap = fio.np_load(osp.join(preproc_dir, "depths", f"{image_name}.npy")).astype(np.float32)
+        else:
+            impath = osp.join(scene_path, "images", f"{image_name}.jpg")
+            depthpath = osp.join(scene_path, "depths", f"{image_name}.h5")
+            rgb_image = read_any_file(impath)
+            depthmap = read_any_file(depthpath)
         # print(rgb_image.shape, depthmap.shape)
         intrinsic, extrinsic = intri_extri_dict[image_name]
         extrinsic = np.concatenate([extrinsic, np.array([[0,0,0,1]], dtype=extrinsic.dtype)], axis=0)
@@ -259,9 +272,14 @@ class MegaDepthDataset(BaseDataset):
         }
 
         # Loading extriniscs and intrinsics data
-        images_txt_path = osp.join(scene_path, "sparse-txt", "images.txt")
-        cameras_txt_path = osp.join(scene_path, "sparse-txt", "cameras.txt")
-        intri_extri_dict = parse_colmap_to_dict(images_txt_path, cameras_txt_path)
+        preproc_dir = None
+        if self.preproc_root:
+            preproc_dir = osp.join(self.preproc_root, osp.basename(str(scene_path).rstrip("/")))
+            intri_extri_dict = fio.load_pickle(osp.join(preproc_dir, "cams.pkl"))
+        else:
+            images_txt_path = osp.join(scene_path, "sparse-txt", "images.txt")
+            cameras_txt_path = osp.join(scene_path, "sparse-txt", "cameras.txt")
+            intri_extri_dict = parse_colmap_to_dict(images_txt_path, cameras_txt_path)
 
         views = []
         for fid in idxs:
@@ -273,6 +291,7 @@ class MegaDepthDataset(BaseDataset):
                     intri_extri_dict=intri_extri_dict,
                     resolution=resolution,
                     rng=rng,
+                    preproc_dir=preproc_dir,
                 )
             )
 
