@@ -5,7 +5,7 @@ SpatialVID-HQ（OBS 上的 HF 镜像，videos / annotations / depths 下是 grou
 tar.gz 从 OBS 流式读取、边解边写回 OBS（不落本地盘）；流式读取不可用时加 --via-local 先拷到本地盘再解。
 
 三种用法：
-  1) 看结构 + 只解几条（同一批 clip 的 video / annotation / depth 各解出来）：
+  1) 看结构 + 只解几条（先从 depths 取 n 个 clip，再解同一批 clip 的 annotation / video）：
      python tools/spatialvid_extract.py sample --n 3
   2) 看解出来的样本里有哪些 GT（下载到本地临时目录，逐个文件打印格式、形状、取值范围）：
      python tools/spatialvid_extract.py inspect
@@ -127,22 +127,23 @@ def cmd_sample(args):
             print(f"  copy {meta}: {e}", flush=True)
 
     group = args.group
-    # 1) annotations：取前 n 个 clip
+    # 1) depths：取前 n 个 clip。depths 只有部分 group（24/74），且 tar 内顺序与 annotations / videos 不同，
+    #    所以以有深度的 clip 为准，再去另外两类里找同一批
     keys, t = [], time.time()
-    src = f"{SRC}/annotations/{group}.tar.gz"
-    print(f"\n[annotations] {src}", flush=True)
+    src = f"{SRC}/depths/{group}.tar.gz"
+    print(f"\n[depths] {src}", flush=True)
     for name, data in iter_members(src, args.via_local):
         k = clip_key(name)
         if k not in keys:
             if len(keys) >= args.n:
                 break
             keys.append(k)
-        fio.write_bytes(f"{DST}/annotations/{rel_path(name)}", data)
+        fio.write_bytes(f"{DST}/depths/{rel_path(name)}", data)
         print(f"  {name}  {len(data) / 1e6:.2f} MB", flush=True)
     print(f"  clips: {keys}  ({time.time() - t:.0f}s)", flush=True)
 
-    # 2) depths / videos：找同一批 clip
-    for kind in ("depths", "videos"):
+    # 2) annotations / videos：找同一批 clip（tar 内顺序不同，可能要扫完整个 tar）
+    for kind in ("annotations", "videos"):
         src = f"{SRC}/{kind}/{group}.tar.gz"
         print(f"\n[{kind}] {src}", flush=True)
         found, scanned, t = set(), 0, time.time()
@@ -150,12 +151,14 @@ def cmd_sample(args):
             scanned += 1
             if scanned <= 3:
                 print(f"  (member #{scanned}: {name})", flush=True)
+            if scanned % 5000 == 0:
+                print(f"  ... scanned {scanned} members, found {len(found)}/{len(keys)} ({time.time() - t:.0f}s)", flush=True)
             k = clip_key(name)
             if k in keys:
                 found.add(k)
                 fio.write_bytes(f"{DST}/{kind}/{rel_path(name)}", data)
                 print(f"  {name}  {len(data) / 1e6:.2f} MB", flush=True)
-            elif found == set(keys) or scanned >= args.scan_limit:
+            elif found == set(keys) or (args.scan_limit and scanned >= args.scan_limit):
                 break
         miss = [k for k in keys if k not in found]
         print(f"  found {len(found)}/{len(keys)} clips after {scanned} members ({time.time() - t:.0f}s)"
@@ -242,9 +245,9 @@ def cmd_inspect(args):
         for f in shown[: args.max_files]:
             print(f"  {f}: {_describe(f, fio.read_bytes(f'{root}/{f}'))}", flush=True)
     try:
-        names = sorted(mox().file.list_directory(f"{SRC}/data"))
-        print(f"\n[data/] {names[:10]}", flush=True)
-        for n in names[:3]:
+        names = sorted(mox().file.list_directory(f"{SRC}/data", recursive=True))
+        print(f"\n[data/] {len(names)} entries: {names[:10]}", flush=True)
+        for n in [x for x in names if not x.endswith("/")][:3]:
             p = f"{SRC}/data/{n}"
             if not mox().file.is_directory(p) and mox().file.get_size(p) < 200 << 20:
                 print(f"  {n}: {_describe(n, fio.read_bytes(p)) if not n.endswith('.parquet') else 'parquet'}", flush=True)
@@ -308,7 +311,7 @@ def main():
     s = sub.add_parser("sample")
     s.add_argument("--n", type=int, default=3, help="解几个 clip")
     s.add_argument("--group", default="group_0001")
-    s.add_argument("--scan-limit", type=int, default=20000, help="depths / videos 里最多扫多少个成员去找同一批 clip")
+    s.add_argument("--scan-limit", type=int, default=0, help="annotations / videos 里最多扫多少个成员去找同一批 clip（0 = 扫完整个 tar）")
     s.add_argument("--via-local", default=None, help="本地目录：先把 tar.gz 拷到这里再解（流式读取不可用时）")
     i = sub.add_parser("inspect")
     i.add_argument("--clips", type=int, default=1, help="每个类别看几个 clip")
