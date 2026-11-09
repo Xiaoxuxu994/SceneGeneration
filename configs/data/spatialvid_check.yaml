@@ -1,0 +1,27 @@
+# @package _global_
+# SpatialVID-HQ 单独检查用（读取 + 可视化），不用于训练。数据来自 tools/preprocess_spatialvid.py 的输出。
+#   python -m datasets.spatialvid_dataset --config configs/data/spatialvid_check.yaml --n 3
+#   CONFIG=configs/data/spatialvid_check.yaml DATASETS=SpatialVID STAGE=vis N=5 bash run_sh_s3/run_dataset_sh/run_vis_datamix_v9-5_obs.sh
+# 深度是视频估计的（非传感器），z_far 先按室外 80m；天空（官方截在 200m）与动态区域在预处理时已置 0。
+train_dataset:
+  length: 10000000
+  weights:
+    SpatialVID: 1000
+  SpatialVID:
+    _target_: datasets.spatialvid_dataset.SpatialVIDDataset
+    data_root: obs://bucket-471/z00533370/dataset/SpatialVID-HQ_frames
+    split_ratio: 1.0
+    max_distance: 8
+    z_far: 80
+    frame_num: 8
+    aug_crop: 16
+    transform:
+      _partial_: true
+      _target_: datasets.base.transforms.JitterJpegLossBlurring
+    aug_focal: 0.9
+    mode: train
+    pct_valid_only: true
+    min_baseline_ratio: 0.05
+    baseline_retries: 3
+    pose_is_w2c: true
+    cache_dir: ${oc.env:DATASET_CACHE_DIR,obs://bucket-471/z00533370/dataset/dataset_cache}
