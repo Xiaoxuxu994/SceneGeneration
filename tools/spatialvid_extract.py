@@ -13,7 +13,8 @@ tar.gz 从 OBS 流式读取、边解边写回 OBS（不落本地盘）；流式�
      python tools/spatialvid_extract.py all --procs 8
      python tools/spatialvid_extract.py all --groups group_0001 group_0002 --kinds annotations depths
 
-输出：<dst>/<kind>/<tar 内的原始路径>，例如 obs://bucket-471/z00533370/dataset/SpatialVID-HQ/videos/group_0001/xxx.mp4
+输出：<dst>/<kind>/group_XXXX/<clip>/...（tar 内路径去掉 group 之前的 SpatialVid/HQ/<kind>/），
+      例如 obs://bucket-471/z00533370/dataset/SpatialVID-HQ/annotations/group_0001/<clip>/poses.npy
 """
 import argparse
 import io
@@ -40,10 +41,24 @@ def mox():
     return fio._mox()
 
 
-def clip_key(name):
-    """tar 成员路径 -> clip id：去掉开头的 group_XXXX/，取下一级目录名或文件名（去扩展名）。"""
+def _parts_from_group(name):
+    """tar 成员路径从 group_XXXX 那一级开始的各段（实际成员形如 SpatialVid/HQ/annotations/group_0001/<clip>/poses.npy）。"""
     parts = [p for p in name.split("/") if p and p != "."]
-    if parts and parts[0].startswith("group"):
+    for i, p in enumerate(parts):
+        if p.startswith("group_"):
+            return parts[i:]
+    return parts
+
+
+def rel_path(name):
+    """写到 <dst>/<kind>/ 下的相对路径：group_XXXX/<clip>/...（去掉 group 之前的 SpatialVid/HQ/<kind>/）。"""
+    return "/".join(_parts_from_group(name))
+
+
+def clip_key(name):
+    """tar 成员路径 -> clip id：group_XXXX 下一级的目录名或文件名（去扩展名）。"""
+    parts = _parts_from_group(name)
+    if parts and parts[0].startswith("group_"):
         parts = parts[1:]
     return parts[0].split(".")[0] if parts else ""
 
@@ -122,7 +137,7 @@ def cmd_sample(args):
             if len(keys) >= args.n:
                 break
             keys.append(k)
-        fio.write_bytes(f"{DST}/annotations/{name}", data)
+        fio.write_bytes(f"{DST}/annotations/{rel_path(name)}", data)
         print(f"  {name}  {len(data) / 1e6:.2f} MB", flush=True)
     print(f"  clips: {keys}  ({time.time() - t:.0f}s)", flush=True)
 
@@ -138,7 +153,7 @@ def cmd_sample(args):
             k = clip_key(name)
             if k in keys:
                 found.add(k)
-                fio.write_bytes(f"{DST}/{kind}/{name}", data)
+                fio.write_bytes(f"{DST}/{kind}/{rel_path(name)}", data)
                 print(f"  {name}  {len(data) / 1e6:.2f} MB", flush=True)
             elif found == set(keys) or scanned >= args.scan_limit:
                 break
@@ -247,7 +262,7 @@ def _extract_group(job):
     with ThreadPoolExecutor(threads) as pool:
         futs = []
         for name, data in iter_members(f"{SRC}/{kind}/{group}.tar.gz", via_local):
-            futs.append(pool.submit(fio.write_bytes, f"{DST}/{kind}/{name}", data))
+            futs.append(pool.submit(fio.write_bytes, f"{DST}/{kind}/{rel_path(name)}", data))
             n += 1
             nbytes += len(data)
             if len(futs) >= 4 * threads:          # 限制内存里待写的文件数
