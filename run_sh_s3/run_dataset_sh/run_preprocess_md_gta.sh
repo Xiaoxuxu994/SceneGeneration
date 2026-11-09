@@ -6,6 +6,7 @@
 #   bash run_sh_s3/run_dataset_sh/run_preprocess_md_gta.sh                 # 两个都做
 #   WHAT=megadepth bash run_sh_s3/run_dataset_sh/run_preprocess_md_gta.sh  # 只做 MegaDepth（gta = 只做 GTA）
 #   SCENES="0001 0015" WHAT=megadepth bash ...                              # 先试几个场景
+#   LIMIT=2 bash ...                                                         # 只做前 2 个场景（试跑）
 # 可用环境变量：
 #   WHAT        both | megadepth | gta（默认 both）
 #   MD_OUT      默认 obs://bucket-471/z00533370/dataset/MegaDepth_pre1024
@@ -55,6 +56,9 @@ SCENE_ARGS=()
 if [ -n "${SCENES:-}" ]; then
     # shellcheck disable=SC2206
     SCENE_ARGS=(--scenes ${SCENES})
+fi
+if [ -n "${LIMIT:-}" ]; then
+    SCENE_ARGS+=(--limit "${LIMIT}")
 fi
 LOG_DIR="${LOG_DIR:-/efs-mi-pay-gy1/z00533370/exp/logs}"
 mkdir -p "${LOG_DIR}" 2>/dev/null || LOG_DIR=.
