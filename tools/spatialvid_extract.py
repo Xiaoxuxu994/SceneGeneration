@@ -4,7 +4,9 @@
 SpatialVID-HQ（OBS 上的 HF 镜像，videos / annotations / depths 下是 group_XXXX.tar.gz）解压到 OBS。
 tar.gz 从 OBS 流式读取、边解边写回 OBS（不落本地盘）；流式读取不可用时加 --via-local 先拷到本地盘再解。
 
-三种用法：
+用法：
+  0) 核对 OBS 上的 tar.gz 是否齐全、大小是否与 HF 官方一致（tools/spatialvid_official_sizes.json）：
+     python tools/spatialvid_extract.py check
   1) 看结构 + 只解几条（先从 depths 取 n 个 clip，再解同一批 clip 的 annotation / video）：
      python tools/spatialvid_extract.py sample --n 3
   2) 看解出来的样本里有哪些 GT（下载到本地临时目录，逐个文件打印格式、形状、取值范围）：
@@ -108,6 +110,33 @@ def iter_members(path, via_local=None):
 def list_groups(kind):
     names = mox().file.list_directory(f"{SRC}/{kind}")
     return sorted(n for n in names if n.endswith(".tar.gz"))
+
+
+# ---------------------------------------------------------------------------
+def cmd_check(args):
+    official = json.load(open(osp.join(osp.dirname(osp.abspath(__file__)), "spatialvid_official_sizes.json")))
+    for kind in KINDS:
+        try:
+            have = {n[: -len(".tar.gz")]: n for n in mox().file.list_directory(f"{SRC}/{kind}") if n.endswith(".tar.gz")}
+        except Exception as e:
+            print(f"[{kind}] {e}", flush=True)
+            continue
+        ok, bad, missing = [], [], []
+        for group, size in sorted(official[kind].items()):
+            if group not in have:
+                missing.append(group)
+                continue
+            got = mox().file.get_size(f"{SRC}/{kind}/{have[group]}")
+            (ok if got == size else bad).append((group, got, size))
+        extra = sorted(set(have) - set(official[kind]))
+        print(f"\n[{kind}] official {len(official[kind])} ({sum(official[kind].values()) / 1e12:.2f} TB): "
+              f"complete {len(ok)}, size mismatch {len(bad)}, missing {len(missing)}"
+              + (f", not in official list {extra}" if extra else ""), flush=True)
+        for group, got, size in bad:
+            print(f"  MISMATCH {group}: obs {got} bytes vs official {size} bytes ({got / size:.1%})", flush=True)
+        if missing:
+            print(f"  missing: {' '.join(missing)}", flush=True)
+            print(f"  missing size: {sum(official[kind][g] for g in missing) / 1e12:.2f} TB", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +337,7 @@ def _safe_extract(job):
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("check")
     s = sub.add_parser("sample")
     s.add_argument("--n", type=int, default=3, help="解几个 clip")
     s.add_argument("--group", default="group_0001")
@@ -323,7 +353,7 @@ def main():
     a.add_argument("--threads", type=int, default=16, help="每个 tar 并发写 OBS 的文件数")
     a.add_argument("--via-local", default=None)
     args = ap.parse_args()
-    return {"sample": cmd_sample, "inspect": cmd_inspect, "all": cmd_all}[args.cmd](args) or 0
+    return {"check": cmd_check, "sample": cmd_sample, "inspect": cmd_inspect, "all": cmd_all}[args.cmd](args) or 0
 
 
 if __name__ == "__main__":
