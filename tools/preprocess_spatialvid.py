@@ -230,6 +230,8 @@ def process_group(group):
             clip = SX.clip_key(name)
             if clip in infos and clip not in vfuts:
                 vfuts[clip] = vpool.submit(process_video_clip, clip, data, infos[clip], osp.join(out_g, clip), write)
+                if len(vfuts) % 500 == 0:
+                    print(f"[{group}] videos: {len(vfuts)}/{len(infos)} clips decoding ({time.time() - t0:.0f}s)", flush=True)
                 while sum(not f.done() for f in vfuts.values()) > 4 * ARGS.video_workers:
                     time.sleep(0.05)
                 if len(vfuts) == len(infos):
@@ -273,13 +275,18 @@ def main():
     ap.add_argument("--jpeg-quality", type=int, default=95)
     ap.add_argument("--via-local", default=None, help="本地目录：先把 tar.gz 拷到这里再解")
     ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--shard", default="0/1", help="i/n：多节点时本节点处理第 i 份（group 列表按 i::n 切分）")
     ARGS = ap.parse_args()
 
     if ARGS.no_depth and ARGS.out == DEFAULT_OUT:
         ARGS.out = DEFAULT_OUT_NODEPTH
     groups = ARGS.groups or [g[: -len(".tar.gz")] for g in SX.list_groups("videos" if ARGS.no_depth else "depths")]
+    si, sn = (int(x) for x in ARGS.shard.split("/"))
+    groups = groups[si::sn]
     print(f"[SpatialVID] {len(groups)} groups -> {ARGS.out}  procs={ARGS.procs} threads={ARGS.threads} "
-          f"video_workers={ARGS.video_workers} limit_clips={ARGS.limit_clips}", flush=True)
+          f"video_workers={ARGS.video_workers} limit_clips={ARGS.limit_clips} shard={ARGS.shard} no_depth={ARGS.no_depth} "
+          f"max_side={ARGS.max_side} jpeg_quality={ARGS.jpeg_quality}", flush=True)
+    print(f"[SpatialVID] groups: {' '.join(groups)}", flush=True)
     import multiprocessing as mp
     t0, n_err = time.time(), 0
     with mp.get_context("fork").Pool(ARGS.procs) as pool:
