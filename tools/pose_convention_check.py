@@ -66,6 +66,8 @@ def main():
     ap.add_argument("--scales", type=float, nargs="+", default=[0.5, 1.0, 2.0])
     ap.add_argument("--tau", type=float, default=0.03)
     ap.add_argument("--taus", type=float, nargs="+", default=[0.03, 0.1], help="as_loaded / x1 下再按这些阈值算一致率")
+    ap.add_argument("--tscales", type=float, nargs="*", default=[],
+                    help="as_loaded 下把相机平移（相对第一帧）乘这些系数，搜索每个 clip 最合适的 平移/深度 尺度比")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -87,6 +89,19 @@ def main():
         for tau in args.taus:
             cons, viol, _ = score(depths, valids, Ks, c2ws, tau)
             print(f"   as_loaded x1 tau={tau:<5g} cons={cons:6.1%} viol={viol:6.1%}", flush=True)
+        if args.tscales:
+            best_t = None
+            for ts in args.tscales:
+                poses = []
+                for T in c2ws:
+                    T2 = T.copy()
+                    T2[:3, 3] = c2ws[0][:3, 3] + ts * (T[:3, 3] - c2ws[0][:3, 3])
+                    poses.append(T2)
+                cons, viol, _ = score(depths, valids, Ks, poses, args.tau)
+                if best_t is None or cons - viol > best_t[1] - best_t[2]:
+                    best_t = (ts, cons, viol)
+                print(f"   translation x{ts:<5g} cons={cons:6.1%} viol={viol:6.1%}", flush=True)
+            print(f"   best translation scale x{best_t[0]:g}: cons={best_t[1]:.1%} viol={best_t[2]:.1%}", flush=True)
         R = pair_ratios(depths, valids, Ks, c2ws)
         adj = [R[i, i + 1] for i in range(len(depths) - 1)]
         to0 = [R[i, 0] for i in range(1, len(depths))]
