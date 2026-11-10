@@ -29,6 +29,33 @@ def score(depths, valids, Ks, c2ws, tau):
     return cons / max(seen, 1), viol / max(seen, 1), seen / max(n_valid, 1)
 
 
+def pair_ratios(depths, valids, Ks, c2ws):
+    """每对帧 (i, j)：i 帧的点投到 j 帧后，投影深度 / j 帧深度 的中位数。偏离 1 说明两帧深度尺度不一致。"""
+    F = len(depths)
+    H, W = depths[0].shape
+    R = np.full((F, F), np.nan)
+    rays = [G.pixel_rays(H, W, K) for K in Ks]
+    w2cs = [np.linalg.inv(T) for T in c2ws]
+    with np.errstate(all="ignore"):
+        for i in range(F):
+            vv, uu = np.nonzero(valids[i])
+            X = rays[i][vv, uu] * depths[i][vv, uu][:, None]
+            Xw = X @ c2ws[i][:3, :3].T + c2ws[i][:3, 3]
+            for j in range(F):
+                if i == j:
+                    continue
+                Xj = Xw @ w2cs[j][:3, :3].T + w2cs[j][:3, 3]
+                z = Xj[:, 2]
+                front = z > 1e-6
+                u = np.round(Ks[j][0, 0] * Xj[:, 0] / np.where(front, z, 1) + Ks[j][0, 2]).astype(np.int64)
+                v = np.round(Ks[j][1, 1] * Xj[:, 1] / np.where(front, z, 1) + Ks[j][1, 2]).astype(np.int64)
+                ok = front & (u >= 0) & (u < W) & (v >= 0) & (v < H)
+                ok[ok] = valids[j][v[ok], u[ok]]
+                if ok.sum() > 100:
+                    R[i, j] = np.median(z[ok] / depths[j][v[ok], u[ok]])
+    return R
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
@@ -38,6 +65,7 @@ def main():
     ap.add_argument("--res", type=int, nargs=2, default=[512, 336])
     ap.add_argument("--scales", type=float, nargs="+", default=[0.5, 1.0, 2.0])
     ap.add_argument("--tau", type=float, default=0.03)
+    ap.add_argument("--taus", type=float, nargs="+", default=[0.03, 0.1], help="as_loaded / x1 下再按这些阈值算一致率")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -56,6 +84,14 @@ def main():
                 cons, viol, cover = score([d * s for d in depths], valids, Ks, poses, args.tau)
                 total.setdefault((conv, s), []).append((cons, viol))
                 print(f"   pose={conv:9s} depth x{s:<4g} cons={cons:6.1%} viol={viol:6.1%} overlap={cover:6.1%}", flush=True)
+        for tau in args.taus:
+            cons, viol, _ = score(depths, valids, Ks, c2ws, tau)
+            print(f"   as_loaded x1 tau={tau:<5g} cons={cons:6.1%} viol={viol:6.1%}", flush=True)
+        R = pair_ratios(depths, valids, Ks, c2ws)
+        adj = [R[i, i + 1] for i in range(len(depths) - 1)]
+        to0 = [R[i, 0] for i in range(1, len(depths))]
+        print("   median(proj depth / target depth)  adjacent frames: " + " ".join(f"{x:.3f}" for x in adj), flush=True)
+        print("                                       frame k -> 0:    " + " ".join(f"{x:.3f}" for x in to0), flush=True)
     print("\n== mean over samples", flush=True)
     best = max(total, key=lambda k: np.mean([c for c, _ in total[k]]) - np.mean([v for _, v in total[k]]))
     for (conv, s), vals in total.items():
