@@ -19,9 +19,14 @@ intrinsics 每行 [fx,fy,cx,cy] 归一化（fx,cx 乘宽，fy,cy 乘高）。这
     <out>/<group>/_index.json                 {clip: 帧数}，loader 建索引只读它
     <out>/<group>/_DONE                       group 写完的标记；重跑跳过（断点续跑以 group 为单位）
 
+--no-depth（不读 depths/，覆盖全部 74 个 group）：只出 RGB 帧 + 相机，供校验 / 重新打伪标签用；
+    帧缩到长边 --max-side（默认 1280 即原分辨率），K 按帧的实际尺寸换算，
+    同时原样拷贝每个 clip 的 poses.npy / intrinsics.npy / dyn_masks.npz / caption.json / instructions.json。
+
 用法（仓库根目录）：
     python tools/preprocess_spatialvid.py --groups group_0001 --limit-clips 5      # 先试几个 clip
     python tools/preprocess_spatialvid.py --procs 6                                # 全部有深度的 group
+    python tools/preprocess_spatialvid.py --no-depth --procs 8                     # 全部 group，只要 RGB + pose
 """
 import argparse
 import io
@@ -42,6 +47,9 @@ import spatialvid_extract as SX  # noqa: E402  (tar 流式读取、clip id；会
 from datasets.base import fileio as fio  # noqa: E402
 
 ARGS = None
+DEFAULT_OUT = "obs://bucket-471/z00533370/dataset/SpatialVID-HQ_frames"
+DEFAULT_OUT_NODEPTH = "obs://bucket-471/z00533370/dataset/SpatialVID-HQ_rgbpose"
+ANN_FILES = ("poses.npy", "intrinsics.npy", "dyn_masks.npz", "caption.json", "instructions.json")
 
 
 def quat_to_R(q):
@@ -73,6 +81,20 @@ def expand_dyn_masks(data):
     return [csr_matrix((z[f"f_{i}_data"], z[f"f_{i}_indices"], z[f"f_{i}_indptr"]), shape=shape) for i in range(n)]
 
 
+def make_cam(pose_row, intr_row, W, H):
+    """官方 poses 一行 [tx,ty,tz,qx,qy,qz,qw] -> w2c 4x4；归一化内参一行 [fx,fy,cx,cy] -> 像素 K（宽 W、高 H）。"""
+    fx, fy, cx, cy = (float(v) for v in intr_row)
+    K = np.array([[fx * W, 0, cx * W], [0, fy * H, cy * H], [0, 0, 1]], dtype=np.float32)
+    w2c = np.eye(4, dtype=np.float32)
+    w2c[:3, :3] = quat_to_R(pose_row[3:7])
+    w2c[:3, 3] = pose_row[:3]
+    return K, w2c
+
+
+def n_dyn_masks(data):
+    return (len(np.load(io.BytesIO(data)).files) - 1) // 3
+
+
 def process_depth_clip(clip, data, ann, out_dir, write):
     """返回 clip 的元信息（K / w2c / 分辨率 / 统计），深度帧已提交写出。"""
     import cv2
@@ -93,13 +115,8 @@ def process_depth_clip(clip, data, ann, out_dir, write):
             dyn.append(float(m.mean()))
             depth[m] = 0
         valid.append(float((depth > 0).mean()))
-        fx, fy, cx, cy = (float(v) for v in intr[k])
-        K = np.array([[fx * W, 0, cx * W], [0, fy * H, cy * H], [0, 0, 1]], dtype=np.float32)
-        w2c = np.eye(4, dtype=np.float32)
-        w2c[:3, :3] = quat_to_R(poses[k][3:7])
-        w2c[:3, 3] = poses[k][:3]
         key = f"{k:05d}"
-        cams[key] = (K, w2c)
+        cams[key] = make_cam(poses[k], intr[k], W, H)
         write(osp.join(out_dir, f"depth_{key}.npy"), fio.np_save_bytes(depth.astype(np.float16)))
     return dict(n=n, W=W, H=H, cams=cams, n_depth=len(names), n_pose=len(poses),
                 valid=float(np.mean(valid)) if valid else 0.0, dyn=float(np.mean(dyn)) if dyn else 0.0)
@@ -121,14 +138,23 @@ def process_video_clip(clip, data, info, out_dir, write):
                 ok, frame = cap.retrieve()
                 if not ok:
                     break
-                frame = cv2.resize(frame, (info["W"], info["H"]), interpolation=cv2.INTER_AREA)
+                if info["W"] is None:              # --no-depth：按长边 --max-side 定尺寸，再算 K
+                    h0, w0 = frame.shape[:2]
+                    sc = min(1.0, ARGS.max_side / max(h0, w0))
+                    info["W"], info["H"] = int(round(w0 * sc)), int(round(h0 * sc))
+                    poses, intr = np.load(io.BytesIO(info["raw"]["poses.npy"])), np.load(io.BytesIO(info["raw"]["intrinsics.npy"]))
+                    info["cams"] = {f"{k:05d}": make_cam(poses[k], intr[k], info["W"], info["H"]) for k in range(info["n"])}
+                if (frame.shape[1], frame.shape[0]) != (info["W"], info["H"]):
+                    frame = cv2.resize(frame, (info["W"], info["H"]), interpolation=cv2.INTER_AREA)
                 ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, ARGS.jpeg_quality])
                 write(osp.join(out_dir, f"frame_{n_img:05d}.jpg"), buf.tobytes())
                 n_img += 1
             i += 1
         cap.release()
     n = min(n_img, info["n"])
-    cams = {k: v for k, v in info["cams"].items() if int(k) < n}
+    cams = {k: v for k, v in (info["cams"] or {}).items() if int(k) < n}
+    for fn, raw in (info.get("raw") or {}).items():           # --no-depth：原始标注原样拷贝
+        write(osp.join(out_dir, fn), raw)
     fio.save_pickle(cams, osp.join(out_dir, "cams.pkl"))
     meta = dict(clip=clip, fps=fps, step=step, n_frames=n, n_video_frames_read=i, n_depth=info["n_depth"],
                 n_pose=info["n_pose"], W=info["W"], H=info["H"], valid_ratio=info["valid"], dyn_ratio=info["dyn"])
@@ -158,13 +184,27 @@ def process_group(group):
         ann = {}
         for name, data in SX.iter_members(f"{SX.SRC}/annotations/{group}.tar.gz", ARGS.via_local):
             fn = name.rsplit("/", 1)[-1]
-            if fn in ("poses.npy", "intrinsics.npy", "dyn_masks.npz"):
+            keep = ANN_FILES if ARGS.no_depth else ("poses.npy", "intrinsics.npy", "dyn_masks.npz")
+            if fn in keep:
                 ann.setdefault(SX.clip_key(name), {})[fn] = data
         print(f"[{group}] annotations: {len(ann)} clips ({time.time() - t0:.0f}s)", flush=True)
 
-        # 2) depths -> 深度帧 + 相机
+        # 2) depths -> 深度帧 + 相机（--no-depth：直接用 annotations 的 clip，相机在解视频时按帧尺寸算）
         infos, n_no_ann, n_bad = {}, 0, 0
-        for name, data in SX.iter_members(f"{SX.SRC}/depths/{group}.tar.gz", ARGS.via_local):
+        if ARGS.no_depth:
+            for clip, a in ann.items():
+                if not {"poses.npy", "intrinsics.npy"} <= set(a):
+                    n_no_ann += 1
+                    continue
+                n_pose = len(np.load(io.BytesIO(a["poses.npy"])))
+                n = min(n_pose, len(np.load(io.BytesIO(a["intrinsics.npy"]))),
+                        n_dyn_masks(a["dyn_masks.npz"]) if "dyn_masks.npz" in a else 10 ** 9)
+                if n >= ARGS.min_frames:
+                    infos[clip] = dict(n=n, W=None, H=None, cams=None, n_depth=0, n_pose=n_pose, valid=None, dyn=None, raw=a)
+                if ARGS.limit_clips and len(infos) >= ARGS.limit_clips:
+                    break
+        depth_tar = [] if ARGS.no_depth else SX.iter_members(f"{SX.SRC}/depths/{group}.tar.gz", ARGS.via_local)
+        for name, data in depth_tar:
             clip = SX.clip_key(name)
             if clip not in ann or not {"poses.npy", "intrinsics.npy"} <= set(ann[clip]):
                 n_no_ann += 1
@@ -180,7 +220,7 @@ def process_group(group):
             if ARGS.limit_clips and len(infos) >= ARGS.limit_clips:
                 break
         del ann
-        print(f"[{group}] depths: {len(infos)} clips (no annotation {n_no_ann}, failed {n_bad}) ({time.time() - t0:.0f}s)",
+        print(f"[{group}] {'clips with pose' if ARGS.no_depth else 'depths'}: {len(infos)} clips (no annotation {n_no_ann}, failed {n_bad}) ({time.time() - t0:.0f}s)",
               flush=True)
 
         # 3) videos -> RGB 帧（只解有深度的 clip）
@@ -210,7 +250,7 @@ def process_group(group):
         if not ARGS.limit_clips:
             fio.write_bytes(osp.join(out_g, "_DONE"),
                             f"{len(index)} clips, {sum(index.values())} frames, no video {len(missing)}\n".encode())
-        print(f"[{group}] videos: {len(index)} clips written, {sum(index.values())} frames, depth without video "
+        print(f"[{group}] videos: {len(index)} clips written, {sum(index.values())} frames, without video "
               f"{len(missing)} ({time.time() - t0:.0f}s)", flush=True)
         return group, "ok", len(index), time.time() - t0
     except Exception as e:
@@ -220,8 +260,10 @@ def process_group(group):
 def main():
     global ARGS
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default="obs://bucket-471/z00533370/dataset/SpatialVID-HQ_frames")
-    ap.add_argument("--groups", nargs="*", default=None, help="默认：depths/ 下现有的全部 group")
+    ap.add_argument("--out", default=DEFAULT_OUT, help=f"默认 {DEFAULT_OUT}；--no-depth 时默认 {DEFAULT_OUT_NODEPTH}")
+    ap.add_argument("--groups", nargs="*", default=None, help="默认：depths/ 下现有的全部 group（--no-depth 时为 videos/ 下全部）")
+    ap.add_argument("--no-depth", action="store_true", help="不读深度，只出 RGB 帧 + 相机 + 原始标注")
+    ap.add_argument("--max-side", type=int, default=1280, help="--no-depth 时帧的长边（默认 1280 = 原分辨率）")
     ap.add_argument("--limit-clips", type=int, default=0, help=">0 时每个 group 只做前 N 个有深度的 clip（试跑，不写 _DONE）")
     ap.add_argument("--procs", type=int, default=6, help="同时处理几个 group")
     ap.add_argument("--threads", type=int, default=16, help="每个 group 并发写 OBS 的文件数")
@@ -233,7 +275,9 @@ def main():
     ap.add_argument("--overwrite", action="store_true")
     ARGS = ap.parse_args()
 
-    groups = ARGS.groups or [g[: -len(".tar.gz")] for g in SX.list_groups("depths")]
+    if ARGS.no_depth and ARGS.out == DEFAULT_OUT:
+        ARGS.out = DEFAULT_OUT_NODEPTH
+    groups = ARGS.groups or [g[: -len(".tar.gz")] for g in SX.list_groups("videos" if ARGS.no_depth else "depths")]
     print(f"[SpatialVID] {len(groups)} groups -> {ARGS.out}  procs={ARGS.procs} threads={ARGS.threads} "
           f"video_workers={ARGS.video_workers} limit_clips={ARGS.limit_clips}", flush=True)
     import multiprocessing as mp
