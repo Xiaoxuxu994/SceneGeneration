@@ -6,7 +6,9 @@
 # ModelArts（云道）启动命令：
 #   cd /home/ma-user/modelarts/user-job-dir/SceneGeneration/; source /home/ma-user/.bashrc; bash run_sh_s3/run_dataset_sh/run_preprocess_spatialvid.sh
 # 可用环境变量（写在命令前面）：
-#   OUT            默认 obs://bucket-471/z00533370/dataset/SpatialVID-HQ_rgbpose
+#   OUT            默认 obs://bucket-471/z00533370/dataset/SpatialVID-HQ_rgbpose_tar
+#   PACK=1         每个 clip 打成一个 clip.tar（帧 + cams.pkl + 原始标注）+ meta.json；OBS 小文件写入单节点约 300 个/s 封顶
+#                  （2026-11-11 实测，1/16/64 线程分别 80/300/306 个/s），逐帧写 2200 万张图要 20 小时以上。PACK=0 恢复逐帧文件
 #   MAX_SIDE=960   帧的长边（原视频 1280x720；960 约省一半存储）
 #   JPEG_Q=90      JPEG 质量
 #   PROCS=16       本节点同时处理的 group 数；THREADS=16 每个 group 并发写 OBS 数
@@ -30,7 +32,12 @@ export PYTHONPATH="${CODE_DIR}"
 export PYTHONUNBUFFERED=1
 source "${CODE_DIR}/run_sh_s3/_pip_deps.sh"   # 公共依赖：缺什么装什么（见该文件）
 
-OUT="${OUT:-obs://bucket-471/z00533370/dataset/SpatialVID-HQ_rgbpose}"
+PACK="${PACK:-1}"
+if [ "${PACK}" = "1" ]; then
+    OUT="${OUT:-obs://bucket-471/z00533370/dataset/SpatialVID-HQ_rgbpose_tar}"
+else
+    OUT="${OUT:-obs://bucket-471/z00533370/dataset/SpatialVID-HQ_rgbpose}"
+fi
 MAX_SIDE="${MAX_SIDE:-960}"
 JPEG_Q="${JPEG_Q:-90}"
 PROCS="${PROCS:-16}"
@@ -51,7 +58,7 @@ ts() { while IFS= read -r line; do printf '[%s] %s\n' "$(date '+%F %T')" "${line
 
 {
 echo "==> CODE_DIR=${CODE_DIR} ($(git log --oneline -1 2>/dev/null || echo 'not a git repo'))"
-echo "==> node ${NODE_RANK}/${NNODES}  OUT=${OUT}  MAX_SIDE=${MAX_SIDE} JPEG_Q=${JPEG_Q} PROCS=${PROCS} VIDEO_WORKERS=${VIDEO_WORKERS} DECODE_THREADS=${DECODE_THREADS} THREADS=${THREADS} LIMIT_CLIPS=${LIMIT_CLIPS} nproc=${NCPU}"
+echo "==> node ${NODE_RANK}/${NNODES}  OUT=${OUT}  PACK=${PACK} MAX_SIDE=${MAX_SIDE} JPEG_Q=${JPEG_Q} PROCS=${PROCS} VIDEO_WORKERS=${VIDEO_WORKERS} DECODE_THREADS=${DECODE_THREADS} THREADS=${THREADS} LIMIT_CLIPS=${LIMIT_CLIPS} nproc=${NCPU}"
 echo "==> log ${LOG}"
 } | ts | tee -a "${LOG}"
 
@@ -91,6 +98,7 @@ fi
 ARGS=(--no-depth --out "${OUT}" --max-side "${MAX_SIDE}" --jpeg-quality "${JPEG_Q}" --procs "${PROCS}"
       --video-workers "${VIDEO_WORKERS}" --decode-threads "${DECODE_THREADS}" --threads "${THREADS}" --shard "${NODE_RANK}/${NNODES}")
 [ "${LIMIT_CLIPS}" -gt 0 ] && ARGS+=(--limit-clips "${LIMIT_CLIPS}")
+[ "${PACK}" = "1" ] && ARGS+=(--pack)
 # shellcheck disable=SC2206
 [ -n "${SV_GROUPS:-}" ] && ARGS+=(--groups ${SV_GROUPS})
 

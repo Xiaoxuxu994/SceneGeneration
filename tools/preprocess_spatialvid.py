@@ -20,6 +20,7 @@ intrinsics 每行 [fx,fy,cx,cy] 归一化（fx,cx 乘宽，fy,cy 乘高）。这
     <out>/<group>/_DONE                       group 写完的标记；重跑跳过
     断点续跑：group 有 _DONE 整组跳过；否则逐 clip 检查 meta.json（最后同步写）与 jpg 数，已完成的 clip 不再解码
 
+--pack（配合 --no-depth 使用）：每个 clip 输出 <clip>/clip.tar（frame_<k:05d>.jpg + cams.pkl + 原始标注，不压缩）+ meta.json。
 --no-depth（不读 depths/，覆盖全部 74 个 group）：只出 RGB 帧 + 相机，供校验 / 重新打伪标签用；
     帧缩到长边 --max-side（默认 1280 即原分辨率），K 按帧的实际尺寸换算，
     同时原样拷贝每个 clip 的 poses.npy / intrinsics.npy / dyn_masks.npz / caption.json / instructions.json。
@@ -35,6 +36,7 @@ import json
 import os
 import os.path as osp
 import sys
+import tarfile
 import tempfile
 import threading
 import time
@@ -129,6 +131,8 @@ def clip_done(out_dir):
         if not fio.exists(osp.join(out_dir, "meta.json")):
             return None
         n = int(json.loads(fio.read_bytes(osp.join(out_dir, "meta.json")))["n_frames"])
+        if ARGS.pack:                                # clip.tar 同步写完才写 meta.json
+            return n if fio.exists(osp.join(out_dir, "clip.tar")) else None
         names = fio.listdir(out_dir)
         need = {"cams.pkl"} | (set(ANN_FILES) - {"caption.json", "instructions.json"} if ARGS.no_depth else set())
         if need <= set(names) and sum(x.startswith("frame_") for x in names) == n:
@@ -146,10 +150,13 @@ def process_video_clip(clip, data, info, out_dir, write):
         n = clip_done(out_dir)
         if n is not None:
             return n, True
-    mine = []
+    mine, packed = [], {}
 
     def write(path, payload, _write=write):
-        mine.append(_write(path, payload))
+        if ARGS.pack:                                # --pack：先收进内存，最后打成一个 clip.tar 上传
+            packed[osp.basename(path)] = payload
+        else:
+            mine.append(_write(path, payload))
 
     with tempfile.NamedTemporaryFile(suffix=".mp4") as tf:
         tf.write(data)
@@ -182,7 +189,18 @@ def process_video_clip(clip, data, info, out_dir, write):
     cams = {k: v for k, v in (info["cams"] or {}).items() if int(k) < n}
     for fn, raw in (info.get("raw") or {}).items():           # --no-depth：原始标注原样拷贝
         write(osp.join(out_dir, fn), raw)
-    fio.save_pickle(cams, osp.join(out_dir, "cams.pkl"))
+    if ARGS.pack:
+        import pickle
+        packed["cams.pkl"] = pickle.dumps(cams)
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tar:      # 不压缩：jpg 已压缩，读取时可直接按成员取
+            for name in sorted(packed):
+                ti = tarfile.TarInfo(name)
+                ti.size = len(packed[name])
+                tar.addfile(ti, io.BytesIO(packed[name]))
+        fio.write_bytes(osp.join(out_dir, "clip.tar"), buf.getvalue())
+    else:
+        fio.save_pickle(cams, osp.join(out_dir, "cams.pkl"))
     for f in mine:                                   # 这个 clip 的文件全部写完，再同步写 meta.json（完成标记）
         f.result()
     meta = dict(clip=clip, fps=fps, step=step, n_frames=n, n_video_frames_read=i, n_depth=info["n_depth"],
@@ -298,6 +316,9 @@ def main():
     ap.add_argument("--out", default=DEFAULT_OUT, help=f"默认 {DEFAULT_OUT}；--no-depth 时默认 {DEFAULT_OUT_NODEPTH}")
     ap.add_argument("--groups", nargs="*", default=None, help="默认：depths/ 下现有的全部 group（--no-depth 时为 videos/ 下全部）")
     ap.add_argument("--no-depth", action="store_true", help="不读深度，只出 RGB 帧 + 相机 + 原始标注")
+    ap.add_argument("--pack", action="store_true",
+                    help="每个 clip 打成一个 clip.tar（帧 jpg + cams.pkl + 原始标注）再上传；OBS 小文件写入单节点约 300 个/s 封顶，"
+                         "逐帧写是瓶颈（2026-11-11 实测），打包后每个 clip 只有 clip.tar + meta.json 两个对象")
     ap.add_argument("--max-side", type=int, default=1280, help="--no-depth 时帧的长边（默认 1280 = 原分辨率）")
     ap.add_argument("--limit-clips", type=int, default=0, help=">0 时每个 group 只做前 N 个有深度的 clip（试跑，不写 _DONE）")
     ap.add_argument("--procs", type=int, default=6, help="同时处理几个 group")
