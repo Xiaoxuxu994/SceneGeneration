@@ -2,19 +2,16 @@
 # 被 run_utils/mox_download.sh 与 run_datamix_all/_train_pi3_obs_common.sh source。
 #
 #   merge_zero_ckpt <checkpoint_N 目录> <输出所在目录> [等待的分片数]
-# 输出命名 model_ckpt_<epoch>，epoch = N + 1（checkpoint_N 的 N 从 0 计；55 个 epoch 的 checkpoint_54 -> model_ckpt_55）：
-#   新版 zero_to_fp32（有 --safe_serialization）-> 目录 model_ckpt_<epoch>/（safetensors，大模型会分片）
-#   旧版                                         -> 文件 model_ckpt_<epoch>.bin
+# 输出命名与 checkpoint 编号一致：checkpoint_N -> model_ckpt_N（best_model -> model_ckpt_best_model）：
+#   新版 zero_to_fp32（有 --safe_serialization）-> 目录 model_ckpt_N/（safetensors，大模型会分片）
+#   旧版                                         -> 文件 model_ckpt_N.bin
 # 两种都可直接作训练的 model.ckpt=<路径>（pi3_training.py 目录走 load_sharded_checkpoint，文件走 torch.load）。
 # 第三个参数 > 0 时先等 *_optim_states.pt 数量达到它（多节点训练各节点把自己的分片传到同一个 efs 目录，到齐了才能合并），
 # 最多等 MERGE_WAIT_MAX 秒（默认 7200）。目录里没有 zero_to_fp32.py 时退回 tools/zero_ckpt_to_model.py --mode fp32。
 merge_zero_ckpt () {
     local CK="$1" OUT_PARENT="$2" EXPECT="${3:-0}"
     local NAME_CK; NAME_CK="$(basename "${CK}")"
-    local N="${NAME_CK#checkpoint_}"
-    local EPOCH
-    if [[ "${N}" =~ ^[0-9]+$ ]]; then EPOCH=$((N + 1)); else EPOCH="${NAME_CK}"; fi
-    local OUT_BASE="${OUT_PARENT}/model_ckpt_${EPOCH}"
+    local OUT_BASE="${OUT_PARENT}/model_ckpt_${NAME_CK#checkpoint_}"
     mkdir -p "${OUT_PARENT}"
 
     if [ "${EXPECT}" -gt 0 ] 2>/dev/null; then

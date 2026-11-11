@@ -25,7 +25,7 @@
 #               默认 obs://bucket-471/z00533370/exp/pi3sup/outputs/<NAME>；checkpoint 在 <OBS_TRAIN_ROOT>/outputs/<NAME>/ckpts/
 #   AUTO_RESUME 1 = 从 OBS / efs 上本实验最新的 checkpoint 续训（默认 1）
 #   UPLOAD      0 = 训练结束后不往 efs 传 checkpoint / tensorboard（冒烟测试用）
-#   MERGE_CKPT  1 = 上传后由节点 0 把最终 checkpoint 合成单个 fp32 模型 ckpts/model_ckpt_<epoch>（默认 1）
+#   MERGE_CKPT  1 = 上传后由节点 0 把最终 checkpoint 合成单个 fp32 模型 ckpts/model_ckpt_<N>（默认 1）
 #   LOG_DIR     脚本输出另存一份的目录（默认 /efs-mi-pay-gy1/z00533370/exp/logs，文件名 <NAME>_node<N>_<时间>.log）
 #   MEM_LOG_INTERVAL 每隔多少秒打印一次本节点内存（默认 300，0 = 关闭）
 #   DATA_VIEW_THREADS 每个样本内并发读的帧数（默认 8；1 = 逐帧串行）
@@ -349,7 +349,7 @@ copy_by_mox "${CKPT_DIR}" "${CKPT_EFS_DIR}"
 echo "==> Finish uploading checkpoint"
 
 # 合成单个 fp32 模型：各节点把自己的 ZeRO 分片传到同一个 efs 目录，节点 0 等 NUM_PROCESSES 个分片到齐后用
-# checkpoint 自带的 zero_to_fp32.py 合并，输出 efs 上 ckpts/model_ckpt_<epoch>（epoch = N+1）。MERGE_CKPT=0 关闭。
+# checkpoint 自带的 zero_to_fp32.py 合并，输出 efs 上 ckpts/model_ckpt_<N>（与 checkpoint_<N> 编号一致）。MERGE_CKPT=0 关闭。
 if [ "${MERGE_CKPT:-1}" = "1" ] && [ "${NODE_RANK}" = "0" ]; then
     source "${CODE_DIR}/run_sh_s3/_merge_ckpt.sh"
     echo "==> Merge final checkpoint into a single fp32 model"

@@ -15,7 +15,7 @@
 #   CKPT=all           bash run_sh_s3/run_utils/mox_download.sh <name>    # 全部 checkpoint（很大：DeepSpeed 优化器状态）
 #   LOG=0              bash run_sh_s3/run_utils/mox_download.sh <name>    # 只要 checkpoint
 # 默认先合并再下载（MERGE=1）：checkpoint 先拷到本地临时盘 LOCAL_TMP，用 checkpoint 自带的 zero_to_fp32.py 合成 fp32 模型，
-#   直接写到 efs 的 ckpts/model_ckpt_<epoch>（epoch = N+1：checkpoint_54 -> model_ckpt_55；新版 DeepSpeed 是目录，旧版是 .bin），
+#   直接写到 efs 的 ckpts/model_ckpt_<N>（与 checkpoint_<N> 编号一致；新版 DeepSpeed 是目录，旧版是 .bin），
 #   再删掉临时盘上的完整 checkpoint。KEEP_FULL=1 时完整的 DeepSpeed checkpoint（含优化器状态，用于续训）也下载到 efs。
 #   MERGE=0：不合并，按原样下载完整 checkpoint（旧行为）。
 # 可用环境变量：OBS_ROOT（默认 obs://bucket-471/z00533370/exp/pi3sup/outputs）、EFS_ROOT（默认 /efs-mi-pay-gy1/z00533370/exp/pi3sup/outputs）
