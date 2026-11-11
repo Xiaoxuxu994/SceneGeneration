@@ -14,6 +14,10 @@
 #   CKPT=none          bash run_sh_s3/run_utils/mox_download.sh <name>    # 只要日志
 #   CKPT=all           bash run_sh_s3/run_utils/mox_download.sh <name>    # 全部 checkpoint（很大：DeepSpeed 优化器状态）
 #   LOG=0              bash run_sh_s3/run_utils/mox_download.sh <name>    # 只要 checkpoint
+# 默认先合并再下载（MERGE=1）：checkpoint 先拷到本地临时盘 LOCAL_TMP，用 checkpoint 自带的 zero_to_fp32.py 合成 fp32 模型，
+#   直接写到 efs 的 ckpts/model_ckpt_<epoch>（epoch = N+1：checkpoint_54 -> model_ckpt_55；新版 DeepSpeed 是目录，旧版是 .bin），
+#   再删掉临时盘上的完整 checkpoint。KEEP_FULL=1 时完整的 DeepSpeed checkpoint（含优化器状态，用于续训）也下载到 efs。
+#   MERGE=0：不合并，按原样下载完整 checkpoint（旧行为）。
 # 可用环境变量：OBS_ROOT（默认 obs://bucket-471/z00533370/exp/pi3sup/outputs）、EFS_ROOT（默认 /efs-mi-pay-gy1/z00533370/exp/pi3sup/outputs）
 # 日志：每行带时间戳，另存 /efs-mi-pay-gy1/z00533370/exp/logs/mox_download_<时间>.log
 set -uo pipefail
@@ -25,6 +29,11 @@ OBS_ROOT="${OBS_ROOT:-obs://bucket-471/z00533370/exp/pi3sup/outputs}"
 EFS_ROOT="${EFS_ROOT:-/efs-mi-pay-gy1/z00533370/exp/pi3sup/outputs}"
 CKPT="${CKPT:-latest}"
 LOG="${LOG:-1}"
+MERGE="${MERGE:-1}"
+KEEP_FULL="${KEEP_FULL:-0}"
+LOCAL_TMP="${LOCAL_TMP:-/cache/mox_download_tmp}"
+mkdir -p "${LOCAL_TMP}" 2>/dev/null || LOCAL_TMP="${EFS_ROOT}/.mox_download_tmp"
+source "${CODE_DIR}/run_sh_s3/_merge_ckpt.sh"
 LOG_DIR="${LOG_DIR:-/efs-mi-pay-gy1/z00533370/exp/logs}"
 mkdir -p "${LOG_DIR}" 2>/dev/null || LOG_DIR=.
 LOGFILE="${LOG_DIR}/mox_download_$(date +%m%d_%H%M%S).log"
@@ -80,7 +89,7 @@ copy_by_mox () {
 }
 
 {
-echo "==> OBS_ROOT=${OBS_ROOT}  EFS_ROOT=${EFS_ROOT}  CKPT=${CKPT}  LOG=${LOG}  runs: ${NAMES[*]}"
+echo "==> OBS_ROOT=${OBS_ROOT}  EFS_ROOT=${EFS_ROOT}  CKPT=${CKPT}  LOG=${LOG}  MERGE=${MERGE}  KEEP_FULL=${KEEP_FULL}  LOCAL_TMP=${LOCAL_TMP}  runs: ${NAMES[*]}"
 echo "==> log ${LOGFILE}"
 FAILED=()
 for NAME in "${NAMES[@]}"; do
@@ -105,7 +114,19 @@ for NAME in "${NAMES[@]}"; do
     esac
     for c in ${CKPT_LIST[@]+"${CKPT_LIST[@]}"}; do
         echo "==> checkpoint: ${c}"
-        copy_by_mox "${OBS_RUN}/ckpts/${c}" "${EFS_RUN}/ckpts/${c}" || ok=0
+        if [ "${MERGE}" = "1" ] && [[ "${c}" == checkpoint_* || "${c}" == best_model ]]; then
+            TMP_CK="${LOCAL_TMP}/${NAME}/${c}"
+            if [ "${KEEP_FULL}" = "1" ]; then
+                copy_by_mox "${OBS_RUN}/ckpts/${c}" "${EFS_RUN}/ckpts/${c}" || ok=0
+                TMP_CK="${EFS_RUN}/ckpts/${c}"
+            else
+                copy_by_mox "${OBS_RUN}/ckpts/${c}" "${TMP_CK}" || ok=0
+            fi
+            merge_zero_ckpt "${TMP_CK}" "${EFS_RUN}/ckpts" || ok=0
+            [ "${KEEP_FULL}" = "1" ] || rm -rf "${LOCAL_TMP:?}/${NAME}/${c}"
+        else
+            copy_by_mox "${OBS_RUN}/ckpts/${c}" "${EFS_RUN}/ckpts/${c}" || ok=0
+        fi
     done
 
     # 2) tensorboard / 文本日志
