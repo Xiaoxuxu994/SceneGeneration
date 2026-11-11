@@ -47,29 +47,7 @@ mkdir -p "${OUT_DIR}/logs"
 
 # 依赖：与训练脚本相同（hydra_colorlog 会顺带装上 hydra-core）
 # 可选：安装 hydra_colorlog
-python - <<'PY'
-try:
-    import hydra_colorlog
-except Exception:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "hydra_colorlog"])
-PY
-
-python - <<'PY'
-try:
-    import evo
-except Exception:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "evo"])
-PY
-
-python - <<'PY'
-try:
-    import pyquaternion
-except Exception:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyquaternion"])
-PY
+source "${CODE_DIR}/run_sh_s3/_pip_deps.sh"   # 公共依赖：缺什么装什么（见该文件）
 
 if [ "${DATASETS}" = "ALL" ]; then
     DATASETS="$(python -c "from omegaconf import OmegaConf; print(' '.join(OmegaConf.load('${CONFIG}').train_dataset.weights.keys()))")"

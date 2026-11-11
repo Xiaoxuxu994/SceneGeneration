@@ -29,21 +29,7 @@ export PYTHONUNBUFFERED=1
 echo "CODE_DIR=${CODE_DIR}  ($(git log --oneline -1 2>/dev/null || echo 'not a git repo'))"
 
 # 依赖：与训练脚本相同
-python - <<'PY'
-try:
-    import hydra_colorlog
-except Exception:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "hydra_colorlog"])
-PY
-
-python - <<'PY'
-try:
-    import pyquaternion
-except Exception:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyquaternion"])
-PY
+source "${CODE_DIR}/run_sh_s3/_pip_deps.sh"   # 公共依赖：缺什么装什么（见该文件）
 
 WHAT="${WHAT:-both}"
 DATA="${DATA:-datamix_all_v9-5-sub00}"

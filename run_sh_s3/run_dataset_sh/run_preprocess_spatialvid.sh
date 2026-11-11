@@ -26,6 +26,7 @@ CODE_DIR="${CODE_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "${CODE_DIR}"
 export PYTHONPATH="${CODE_DIR}"
 export PYTHONUNBUFFERED=1
+source "${CODE_DIR}/run_sh_s3/_pip_deps.sh"   # 公共依赖：缺什么装什么（见该文件）
 
 OUT="${OUT:-obs://bucket-471/z00533370/dataset/SpatialVID-HQ_rgbpose}"
 MAX_SIDE="${MAX_SIDE:-960}"
