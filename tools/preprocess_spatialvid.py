@@ -17,7 +17,8 @@ intrinsics 每行 [fx,fy,cx,cy] 归一化（fx,cx 乘宽，fy,cy 乘高）。这
     <out>/<group>/<clip>/cams.pkl             {"<k:05d>": (K 3x3 像素, w2c 4x4)}
     <out>/<group>/<clip>/meta.json            fps、取帧间隔、帧数、分辨率、有效 / 动态像素比例
     <out>/<group>/_index.json                 {clip: 帧数}，loader 建索引只读它
-    <out>/<group>/_DONE                       group 写完的标记；重跑跳过（断点续跑以 group 为单位）
+    <out>/<group>/_DONE                       group 写完的标记；重跑跳过
+    断点续跑：group 有 _DONE 整组跳过；否则逐 clip 检查 meta.json（最后同步写）与 jpg 数，已完成的 clip 不再解码
 
 --no-depth（不读 depths/，覆盖全部 74 个 group）：只出 RGB 帧 + 相机，供校验 / 重新打伪标签用；
     帧缩到长边 --max-side（默认 1280 即原分辨率），K 按帧的实际尺寸换算，
@@ -122,8 +123,34 @@ def process_depth_clip(clip, data, ann, out_dir, write):
                 valid=float(np.mean(valid)) if valid else 0.0, dyn=float(np.mean(dyn)) if dyn else 0.0)
 
 
+def clip_done(out_dir):
+    """meta.json 在该 clip 的其余文件全部写完后才写（同步），且帧数与目录里的 jpg 数一致 -> 已完成，返回帧数。"""
+    try:
+        if not fio.exists(osp.join(out_dir, "meta.json")):
+            return None
+        n = int(json.loads(fio.read_bytes(osp.join(out_dir, "meta.json")))["n_frames"])
+        names = fio.listdir(out_dir)
+        need = {"cams.pkl"} | (set(ANN_FILES) - {"caption.json", "instructions.json"} if ARGS.no_depth else set())
+        if need <= set(names) and sum(x.startswith("frame_") for x in names) == n:
+            return n
+    except Exception:
+        pass
+    return None
+
+
 def process_video_clip(clip, data, info, out_dir, write):
+    """返回 (帧数, 是否沿用了已完成的输出)。"""
     import cv2
+    cv2.setNumThreads(1)
+    if not ARGS.overwrite:
+        n = clip_done(out_dir)
+        if n is not None:
+            return n, True
+    mine = []
+
+    def write(path, payload, _write=write):
+        mine.append(_write(path, payload))
+
     with tempfile.NamedTemporaryFile(suffix=".mp4") as tf:
         tf.write(data)
         tf.flush()
@@ -156,10 +183,12 @@ def process_video_clip(clip, data, info, out_dir, write):
     for fn, raw in (info.get("raw") or {}).items():           # --no-depth：原始标注原样拷贝
         write(osp.join(out_dir, fn), raw)
     fio.save_pickle(cams, osp.join(out_dir, "cams.pkl"))
+    for f in mine:                                   # 这个 clip 的文件全部写完，再同步写 meta.json（完成标记）
+        f.result()
     meta = dict(clip=clip, fps=fps, step=step, n_frames=n, n_video_frames_read=i, n_depth=info["n_depth"],
                 n_pose=info["n_pose"], W=info["W"], H=info["H"], valid_ratio=info["valid"], dyn_ratio=info["dyn"])
-    write(osp.join(out_dir, "meta.json"), json.dumps(meta).encode())
-    return n
+    fio.write_bytes(osp.join(out_dir, "meta.json"), json.dumps(meta).encode())
+    return n, False
 
 
 def process_group(group):
@@ -174,11 +203,13 @@ def process_group(group):
         def write(path, data):
             """异步写 OBS；待写的文件数超过上限时等最早的写完（深度帧与视频解码线程共用）。"""
             with lock:
-                futs.append(pool.submit(fio.write_bytes, path, data))
+                fut = pool.submit(fio.write_bytes, path, data)
+                futs.append(fut)
                 wait = futs[: -2 * ARGS.threads] if len(futs) > 8 * ARGS.threads else []
                 del futs[: len(wait)]
             for f in wait:
                 f.result()
+            return fut
 
         # 1) annotations -> 内存
         ann = {}
@@ -236,9 +267,11 @@ def process_group(group):
                     time.sleep(0.05)
                 if len(vfuts) == len(infos):
                     break
+        n_reused = 0
         for clip, f in vfuts.items():
             try:
-                n = f.result()
+                n, reused = f.result()
+                n_reused += reused
                 if n >= ARGS.min_frames:
                     index[clip] = n
             except Exception as e:
@@ -252,7 +285,7 @@ def process_group(group):
         if not ARGS.limit_clips:
             fio.write_bytes(osp.join(out_g, "_DONE"),
                             f"{len(index)} clips, {sum(index.values())} frames, no video {len(missing)}\n".encode())
-        print(f"[{group}] videos: {len(index)} clips written, {sum(index.values())} frames, without video "
+        print(f"[{group}] videos: {len(index)} clips written ({n_reused} reused from an earlier run), {sum(index.values())} frames, without video "
               f"{len(missing)} ({time.time() - t0:.0f}s)", flush=True)
         return group, "ok", len(index), time.time() - t0
     except Exception as e:
@@ -270,6 +303,8 @@ def main():
     ap.add_argument("--procs", type=int, default=6, help="同时处理几个 group")
     ap.add_argument("--threads", type=int, default=16, help="每个 group 并发写 OBS 的文件数")
     ap.add_argument("--video-workers", type=int, default=4, help="每个 group 并发解码的视频数")
+    ap.add_argument("--decode-threads", type=int, default=1,
+                    help="每个视频解码用的 ffmpeg 线程数（OpenCV 默认按核数开，几十个视频并发时严重超订；并行度靠 procs×video-workers）")
     ap.add_argument("--sky-inv", type=float, default=0.0052, help="逆深度 <= 此值（约 192m 以外，官方把天空截在 200m）置为无效")
     ap.add_argument("--min-frames", type=int, default=8)
     ap.add_argument("--jpeg-quality", type=int, default=95)
@@ -277,6 +312,8 @@ def main():
     ap.add_argument("--overwrite", action="store_true")
     ap.add_argument("--shard", default="0/1", help="i/n：多节点时本节点处理第 i 份（group 列表按 i::n 切分）")
     ARGS = ap.parse_args()
+    # OpenCV 打开视频时读这个环境变量；fork 出的进程继承
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"threads;{ARGS.decode_threads}"
 
     if ARGS.no_depth and ARGS.out == DEFAULT_OUT:
         ARGS.out = DEFAULT_OUT_NODEPTH
@@ -285,7 +322,7 @@ def main():
     groups = groups[si::sn]
     print(f"[SpatialVID] {len(groups)} groups -> {ARGS.out}  procs={ARGS.procs} threads={ARGS.threads} "
           f"video_workers={ARGS.video_workers} limit_clips={ARGS.limit_clips} shard={ARGS.shard} no_depth={ARGS.no_depth} "
-          f"max_side={ARGS.max_side} jpeg_quality={ARGS.jpeg_quality}", flush=True)
+          f"max_side={ARGS.max_side} jpeg_quality={ARGS.jpeg_quality} decode_threads={ARGS.decode_threads}", flush=True)
     print(f"[SpatialVID] groups: {' '.join(groups)}", flush=True)
     import multiprocessing as mp
     t0, n_err = time.time(), 0

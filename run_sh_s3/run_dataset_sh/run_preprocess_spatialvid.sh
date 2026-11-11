@@ -9,7 +9,9 @@
 #   OUT            默认 obs://bucket-471/z00533370/dataset/SpatialVID-HQ_rgbpose
 #   MAX_SIDE=960   帧的长边（原视频 1280x720；960 约省一半存储）
 #   JPEG_Q=90      JPEG 质量
-#   PROCS=12       本节点同时处理的 group 数；VIDEO_WORKERS=6 每个 group 并发解码的视频数；THREADS=16 每个 group 并发写 OBS 数
+#   PROCS=16       本节点同时处理的 group 数；THREADS=16 每个 group 并发写 OBS 数
+#   VIDEO_WORKERS  每个 group 并发解码的视频数，默认 核数/PROCS（每个视频单线程解码，总解码线程数 ≈ 核数）
+#   DECODE_THREADS=1  每个视频的 ffmpeg 解码线程（OpenCV 默认按核数开，几百个并发时严重超订，2026-11-11 实测负载 200、吞吐只有约 2000 帧/s）
 #   SV_GROUPS      只做这些 group（空格分隔），默认全部 74 个
 #   LIMIT_CLIPS    >0 时每个 group 只做前 N 个 clip（试跑，不写 _DONE）
 #   PROGRESS_INTERVAL=600  每隔多少秒打印一次整体进度（完成的 group 数、帧数、内存），0 = 关闭
@@ -31,8 +33,10 @@ source "${CODE_DIR}/run_sh_s3/_pip_deps.sh"   # 公共依赖：缺什么装什�
 OUT="${OUT:-obs://bucket-471/z00533370/dataset/SpatialVID-HQ_rgbpose}"
 MAX_SIDE="${MAX_SIDE:-960}"
 JPEG_Q="${JPEG_Q:-90}"
-PROCS="${PROCS:-12}"
-VIDEO_WORKERS="${VIDEO_WORKERS:-6}"
+PROCS="${PROCS:-16}"
+NCPU="$(nproc 2>/dev/null || echo 64)"
+VIDEO_WORKERS="${VIDEO_WORKERS:-$(( NCPU / PROCS > 2 ? NCPU / PROCS : 2 ))}"
+DECODE_THREADS="${DECODE_THREADS:-1}"
 THREADS="${THREADS:-16}"
 LIMIT_CLIPS="${LIMIT_CLIPS:-0}"
 PROGRESS_INTERVAL="${PROGRESS_INTERVAL:-600}"
@@ -47,7 +51,7 @@ ts() { while IFS= read -r line; do printf '[%s] %s\n' "$(date '+%F %T')" "${line
 
 {
 echo "==> CODE_DIR=${CODE_DIR} ($(git log --oneline -1 2>/dev/null || echo 'not a git repo'))"
-echo "==> node ${NODE_RANK}/${NNODES}  OUT=${OUT}  MAX_SIDE=${MAX_SIDE} JPEG_Q=${JPEG_Q} PROCS=${PROCS} VIDEO_WORKERS=${VIDEO_WORKERS} THREADS=${THREADS} LIMIT_CLIPS=${LIMIT_CLIPS}"
+echo "==> node ${NODE_RANK}/${NNODES}  OUT=${OUT}  MAX_SIDE=${MAX_SIDE} JPEG_Q=${JPEG_Q} PROCS=${PROCS} VIDEO_WORKERS=${VIDEO_WORKERS} DECODE_THREADS=${DECODE_THREADS} THREADS=${THREADS} LIMIT_CLIPS=${LIMIT_CLIPS} nproc=${NCPU}"
 echo "==> log ${LOG}"
 } | ts | tee -a "${LOG}"
 
@@ -85,7 +89,7 @@ PY
 fi
 
 ARGS=(--no-depth --out "${OUT}" --max-side "${MAX_SIDE}" --jpeg-quality "${JPEG_Q}" --procs "${PROCS}"
-      --video-workers "${VIDEO_WORKERS}" --threads "${THREADS}" --shard "${NODE_RANK}/${NNODES}")
+      --video-workers "${VIDEO_WORKERS}" --decode-threads "${DECODE_THREADS}" --threads "${THREADS}" --shard "${NODE_RANK}/${NNODES}")
 [ "${LIMIT_CLIPS}" -gt 0 ] && ARGS+=(--limit-clips "${LIMIT_CLIPS}")
 # shellcheck disable=SC2206
 [ -n "${SV_GROUPS:-}" ] && ARGS+=(--groups ${SV_GROUPS})
