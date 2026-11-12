@@ -265,6 +265,10 @@ class Pi3(nn.Module):
 
             if ckpt.is_dir():
                 res = load_sharded_checkpoint(self, str(ckpt), strict=False)
+            elif ckpt.suffix == ".safetensors":          # run_sh_s3/_merge_ckpt.sh 合并出的 model_ckpt_N.safetensors
+                checkpoint = load_file(str(ckpt))
+                res = self.load_state_dict(checkpoint, strict=False)
+                del checkpoint
             else:
                 checkpoint = torch.load(str(ckpt), weights_only=False, map_location="cpu")
                 res = self.load_state_dict(checkpoint, strict=False)
