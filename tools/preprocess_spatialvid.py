@@ -95,7 +95,11 @@ def make_cam(pose_row, intr_row, W, H):
 
 
 def n_dyn_masks(data):
-    return (len(np.load(io.BytesIO(data)).files) - 1) // 3
+    """dyn_masks.npz 的帧数；读不了（个别 clip 的 npz 异常）时返回一个大数，即不以它限制帧数（mask 只是原样拷贝）。"""
+    try:
+        return (len(np.load(io.BytesIO(data)).files) - 1) // 3
+    except Exception:
+        return 10 ** 9
 
 
 def process_depth_clip(clip, data, ann, out_dir, write):
@@ -245,9 +249,17 @@ def process_group(group):
                 if not {"poses.npy", "intrinsics.npy"} <= set(a):
                     n_no_ann += 1
                     continue
-                n_pose = len(np.load(io.BytesIO(a["poses.npy"])))
-                n = min(n_pose, len(np.load(io.BytesIO(a["intrinsics.npy"]))),
-                        n_dyn_masks(a["dyn_masks.npz"]) if "dyn_masks.npz" in a else 10 ** 9)
+                try:                                 # 个别 clip 的标注异常（如 pickled 数组）只跳过这个 clip，不连累整个 group
+                    poses = np.load(io.BytesIO(a["poses.npy"]))
+                    intr = np.load(io.BytesIO(a["intrinsics.npy"]))
+                    if poses.ndim != 2 or poses.shape[1] != 7 or intr.ndim != 2 or intr.shape[1] != 4:
+                        raise ValueError(f"poses {poses.shape} intrinsics {intr.shape}")
+                    n_pose = len(poses)
+                    n = min(n_pose, len(intr), n_dyn_masks(a["dyn_masks.npz"]) if "dyn_masks.npz" in a else 10 ** 9)
+                except Exception as e:
+                    n_bad += 1
+                    print(f"[{group}] skip clip {clip}: bad annotation ({type(e).__name__}: {str(e)[:120]})", flush=True)
+                    continue
                 if n >= ARGS.min_frames:
                     infos[clip] = dict(n=n, W=None, H=None, cams=None, n_depth=0, n_pose=n_pose, valid=None, dyn=None, raw=a)
                 if ARGS.limit_clips and len(infos) >= ARGS.limit_clips:
