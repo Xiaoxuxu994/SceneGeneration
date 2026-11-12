@@ -33,7 +33,9 @@ class DL3DVDataset(BaseDataset):
         conf_thres=0.25,
         depth_thres=1e-4,
         apply_trans=False,
-        rgb_root='/efs-mi-east4-2/datasets/DL3DV/',   # 原始 RGB 目录（原先写死在代码里）
+        rgb_root='/efs-mi-east4-2/datasets/DL3DV/',   # 原始 RGB 目录（原先写死在代码里）；None = 用场景目录里 frame 的 file_path
+        rgb_subdir='images_8',      # rgb_root 下的分辨率子目录（DL3DV 原始发布的 images_4 / images_8 ...）
+        rgb_ext='.png',             # rgb_root 下图像的后缀（scene_meta 里记的是 .jpg）
         depth_interp='lanczos',     # 'nearest'：深度缩放到 RGB 尺寸时用最近邻（lanczos 会在深度边缘造出飞点）
         pct_twice=True,             # False：98 分位只在裁剪缩放后截一次（旧行为是前后各截一次）
         **kwargs,
@@ -53,6 +55,8 @@ class DL3DVDataset(BaseDataset):
         self.depth_thres = depth_thres
         self.apply_trans = apply_trans
         self.rgb_root = rgb_root
+        self.rgb_subdir = rgb_subdir
+        self.rgb_ext = rgb_ext
         assert depth_interp in ('lanczos', 'nearest'), depth_interp
         self.depth_interp = depth_interp
         self.pct_twice = pct_twice
@@ -97,6 +101,14 @@ class DL3DVDataset(BaseDataset):
     def __len__(self):
         return len(self.sequences)
 
+    def _rgb_path(self, scene_path, scene_name, frame_info):
+        """RGB 文件：rgb_root/<1K..11K>/<hash>/<rgb_subdir>/<帧名><rgb_ext>；rgb_root=None 时用场景目录里的 file_path。"""
+        if self.rgb_root is None:
+            return osp.join(scene_path, frame_info["file_path"])
+        scene_seg = scene_name.split('-')  # 9K-id
+        name = osp.splitext(osp.basename(frame_info["file_path"]))[0] + self.rgb_ext
+        return osp.join(self.rgb_root, scene_seg[0], scene_seg[1], self.rgb_subdir, name)
+
     # =========================
     # scan / cache
     # =========================
@@ -122,8 +134,7 @@ class DL3DVDataset(BaseDataset):
                     frames = []
                     for frame_info in cam_info["frames"]:
                         # rgb_path = osp.join(self.DL3DV_DIR, scene_name, frame_info["file_path"].replace("images","images_use").replace(".jpg", ".png")) # for example
-                        scene_seg = scene_name.split('-') # 9K-id
-                        rgb_path = osp.join(self.rgb_root, scene_seg[0], scene_seg[1], 'images_8', osp.basename(frame_info["file_path"])).replace('.jpg', '.png')
+                        rgb_path = self._rgb_path(osp.join(self.DL3DV_DIR, scene_name), scene_name, frame_info)
                         depth_path = osp.join(self.DL3DV_DIR, scene_name, frame_info["mvsanywhere_depth"])
                         depthconf_path = osp.join(self.DL3DV_DIR, scene_name, frame_info["mvsanywhere_depth_confidence"])
         
@@ -161,9 +172,7 @@ class DL3DVDataset(BaseDataset):
     # =========================
     def _load_one_view(self, scene_path, scene_name, frame_info, intrinsic, transmat, fid, resolution, rng):
         # rgb_image = read_any_file(osp.join(scene_path, frame_info["file_path"]).replace("images","images_use").replace(".jpg", ".png")) # for example
-        scene_seg = scene_name.split('-') # 9K-id
-        rgb_file = osp.join(self.rgb_root, scene_seg[0], scene_seg[1], 'images_8', osp.basename(frame_info["file_path"])).replace('.jpg', '.png')
-        rgb_image = read_any_file(rgb_file)
+        rgb_image = read_any_file(self._rgb_path(scene_path, scene_name, frame_info))
         depthmap = read_any_file(osp.join(scene_path, frame_info["mvsanywhere_depth"]), return_dtype=np.float32)
 
         h, w, d = rgb_image.shape
