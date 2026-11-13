@@ -8,7 +8,7 @@
 #   cd /home/ma-user/modelarts/user-job-dir/SceneGeneration/; source /home/ma-user/.bashrc; bash run_sh_s3/run_utils/unzip_dl3dv.sh
 # 2K 解压并缩到 960x540（场景比 960P 全：10221 个，含 960P 缺的 4K 批次）：
 #   SRC=obs://bucket-471/dataset/DL3DV-ALL-2K OUT=obs://bucket-471/z00533370/dataset/DL3DV-ALL-2K_to960 RESIZE_LONG=960 IMG_DIR=images_4 bash run_sh_s3/run_utils/unzip_dl3dv.sh
-# 可用环境变量：SRC / OUT（默认见上）、RESIZE_LONG（>0 时缩到长边 N）、IMG_DIR、IMG_EXT=.png|.jpg、PROCS=8（同时解压的场景数）、THREADS=16（每个场景并发写的文件数）、
+# 可用环境变量：SRC / OUT（默认见上）、RESIZE_LONG（>0 时缩到长边 N）、IMG_DIR、IMG_EXT=.png|.jpg、PROCS=16（同时解压的场景数）、LOCAL_TMP=/cache/unzip_dl3dv（zip 本地临时目录）、THREADS=16（每个场景并发写的文件数）、
 #   LIMIT=N（试跑只做前 N 个场景）、BATCHES="1K 2K"（只做这些批次）
 # 日志：每行带时间戳，另存 /efs-mi-pay-gy1/z00533370/exp/logs/unzip_dl3dv_node<N>_<时间>.log（目录可写时）
 set -uo pipefail
@@ -21,7 +21,7 @@ source "${CODE_DIR}/run_sh_s3/_pip_deps.sh"   # 公共依赖：缺什么装什�
 
 SRC="${SRC:-obs://bucket-471/dataset/DL3DV-ALL-960P}"
 OUT="${OUT:-obs://bucket-471/z00533370/dataset/DL3DV-ALL-960P_unzip}"
-PROCS="${PROCS:-8}"
+PROCS="${PROCS:-16}"
 THREADS="${THREADS:-16}"
 LIMIT="${LIMIT:-0}"
 NODE_RANK="${VC_TASK_INDEX:-${NODE_RANK:-0}}"
@@ -38,6 +38,7 @@ ARGS=(--src "${SRC}" --out "${OUT}" --procs "${PROCS}" --threads "${THREADS}" --
 [ "${RESIZE_LONG:-0}" -gt 0 ] && ARGS+=(--resize-long "${RESIZE_LONG}")
 [ -n "${IMG_DIR:-}" ] && ARGS+=(--img-dir "${IMG_DIR}")
 [ -n "${IMG_EXT:-}" ] && ARGS+=(--img-ext "${IMG_EXT}")
+[ -n "${LOCAL_TMP:-}" ] && ARGS+=(--local-tmp "${LOCAL_TMP}")
 # shellcheck disable=SC2206
 [ -n "${BATCHES:-}" ] && ARGS+=(--batches ${BATCHES})
 

@@ -23,6 +23,7 @@ OBS 小文件写入单节点约 300 个/s 封顶（2026-11-11 实测），960P �
 import argparse
 import io
 import json
+import os
 import re
 import os.path as osp
 import sys
@@ -88,8 +89,12 @@ def unzip_scene(job):
         if not ARGS.overwrite and mox().file.exists(f"{out}/transforms.json"):
             n = len(json.loads(mox().file.read(f"{out}/transforms.json")).get("frames", []))
             return batch, h, "skip", n, 0.0
-        data = retry(lambda p: mox().file.read(p, binary=True), f"{ARGS.src}/{batch}/{zname}.zip")
-        z = zipfile.ZipFile(io.BytesIO(data))
+        # 先用 mox.file.copy 下载到本地盘再解：mox.file.read 整块读大文件（2K 每个约 1.1GB）很慢，且要全部放进内存
+        local = osp.join(ARGS.local_tmp, f"{batch}_{zname}.zip")
+        os.makedirs(ARGS.local_tmp, exist_ok=True)
+        retry(lambda a, b: mox().file.copy(a, b), f"{ARGS.src}/{batch}/{zname}.zip", local)
+        t_dl = time.time() - t0
+        z = zipfile.ZipFile(local)
         files, tj = [], None
         for info in z.infolist():
             if info.is_dir():
@@ -104,9 +109,16 @@ def unzip_scene(job):
         with ThreadPoolExecutor(ARGS.threads) as ex:
             list(ex.map(lambda f: write(*convert(out, f[0], z.read(f[1]))), files))
         write(f"{out}/transforms.json", tj)            # 最后写：完成标记
+        z.close()
+        os.remove(local)
         n_img = sum(r.lower().endswith((".png", ".jpg")) for r, _ in files)
-        return batch, h, "ok", n_img, time.time() - t0
+        dt = time.time() - t0
+        return batch, h, f"ok (download {t_dl:.0f}s process+upload {dt - t_dl:.0f}s)", n_img, dt
     except Exception as e:
+        try:
+            os.remove(local)
+        except Exception:
+            pass
         return batch, h, f"error {type(e).__name__}: {str(e)[:150]}", 0, time.time() - t0
 
 
@@ -116,7 +128,8 @@ def main():
     ap.add_argument("--src", default="obs://bucket-471/dataset/DL3DV-ALL-960P")
     ap.add_argument("--out", default="obs://bucket-471/z00533370/dataset/DL3DV-ALL-960P_unzip")
     ap.add_argument("--batches", nargs="*", default=None, help="默认全部 <N>K 批次")
-    ap.add_argument("--procs", type=int, default=8, help="同时解压几个场景（每个场景整个 zip 读进内存，约 300MB）")
+    ap.add_argument("--procs", type=int, default=16, help="同时解压几个场景（zip 先下载到 --local-tmp，内存占用小）")
+    ap.add_argument("--local-tmp", default="/cache/unzip_dl3dv", help="zip 的本地临时目录，解完即删（procs 个 zip 同时存在）")
     ap.add_argument("--threads", type=int, default=16, help="每个场景并发写 OBS 的文件数")
     ap.add_argument("--shard", default="0/1", help="i/n：多节点时本节点处理第 i 份")
     ap.add_argument("--limit", type=int, default=0, help=">0 时只做前 N 个场景（试跑）")
@@ -147,6 +160,8 @@ def main():
             else:
                 index[f"{batch}/{h}"] = n
                 n_img += n
+                if status.startswith("ok") and done <= 10:          # 前几个场景打出分阶段耗时，便于判断瓶颈
+                    print(f"  {batch}/{h}: {n} frames, {status}", flush=True)
             if done % 50 == 0 or done == len(jobs):
                 el = time.time() - t0
                 print(f"[DL3DV] {done}/{len(jobs)} scenes ({n_err} errors), {n_img} frames, {el / 60:.1f} min, "
