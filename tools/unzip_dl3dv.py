@@ -17,6 +17,8 @@ OBS 小文件写入单节点约 300 个/s 封顶（2026-11-11 实测），960P �
 
     python tools/unzip_dl3dv.py --limit 2                      # 试跑两个场景
     python tools/unzip_dl3dv.py --procs 8 --shard 0/4
+    python tools/unzip_dl3dv.py --src obs://bucket-471/dataset/DL3DV-ALL-2K --out .../DL3DV-ALL-2K_to960 \
+        --resize-long 960 --img-dir images_4     # 2K 解压并缩到 960x540，目录名与 960P 版一致
 """
 import argparse
 import io
@@ -56,6 +58,27 @@ def write(path, data):
     retry(lambda p, d: mox().file.write(p, d, binary=True), path, data)
 
 
+def convert(out, rel, data):
+    """--resize-long > 0 时把图像缩到长边 N（INTER_AREA，宽高比不变）并改放到 --img-dir；其余文件原样。"""
+    if not (ARGS.resize_long > 0 and rel.lower().endswith((".png", ".jpg", ".jpeg"))):
+        return f"{out}/{rel}", data
+    import cv2
+    import numpy as np
+    cv2.setNumThreads(1)
+    im = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    h, w = im.shape[:2]
+    s = ARGS.resize_long / max(h, w)
+    if s < 1:
+        im = cv2.resize(im, (int(round(w * s)), int(round(h * s))), interpolation=cv2.INTER_AREA)
+    name = osp.splitext(osp.basename(rel))[0] + ARGS.img_ext
+    if ARGS.img_ext == ".jpg":
+        ok, buf = cv2.imencode(".jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    else:
+        ok, buf = cv2.imencode(".png", im, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+    sub = ARGS.img_dir or osp.dirname(rel)
+    return f"{out}/{sub}/{name}", buf.tobytes()
+
+
 def unzip_scene(job):
     batch, zname = job
     h = re.sub(r"_\d+$", "", zname)                   # 部分 zip 名为 <hash>_2.zip（960P 有 955 个，没有同名的 <hash>.zip），场景名去掉后缀
@@ -79,7 +102,7 @@ def unzip_scene(job):
         if tj is None:
             return batch, h, "error: no transforms.json in zip", 0, time.time() - t0
         with ThreadPoolExecutor(ARGS.threads) as ex:
-            list(ex.map(lambda f: write(f"{out}/{f[0]}", z.read(f[1])), files))
+            list(ex.map(lambda f: write(*convert(out, f[0], z.read(f[1]))), files))
         write(f"{out}/transforms.json", tj)            # 最后写：完成标记
         n_img = sum(r.lower().endswith((".png", ".jpg")) for r, _ in files)
         return batch, h, "ok", n_img, time.time() - t0
@@ -98,6 +121,10 @@ def main():
     ap.add_argument("--shard", default="0/1", help="i/n：多节点时本节点处理第 i 份")
     ap.add_argument("--limit", type=int, default=0, help=">0 时只做前 N 个场景（试跑）")
     ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--resize-long", type=int, default=0,
+                    help=">0 时把图像缩到长边 N 再存（如 2K 的 1920x1080 -> 960x540）；transforms.json 仍原样（内参按原图 3840x2160）")
+    ap.add_argument("--img-dir", default=None, help="缩放后的图像目录名（默认沿用 zip 里的，如 images_2）；2K 缩到 960 时用 images_4 与 960P 版一致")
+    ap.add_argument("--img-ext", default=".png", choices=[".png", ".jpg"], help="缩放后的图像格式（jpg 为 q95，体积约 png 的 1/4）")
     ARGS = ap.parse_args()
 
     mox().file.exists(ARGS.src)                        # 先单线程初始化 moxing
@@ -108,7 +135,7 @@ def main():
     if ARGS.limit:
         jobs = jobs[: ARGS.limit]
     print(f"[DL3DV] {ARGS.src} -> {ARGS.out}  batches {batches}  shard {ARGS.shard}: {len(jobs)} scenes, "
-          f"procs={ARGS.procs} threads={ARGS.threads}", flush=True)
+          f"procs={ARGS.procs} threads={ARGS.threads} resize_long={ARGS.resize_long} img_dir={ARGS.img_dir} img_ext={ARGS.img_ext}", flush=True)
 
     t0, done, n_err, n_img, index = time.time(), 0, 0, 0, {}
     with get_context("fork").Pool(ARGS.procs) as pool:

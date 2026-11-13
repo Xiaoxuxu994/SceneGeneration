@@ -6,7 +6,9 @@
 #
 # ModelArts（云道）作业（8 卡规格的 CPU 多；多节点直接用同一条命令）：
 #   cd /home/ma-user/modelarts/user-job-dir/SceneGeneration/; source /home/ma-user/.bashrc; bash run_sh_s3/run_utils/unzip_dl3dv.sh
-# 可用环境变量：SRC / OUT（默认见上）、PROCS=8（同时解压的场景数）、THREADS=16（每个场景并发写的文件数）、
+# 2K 解压并缩到 960x540（场景比 960P 全：10221 个，含 960P 缺的 4K 批次）：
+#   SRC=obs://bucket-471/dataset/DL3DV-ALL-2K OUT=obs://bucket-471/z00533370/dataset/DL3DV-ALL-2K_to960 RESIZE_LONG=960 IMG_DIR=images_4 bash run_sh_s3/run_utils/unzip_dl3dv.sh
+# 可用环境变量：SRC / OUT（默认见上）、RESIZE_LONG（>0 时缩到长边 N）、IMG_DIR、IMG_EXT=.png|.jpg、PROCS=8（同时解压的场景数）、THREADS=16（每个场景并发写的文件数）、
 #   LIMIT=N（试跑只做前 N 个场景）、BATCHES="1K 2K"（只做这些批次）
 # 日志：每行带时间戳，另存 /efs-mi-pay-gy1/z00533370/exp/logs/unzip_dl3dv_node<N>_<时间>.log（目录可写时）
 set -uo pipefail
@@ -33,10 +35,13 @@ ts() { while IFS= read -r line; do printf '[%s] %s\n' "$(date '+%F %T')" "${line
 
 ARGS=(--src "${SRC}" --out "${OUT}" --procs "${PROCS}" --threads "${THREADS}" --shard "${NODE_RANK}/${NNODES}")
 [ "${LIMIT}" -gt 0 ] && ARGS+=(--limit "${LIMIT}")
+[ "${RESIZE_LONG:-0}" -gt 0 ] && ARGS+=(--resize-long "${RESIZE_LONG}")
+[ -n "${IMG_DIR:-}" ] && ARGS+=(--img-dir "${IMG_DIR}")
+[ -n "${IMG_EXT:-}" ] && ARGS+=(--img-ext "${IMG_EXT}")
 # shellcheck disable=SC2206
 [ -n "${BATCHES:-}" ] && ARGS+=(--batches ${BATCHES})
 
-echo "==> node ${NODE_RANK}/${NNODES}  ${SRC} -> ${OUT}  PROCS=${PROCS} THREADS=${THREADS} LIMIT=${LIMIT}  log ${LOGFILE}" | ts | tee -a "${LOGFILE}"
+echo "==> node ${NODE_RANK}/${NNODES}  ${SRC} -> ${OUT}  PROCS=${PROCS} THREADS=${THREADS} LIMIT=${LIMIT} RESIZE_LONG=${RESIZE_LONG:-0} IMG_DIR=${IMG_DIR:-} IMG_EXT=${IMG_EXT:-.png}  log ${LOGFILE}" | ts | tee -a "${LOGFILE}"
 python tools/unzip_dl3dv.py "${ARGS[@]}" 2>&1 | grep -a --line-buffered -vE "^INFO:root|^\s+(stat|errorCode|errorMessage|reason|request-id|retry|func|args|kwargs)" | ts | tee -a "${LOGFILE}"
 rc=${PIPESTATUS[0]}
 echo "==> finished rc=${rc}" | ts | tee -a "${LOGFILE}"
