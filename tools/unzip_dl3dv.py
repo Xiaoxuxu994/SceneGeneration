@@ -7,7 +7,7 @@
     输出：<out>/<批次>/<hash>/images_4/frame_xxxxx.png
           <out>/<批次>/<hash>/transforms.json      最后写（同步），作为该场景解压完成的标记
           <out>/_index/<shard>.json                本节点完成的场景 {"<批次>/<hash>": 帧数}
-    （去掉 zip 里多出的一层 <hash>/）
+    （去掉 zip 里多出的一层 <hash>/；zip 名带 _2 等后缀的（<hash>_2.zip）输出到去掉后缀的 <hash>/）
 
 transforms.json 原样保留：内参是按 3840x2160 原图给的（960P 的图要乘 1/4），transform_matrix 是 nerfstudio 的
 c2w（OpenGL 轴向），转换留给读取方。
@@ -21,6 +21,7 @@ OBS 小文件写入单节点约 300 个/s 封顶（2026-11-11 实测），960P �
 import argparse
 import io
 import json
+import re
 import os.path as osp
 import sys
 import time
@@ -56,20 +57,21 @@ def write(path, data):
 
 
 def unzip_scene(job):
-    batch, h = job
+    batch, zname = job
+    h = re.sub(r"_\d+$", "", zname)                   # 部分 zip 名为 <hash>_2.zip（960P 有 955 个，没有同名的 <hash>.zip），场景名去掉后缀
     out = f"{ARGS.out}/{batch}/{h}"
     t0 = time.time()
     try:
         if not ARGS.overwrite and mox().file.exists(f"{out}/transforms.json"):
             n = len(json.loads(mox().file.read(f"{out}/transforms.json")).get("frames", []))
             return batch, h, "skip", n, 0.0
-        data = retry(lambda p: mox().file.read(p, binary=True), f"{ARGS.src}/{batch}/{h}.zip")
+        data = retry(lambda p: mox().file.read(p, binary=True), f"{ARGS.src}/{batch}/{zname}.zip")
         z = zipfile.ZipFile(io.BytesIO(data))
         files, tj = [], None
         for info in z.infolist():
             if info.is_dir():
                 continue
-            rel = info.filename.split("/", 1)[1] if info.filename.startswith(h + "/") else info.filename
+            rel = info.filename.split("/", 1)[1] if "/" in info.filename else info.filename   # 去掉 zip 里最外层的 <hash>/
             if rel == "transforms.json":
                 tj = z.read(info)
             else:
