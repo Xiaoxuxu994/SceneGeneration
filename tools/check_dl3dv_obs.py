@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-DL3DV（obs://bucket-471/y00959808/data/sr_datasets/processed/dl3dv，布局 <1K..7K>/<hash>/）的场景数、RGB、相机检查。
-不看深度。逐个场景只列目录（多线程），不读帧文件：
-  1) 全量：每个场景的子目录、images_8 帧数、场景根目录的文件（相机文件如 transforms.json）-> <out>/dl3dv_scenes.csv
-  2) 相机来源：manifest_*.jsonl（只覆盖部分场景）、meta/<批次>.json、pkl_map/meta_data.pkl、sequence_list.pkl 各覆盖多少场景
-  3) 抽样（含 --scenes 指定的）：读第一帧 png 的尺寸，和相机文件里的内参 / 宽高对照，并检查帧名与相机帧是否一一对应
+DL3DV（obs://bucket-471/y00959808/data/sr_datasets/processed/dl3dv，布局 <1K..7K>/<hash>/dense/rgb/frame_xxxxx.png）
+的场景数、RGB、相机检查，不看深度。相机来自 pkl_map/meta_data.pkl 的 data_store：
+    {hash: [{"img_path": "<批次>/<hash>/dense/rgb/frame_00001.png", "extri": "<4x4 文本>", "intri": "<3x3 文本>", ...}, ...]}
+（manifest_*.jsonl 只覆盖 630 个场景且路径是 images_8/，与实际文件不符，不用；extri 与 manifest 的 c2w 数值相同。）
+
+  1) 全量：逐个场景列 dense/ 和 dense/rgb/（多线程，不读帧），与 meta_data.pkl 的帧逐个对名字 -> <out>/dl3dv_scenes.csv
+  2) 抽查（含 --scenes 指定的）：读第一帧 png 的尺寸，对照内参主点；检查 extri 是合法刚体变换；打印相机中心轨迹范围
 
     python tools/check_dl3dv_obs.py --scenes 5K/a85c949d27a67ebded3ed23a20a911fd6a751c1eae945dc4d10d0afe442e1294 --n 3
 """
 import argparse
 import csv
-import io
-import json
 import os
 import pickle
 import random
@@ -24,7 +24,6 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 ROOT = "obs://bucket-471/y00959808/data/sr_datasets/processed/dl3dv"
-RGB_DIR = "images_8"
 
 
 def mox():
@@ -36,43 +35,26 @@ def ls(p):
     return sorted(x.rstrip("/").split("/")[-1] for x in mox().file.list_directory(p))
 
 
-def scan_scene(batch, h):
+def mat(s):
+    """meta_data.pkl 里矩阵是 numpy 的文本形式 "[[a b c]\n [d e f]]"。"""
+    if not isinstance(s, str):
+        return np.asarray(s, dtype=np.float64)
+    rows = [r for r in s.replace("[", " ").replace("]", "\n").split("\n") if r.strip()]
+    return np.array([[float(x) for x in r.split()] for r in rows], dtype=np.float64)
+
+
+def scan_scene(batch, h, cam_frames):
     d = f"{ROOT}/{batch}/{h}"
     try:
-        names = ls(d)
-        n_rgb = len(ls(f"{d}/{RGB_DIR}")) if RGB_DIR in names else 0
-        return dict(batch=batch, hash=h, n_rgb=n_rgb, entries=";".join(names), err="")
+        dense = ls(f"{d}/dense")
+        rgb = ls(f"{d}/dense/rgb") if "rgb" in dense else []
+        cam_names = {os.path.basename(f["img_path"]) for f in cam_frames}
+        rgb_set = set(rgb)
+        return dict(batch=batch, hash=h, n_rgb=len(rgb), n_cam=len(cam_frames),
+                    n_matched=len(cam_names & rgb_set), dense=";".join(dense), err="")
     except Exception as e:
-        return dict(batch=batch, hash=h, n_rgb=0, entries="", err=f"{type(e).__name__}: {str(e)[:100]}")
-
-
-def scene_ids(obj):
-    """从各种索引结构里取出场景 hash 集合（dict 的 key、list 里的字符串或含 scene_id 的条目）。"""
-    out = set()
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            if isinstance(k, str) and len(k) >= 32:
-                out.add(k.split("/")[-1].split("-")[-1])
-            elif isinstance(v, (dict, list)):
-                out |= scene_ids(v)
-    elif isinstance(obj, (list, tuple)):
-        for v in obj:
-            if isinstance(v, str) and len(v) >= 32:
-                out.add(v.rstrip("/").split("/")[-1].split("-")[-1])
-            elif isinstance(v, dict) and "scene_id" in v:
-                out.add(str(v["scene_id"]).split("/")[-1].split("-")[-1])
-            elif isinstance(v, (dict, list)):
-                out |= scene_ids(v)
-    return out
-
-
-def brief(obj, n=600):
-    if isinstance(obj, dict):
-        k = next(iter(obj))
-        return f"dict len={len(obj)}; first key={k!r}; value={json.dumps(obj[k], default=str)[:n]}"
-    if isinstance(obj, (list, tuple)):
-        return f"{type(obj).__name__} len={len(obj)}; first={json.dumps(obj[0], default=str)[:n] if obj else None}"
-    return f"{type(obj).__name__}: {str(obj)[:n]}"
+        return dict(batch=batch, hash=h, n_rgb=0, n_cam=len(cam_frames), n_matched=0, dense="",
+                    err=f"{type(e).__name__}: {str(e)[:100]}")
 
 
 def main():
@@ -84,89 +66,69 @@ def main():
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
-    # 1) 全量列目录
     t0 = time.time()
+    meta = pickle.loads(mox().file.read(f"{ROOT}/pkl_map/meta_data.pkl", binary=True))
+    store = meta["data_store"] if isinstance(meta, dict) and "data_store" in meta else meta
+    other = {k: (type(v).__name__, len(v) if hasattr(v, "__len__") else v) for k, v in meta.items() if k != "data_store"} \
+        if isinstance(meta, dict) else {}
+    first = next(iter(store.values()))[0]
+    print(f"[meta_data.pkl] {len(store)} scenes, other keys {other}; frame keys {list(first)} ({time.time() - t0:.0f}s)", flush=True)
+
     batches = [b for b in ls(ROOT) if b.endswith("K") and b[:-1].isdigit()]
     jobs = [(b, h) for b in batches for h in ls(f"{ROOT}/{b}")]
-    print(f"[scan] {len(batches)} batches {batches}, {len(jobs)} scene dirs; listing each ...", flush=True)
+    print(f"[scan] {len(jobs)} scene dirs in {batches}; listing dense/ and dense/rgb/ ...", flush=True)
     with ThreadPoolExecutor(args.threads) as ex:
-        rows = list(ex.map(lambda j: scan_scene(*j), jobs))
+        rows = list(ex.map(lambda j: scan_scene(j[0], j[1], store.get(j[1], [])), jobs))
     with open(f"{args.out}/dl3dv_scenes.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader()
         w.writerows(rows)
     n_rgb = np.array([r["n_rgb"] for r in rows])
-    entry_cnt = Counter(e for r in rows for e in r["entries"].split(";") if e)
+    n_cam = np.array([r["n_cam"] for r in rows])
+    full = sum(r["n_rgb"] > 0 and r["n_matched"] == r["n_cam"] == r["n_rgb"] for r in rows)
     print(f"[scan] done in {time.time() - t0:.0f}s -> {args.out}/dl3dv_scenes.csv", flush=True)
-    print(f"  per batch: {dict(Counter(r['batch'] for r in rows))}")
-    print(f"  scenes with {RGB_DIR}: {(n_rgb > 0).sum()}/{len(rows)}; frames total {n_rgb.sum()}, "
-          f"per scene min/median/max {n_rgb[n_rgb > 0].min() if (n_rgb > 0).any() else 0}/"
-          f"{int(np.median(n_rgb[n_rgb > 0])) if (n_rgb > 0).any() else 0}/{n_rgb.max()}")
-    print(f"  entries in scene dirs (how many scenes have each): {dict(entry_cnt.most_common(20))}")
-    errs = [r for r in rows if r["err"]]
-    if errs:
-        print(f"  list errors: {len(errs)}, e.g. {errs[:2]}")
-    all_hash = {r["hash"] for r in rows}
+    print(f"  dense/ contents (how many scenes have each): {dict(Counter(e for r in rows for e in r['dense'].split(';') if e))}")
+    print(f"  scenes with rgb: {(n_rgb > 0).sum()}/{len(rows)}; rgb frames total {n_rgb.sum()}, "
+          f"per scene min/median/max {n_rgb.min()}/{int(np.median(n_rgb))}/{n_rgb.max()}")
+    print(f"  camera frames total {n_cam.sum()}; scenes where every camera frame has its png and vice versa: {full}/{len(rows)}")
+    bad = [r for r in rows if not (r["n_rgb"] > 0 and r["n_matched"] == r["n_cam"] == r["n_rgb"])]
+    for r in bad[:10]:
+        print(f"  mismatch {r['batch']}/{r['hash'][:16]}… rgb {r['n_rgb']} cam {r['n_cam']} matched {r['n_matched']} {r['err']}")
+    print(f"  scenes not in meta_data.pkl: {sum(r['n_cam'] == 0 for r in rows)}")
 
-    # 2) 相机 / 索引来源各覆盖多少场景
-    print("\n[index files]", flush=True)
-    sources = {}
-    for name in ["manifest_train.jsonl", "manifest_eval.jsonl"]:
-        lines = mox().file.read(f"{ROOT}/{name}").splitlines()
-        sources[name] = {json.loads(l)["scene_id"] for l in lines if l.strip()}
-    for name in ["sequence_list.pkl", "pkl_map/meta_data.pkl"]:
-        try:
-            obj = pickle.loads(mox().file.read(f"{ROOT}/{name}", binary=True))
-            print(f"  {name}: {brief(obj)}", flush=True)
-            sources[name] = scene_ids(obj)
-        except Exception as e:
-            print(f"  {name}: {type(e).__name__}: {str(e)[:150]}")
-    for b in batches:
-        p = f"{ROOT}/meta/{b}.json"
-        try:
-            obj = json.loads(mox().file.read(p))
-            if b == batches[0]:
-                print(f"  meta/{b}.json ({mox().file.get_size(p) / 1e6:.1f} MB): {brief(obj)}", flush=True)
-            sources[f"meta/{b}.json"] = scene_ids(obj)
-        except Exception as e:
-            print(f"  meta/{b}.json: {type(e).__name__}: {str(e)[:150]}")
-    for name, ids in sources.items():
-        print(f"  {name:28s} {len(ids):6d} ids, {len(ids & all_hash):6d} match scene dirs")
-    meta_all = set().union(*[v for k, v in sources.items() if k.startswith("meta/")]) if any(k.startswith("meta/") for k in sources) else set()
-    print(f"  scenes with {RGB_DIR} AND an entry in meta/*.json: "
-          f"{len({r['hash'] for r in rows if r['n_rgb'] > 0} & meta_all)}")
-
-    # 3) 抽查：图像尺寸 vs 相机
     import cv2
     pick = list(args.scenes)
     rest = [f"{r['batch']}/{r['hash']}" for r in rows if r["n_rgb"] > 0]
     random.Random(0).shuffle(rest)
     pick += [s for s in rest if s not in pick][: args.n]
     for s in pick:
+        b, h = s.split("/")
         d = f"{ROOT}/{s}"
         print(f"\n[sample] {s}", flush=True)
         try:
-            names = ls(d)
-            print(f"  entries: {names}")
-            frames = ls(f"{d}/{RGB_DIR}") if RGB_DIR in names else []
-            if frames:
-                im = cv2.imdecode(np.frombuffer(mox().file.read(f"{d}/{RGB_DIR}/{frames[0]}", binary=True), np.uint8), cv2.IMREAD_UNCHANGED)
-                print(f"  {RGB_DIR}: {len(frames)} frames, {frames[:2]} ... {frames[-1:]}, image {im.shape} {im.dtype}")
-            for n in names:
-                if n.endswith(".json"):
-                    obj = json.loads(mox().file.read(f"{d}/{n}"))
-                    keys = {k: (v if not isinstance(v, list) else f"list[{len(v)}]") for k, v in obj.items()} if isinstance(obj, dict) else type(obj).__name__
-                    print(f"  {n}: {json.dumps(keys, default=str)[:900]}")
-                    fr = obj.get("frames") if isinstance(obj, dict) else None
-                    if fr:
-                        print(f"    frame[0]: {json.dumps(fr[0], default=str)[:700]}")
-                        cam_names = {os.path.basename(str(x.get('file_path', ''))).rsplit('.', 1)[0] for x in fr}
-                        rgb_names = {f.rsplit('.', 1)[0] for f in frames}
-                        print(f"    frames in json {len(fr)}, rgb files {len(rgb_names)}, matched by name {len(cam_names & rgb_names)}")
-            h = s.split("/")[-1]
-            for name in ["manifest_train.jsonl", "manifest_eval.jsonl"]:
-                if h in sources.get(name, set()):
-                    print(f"  also in {name}")
+            print(f"  dense/: {ls(f'{d}/dense')}")
+            fr = store.get(h, [])
+            if not fr:
+                print("  not in meta_data.pkl")
+                continue
+            im = cv2.imdecode(np.frombuffer(mox().file.read(f"{ROOT}/{fr[0]['img_path']}", binary=True), np.uint8),
+                              cv2.IMREAD_UNCHANGED)
+            K = mat(fr[0]["intri"])
+            H, W = im.shape[:2]
+            print(f"  frames {len(fr)}, image {im.shape} {im.dtype}; K fx={K[0, 0]:.1f} fy={K[1, 1]:.1f} cx={K[0, 2]:.1f} cy={K[1, 2]:.1f} "
+                  f"(W/2={W / 2:.1f}, H/2={H / 2:.1f}); HFOV {np.degrees(2 * np.arctan(W / 2 / K[0, 0])):.1f} deg")
+            Ks = np.stack([mat(f["intri"]) for f in fr])
+            print(f"  K identical across frames: {bool(np.allclose(Ks, Ks[0]))}")
+            E = np.stack([mat(f["extri"]) for f in fr])
+            R = E[:, :3, :3]
+            orth = np.abs(R @ R.transpose(0, 2, 1) - np.eye(3)).max()
+            print(f"  extri {E.shape}: max |R R^T - I| = {orth:.1e}, det(R) {np.linalg.det(R).min():.4f}..{np.linalg.det(R).max():.4f}, "
+                  f"last row ok {bool(np.allclose(E[:, 3], [0, 0, 0, 1]))}")
+            c = E[:, :3, 3]                              # 当作 c2w 时的相机中心
+            step = np.linalg.norm(np.diff(c, axis=0), axis=1)
+            print(f"  camera centers (as c2w): range {np.ptp(c, axis=0).round(3)}, path length {step.sum():.3f}, "
+                  f"median step {np.median(step):.4f}")
+            print(f"  other keys of a frame: { {k: str(v)[:80] for k, v in fr[0].items() if k not in ('img_path', 'extri', 'intri')} }")
         except Exception as e:
             print(f"  {type(e).__name__}: {str(e)[:200]}")
 
