@@ -10,6 +10,7 @@ DL3DV（obs://bucket-471/y00959808/data/sr_datasets/processed/dl3dv，布局 <1K
   2) 抽查（含 --scenes 指定的）：读第一帧 png 的尺寸，对照内参主点；检查 extri 是合法刚体变换；打印相机中心轨迹范围
 
     python tools/check_dl3dv_obs.py --scenes 5K/a85c949d27a67ebded3ed23a20a911fd6a751c1eae945dc4d10d0afe442e1294 --n 3
+    python tools/check_dl3dv_obs.py --scan-only      # 只扫目录：场景数、每个场景的 dense/rgb 帧数（约 1 分钟），不读 meta_data.pkl
 """
 import argparse
 import csv
@@ -63,10 +64,34 @@ def main():
     ap.add_argument("--n", type=int, default=3, help="另外随机抽查几个场景")
     ap.add_argument("--threads", type=int, default=32)
     ap.add_argument("--out", default="/efs-mi-pay-gy1/z00533370/exp/logs/dl3dv_check")
+    ap.add_argument("--scan-only", action="store_true", help="不读 meta_data.pkl（加载要 7 分钟），只统计场景数和 RGB 帧数")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
     t0 = time.time()
+    if args.scan_only:
+        batches = [b for b in ls(ROOT) if b.endswith("K") and b[:-1].isdigit()]
+        jobs = [(b, h) for b in batches for h in ls(f"{ROOT}/{b}")]
+        print(f"[scan] {len(jobs)} scenes: " + ", ".join(f"{b} {sum(j[0] == b for j in jobs)}" for b in batches)
+              + f" ({time.time() - t0:.0f}s); counting dense/rgb frames ...", flush=True)
+        with ThreadPoolExecutor(args.threads) as ex:
+            rows = list(ex.map(lambda j: scan_scene(j[0], j[1], []), jobs))
+        with open(f"{args.out}/dl3dv_scenes.csv", "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=["batch", "hash", "n_rgb", "dense", "err"], extrasaction="ignore")
+            w.writeheader()
+            w.writerows(rows)
+        n = np.array([r["n_rgb"] for r in rows])
+        print(f"[scan] done in {time.time() - t0:.0f}s -> {args.out}/dl3dv_scenes.csv")
+        print(f"  dense/ contents (how many scenes have each): {dict(Counter(e for r in rows for e in r['dense'].split(';') if e))}")
+        print(f"  scenes with rgb frames: {(n > 0).sum()}/{len(rows)}; frames total {n.sum()}; per scene min/median/max "
+              f"{n.min()}/{int(np.median(n))}/{n.max()}")
+        for b in batches:
+            nb = np.array([r["n_rgb"] for r in rows if r["batch"] == b])
+            print(f"  {b}: {len(nb)} scenes, {nb.sum()} frames")
+        errs = [r for r in rows if r["err"]]
+        if errs:
+            print(f"  list errors: {len(errs)}, e.g. {errs[:2]}")
+        return 0
     meta = pickle.loads(mox().file.read(f"{ROOT}/pkl_map/meta_data.pkl", binary=True))
     store = meta["data_store"] if isinstance(meta, dict) and "data_store" in meta else meta
     other = {k: (type(v).__name__, len(v) if hasattr(v, "__len__") else v) for k, v in meta.items() if k != "data_store"} \
