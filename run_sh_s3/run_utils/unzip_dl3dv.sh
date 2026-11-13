@@ -5,7 +5,7 @@
 # 可断点续跑：transforms.json 已写出的场景跳过，重新提交同一个作业即可。只用 CPU 和 OBS。
 #
 # ModelArts（云道）作业（8 卡规格的 CPU 多；多节点直接用同一条命令）：
-#   cd /home/ma-user/modelarts/user-job-dir/SceneGeneration/; source /home/ma-user/.bashrc; bash run_sh_s3/run_dataset_sh/run_unzip_dl3dv.sh
+#   cd /home/ma-user/modelarts/user-job-dir/SceneGeneration/; source /home/ma-user/.bashrc; bash run_sh_s3/run_utils/unzip_dl3dv.sh
 # 可用环境变量：SRC / OUT（默认见上）、PROCS=8（同时解压的场景数）、THREADS=16（每个场景并发写的文件数）、
 #   LIMIT=N（试跑只做前 N 个场景）、BATCHES="1K 2K"（只做这些批次）
 # 日志：每行带时间戳，另存 /efs-mi-pay-gy1/z00533370/exp/logs/unzip_dl3dv_node<N>_<时间>.log（目录可写时）
