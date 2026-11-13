@@ -34,7 +34,7 @@ mkdir -p "${OUT_DIR}" "${WORK}" || { echo "[ERROR] cannot create ${OUT_DIR} or $
 LOGFILE="${OUT_DIR}/ase_pack_$(date +%m%d_%H%M%S).log"
 ts() { while IFS= read -r line; do printf '[%s] %s\n' "$(date '+%F %T')" "${line}"; done; }
 
-python - "${SRC_ROOT}" "${WORK}/ASE" "${LIST}" "${SCENES}" "${SUBDIRS}" "${DRY}" <<'PY' 2>&1 | grep --line-buffered -vE "^INFO:root" | ts | tee -a "${LOGFILE}"
+python - "${SRC_ROOT}" "${WORK}/ASE" "${LIST}" "${SCENES}" "${SUBDIRS}" "${DRY}" <<'PY' 2>&1 | grep -a --line-buffered -vE "^INFO:root" | ts | tee -a "${LOGFILE}"
 import os, sys, time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -60,17 +60,26 @@ print("  per scene: " + ", ".join(f"{k} {v}" for k, v in sorted(per_scene.items(
 
 def fetch(r):
     s, d = f"{src}/{r}", os.path.join(dst, r)
-    try:
-        if dry:
-            return r, mox.file.exists(s)
-        if os.path.exists(d) and os.path.getsize(d) == mox.file.get_size(s):
+    err = None
+    for attempt in range(3):                     # moxing 并发时偶发内部异常（如 KeyError），重试
+        try:
+            if dry:
+                if mox.file.exists(s):
+                    return r, True
+                err = "not found on OBS"
+                break
+            if os.path.exists(d) and os.path.getsize(d) == mox.file.get_size(s):
+                return r, True
+            os.makedirs(os.path.dirname(d), exist_ok=True)
+            mox.file.copy(s, d)
             return r, True
-        os.makedirs(os.path.dirname(d), exist_ok=True)
-        mox.file.copy(s, d)
-        return r, True
-    except Exception as e:
-        print(f"  fail {r}: {type(e).__name__}: {str(e)[:120]}")
-        return r, False
+        except Exception as e:
+            err = f"{type(e).__name__}: {str(e)[:120]}"
+            time.sleep(1 + attempt)
+    print(f"  fail {r}: {err}")
+    return r, False
+
+mox.file.exists(src)                             # 先单线程初始化 moxing，再开多线程（32 线程同时首次调用会触发 KeyError: '253'）
 
 with ThreadPoolExecutor(32) as ex:
     res = list(ex.map(fetch, rel))
