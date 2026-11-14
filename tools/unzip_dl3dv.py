@@ -82,6 +82,35 @@ def convert(out, rel, data):
     return f"{out}/{sub}/{name}", buf.tobytes()
 
 
+def extract(src, batch, zname, out):
+    """下载 <src>/<batch>/<zname>.zip 到本地、解压（可缩放）写到 out；出错抛异常，成功返回 (图像数, 下载耗时)。"""
+    t0 = time.time()
+    # 先用 mox.file.copy 下载到本地盘再解：mox.file.read 整块读大文件（2K 每个约 1.1GB）很慢，且要全部放进内存
+    local = osp.join(ARGS.local_tmp, f"{batch}_{zname}_{osp.basename(src)}.zip")
+    os.makedirs(ARGS.local_tmp, exist_ok=True)
+    try:
+        retry(lambda a, b: mox().file.copy(a, b), f"{src}/{batch}/{zname}.zip", local)
+        t_dl = time.time() - t0
+        with zipfile.ZipFile(local) as z:
+            infos = [i for i in z.infolist() if not i.is_dir()]
+            # 场景根目录 = 最浅的 transforms.json 所在目录（多数 zip 是 <hash>/，少数多套一层如 <hash>/<hash>/）
+            tjs = sorted((i for i in infos if osp.basename(i.filename) == "transforms.json"), key=lambda i: i.filename.count("/"))
+            if not tjs:
+                top = sorted({i.filename.split("/")[0] for i in infos})[:3]
+                raise ValueError(f"no transforms.json in zip ({len(infos)} files, top {top})")
+            root = osp.dirname(tjs[0].filename)
+            root = root + "/" if root else ""
+            tj = z.read(tjs[0])
+            files = [(i.filename[len(root):], i) for i in infos if i.filename.startswith(root) and i is not tjs[0]]
+            with ThreadPoolExecutor(ARGS.threads) as ex:
+                list(ex.map(lambda f: write(*convert(out, f[0], z.read(f[1]))), files))
+        write(f"{out}/transforms.json", tj)            # 最后写：完成标记
+        return sum(r.lower().endswith((".png", ".jpg")) for r, _ in files), t_dl
+    finally:
+        if osp.exists(local):
+            os.remove(local)
+
+
 def unzip_scene(job):
     batch, zname = job
     h = re.sub(r"_\d+$", "", zname)                   # 部分 zip 名为 <hash>_2.zip（960P 有 955 个，没有同名的 <hash>.zip），场景名去掉后缀
@@ -91,36 +120,26 @@ def unzip_scene(job):
         if not ARGS.overwrite and mox().file.exists(f"{out}/transforms.json"):
             n = len(json.loads(mox().file.read(f"{out}/transforms.json")).get("frames", []))
             return batch, h, "skip", n, 0.0
-        # 先用 mox.file.copy 下载到本地盘再解：mox.file.read 整块读大文件（2K 每个约 1.1GB）很慢，且要全部放进内存
-        local = osp.join(ARGS.local_tmp, f"{batch}_{zname}.zip")
-        os.makedirs(ARGS.local_tmp, exist_ok=True)
-        retry(lambda a, b: mox().file.copy(a, b), f"{ARGS.src}/{batch}/{zname}.zip", local)
-        t_dl = time.time() - t0
-        z = zipfile.ZipFile(local)
-        infos = [i for i in z.infolist() if not i.is_dir()]
-        # 场景根目录 = 最浅的 transforms.json 所在目录（多数 zip 是 <hash>/，少数多套一层如 <hash>/<hash>/）
-        tjs = sorted((i for i in infos if osp.basename(i.filename) == "transforms.json"), key=lambda i: i.filename.count("/"))
-        if not tjs:
-            top = sorted({i.filename.split("/")[0] for i in infos})[:3]
-            return batch, h, f"error: no transforms.json in zip ({len(infos)} files, top {top})", 0, time.time() - t0
-        root = osp.dirname(tjs[0].filename)
-        root = root + "/" if root else ""
-        tj = z.read(tjs[0])
-        files = [(i.filename[len(root):], i) for i in infos if i.filename.startswith(root) and i is not tjs[0]]
-        with ThreadPoolExecutor(ARGS.threads) as ex:
-            list(ex.map(lambda f: write(*convert(out, f[0], z.read(f[1]))), files))
-        write(f"{out}/transforms.json", tj)            # 最后写：完成标记
-        z.close()
-        os.remove(local)
-        n_img = sum(r.lower().endswith((".png", ".jpg")) for r, _ in files)
-        dt = time.time() - t0
-        return batch, h, f"ok (download {t_dl:.0f}s process+upload {dt - t_dl:.0f}s)", n_img, dt
     except Exception as e:
-        try:
-            os.remove(local)
-        except Exception:
-            pass
         return batch, h, f"error {type(e).__name__}: {str(e)[:150]}", 0, time.time() - t0
+    errs = []
+    for src in [ARGS.src] + ARGS.fallback_src:
+        try:
+            if src == ARGS.src:
+                zn = zname
+            else:                                      # 备用版本里同一场景的 zip 名可能带 _N 后缀
+                cands = [z[:-4] for z in ls(f"{src}/{batch}") if z.endswith(".zip") and re.sub(r"_\d+$", "", z[:-4]) == h]
+                if not cands:
+                    errs.append(f"{osp.basename(src)}: not found")
+                    continue
+                zn = cands[0]
+            n_img, t_dl = extract(src, batch, zn, out)
+            dt = time.time() - t0
+            tag = "" if src == ARGS.src else f" from {osp.basename(src)} (fallback; {'; '.join(errs)})"
+            return batch, h, f"ok{tag} (download {t_dl:.0f}s process+upload {dt - t_dl:.0f}s)", n_img, dt
+        except Exception as e:
+            errs.append(f"{osp.basename(src)}: {type(e).__name__}: {str(e)[:150]}")
+    return batch, h, "error " + " | ".join(errs), 0, time.time() - t0
 
 
 def main():
@@ -128,6 +147,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--src", default="obs://bucket-471/dataset/DL3DV-ALL-960P")
     ap.add_argument("--out", default="obs://bucket-471/z00533370/dataset/DL3DV-ALL-960P_unzip")
+    ap.add_argument("--fallback-src", nargs="*", default=[],
+                    help="主版本 zip 坏 / 缺 transforms.json 时依次改用这些版本的同名场景 zip（如 2K 坏包用 DL3DV-ALL-960P 补，图像同为 960x540）")
     ap.add_argument("--batches", nargs="*", default=None, help="默认全部 <N>K 批次")
     ap.add_argument("--procs", type=int, default=16, help="同时解压几个场景（zip 先下载到 --local-tmp，内存占用小）")
     ap.add_argument("--local-tmp", default="/cache/unzip_dl3dv", help="zip 的本地临时目录，解完即删（procs 个 zip 同时存在）")
@@ -161,7 +182,7 @@ def main():
             else:
                 index[f"{batch}/{h}"] = n
                 n_img += n
-                if status.startswith("ok") and done <= 10:          # 前几个场景打出分阶段耗时，便于判断瓶颈
+                if status.startswith("ok") and (done <= 10 or "fallback" in status):          # 前几个场景打出分阶段耗时，便于判断瓶颈
                     print(f"  {batch}/{h}: {n} frames, {status}", flush=True)
             if done % 50 == 0 or done == len(jobs):
                 el = time.time() - t0
