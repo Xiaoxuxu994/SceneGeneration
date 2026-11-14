@@ -13,6 +13,8 @@
 
     python tools/probe_re10k.py /efs-mi-pay-gy1/n84398917/RE10K_HF/train --n 3
     python tools/probe_re10k.py <dir> --no-scan           # 只抽样解析，不全量扫描
+    python tools/probe_re10k.py obs://bucket-471/dataset/re10k --chunks 20     # OBS 上的 pixelSplat chunk：抽 20 个 chunk 统计
+    python tools/probe_re10k.py obs://bucket-471/dataset/re10k --chunks 0 --procs 32   # 下载全部 chunk 精确统计帧数
 """
 import argparse
 import io
@@ -230,6 +232,105 @@ def peek_other(path, x):
         print(f"  [json] {path}: {type(d).__name__} " + (f"keys {list(d)[:15]}" if isinstance(d, dict) else f"len {len(d)}, first {repr(d[0])[:200] if d else None}"))
 
 
+def mox():
+    import moxing
+    return moxing
+
+
+def chunk_stats(job):
+    """下载一个 OBS chunk 到本地、torch.load，返回每个视频切片的统计；出错返回错误信息。"""
+    src, local_tmp = job
+    import torch
+    local = osp.join(local_tmp, src.replace("/", "_").replace(":", ""))
+    t0 = time.time()
+    try:
+        mox().file.copy(src, local)
+        size = osp.getsize(local)
+        items = torch.load(local, map_location="cpu", weights_only=False)
+        rows = []
+        for x in items:
+            cams = np.asarray(x["cameras"], dtype=np.float64)
+            ims = x["images"]
+            b = ims[0].numpy().tobytes() if len(ims) else b""
+            wh = decode_img(b)[0] if b else None
+            R = cams[:, 6:].reshape(-1, 3, 4)[:, :, :3] if cams.ndim == 2 and cams.shape[1] == 18 else None
+            bad = (R is None or np.isnan(cams).any() or np.abs(np.linalg.det(R) - 1).max() > 1e-2
+                   or len(ims) != len(cams) or len(x["timestamps"]) != len(cams))
+            ts = np.asarray(x["timestamps"], dtype=np.int64)
+            rows.append(dict(key=x["key"], n=len(ims), wh=wh, fx=float(cams[0, 0]) if cams.size else None, bad=bool(bad),
+                             dur=float(ts[-1] - ts[0]) / 1e6 if len(ts) > 1 else 0.0, jpg_bytes=len(b)))
+        return src, size, rows, None, time.time() - t0
+    except Exception as e:
+        return src, 0, [], f"{type(e).__name__}: {str(e)[:150]}", time.time() - t0
+    finally:
+        if osp.exists(local):
+            os.remove(local)
+
+
+def obs_probe(args):
+    from multiprocessing import get_context
+    root = args.root.rstrip("/")
+    mox().file.exists(root)                            # 先单线程初始化 moxing
+    os.makedirs(args.local_tmp, exist_ok=True)
+    splits = sorted(x.rstrip("/").split("/")[-1] for x in mox().file.list_directory(root))
+    print(f"[probe] {root}: {splits}")
+    for split in splits:
+        d = f"{root}/{split}"
+        if not mox().file.is_directory(d):
+            continue
+        names = sorted(x.rstrip("/").split("/")[-1] for x in mox().file.list_directory(d))
+        chunks = [n for n in names if n.endswith(".torch")]
+        with ThreadPoolExecutor(32) as ex:
+            sizes = list(ex.map(lambda n: mox().file.get_size(f"{d}/{n}"), chunks))
+        others = [n for n in names if not n.endswith(".torch")]
+        print(f"\n[{split}] {len(chunks)} chunks, {human(sum(sizes))} (chunk min {human(min(sizes))} median {human(float(np.median(sizes)))} "
+              f"max {human(max(sizes))}); other files {others[:10]}")
+        idx = {}
+        if "index.json" in names:
+            idx = json.loads(mox().file.read(f"{d}/index.json"))
+            ref = set(idx.values())
+            print(f"  index.json: {len(idx)} clips in {len(ref)} chunks; chunks referenced but missing {len(ref - set(chunks))}, "
+                  f"chunks not referenced {len(set(chunks) - ref)}")
+        pick = chunks if args.chunks <= 0 else sorted(random.sample(chunks, min(args.chunks, len(chunks))))
+        # 第一个 chunk 详细打印
+        local0 = osp.join(args.local_tmp, f"peek_{split}.torch")
+        mox().file.copy(f"{d}/{pick[0]}", local0)
+        try:
+            peek_torch(local0, args.n)
+        finally:
+            os.remove(local0)
+        t0 = time.time()
+        rows, errs, n_bytes = [], [], 0
+        with get_context("fork").Pool(args.procs) as pool:
+            for i, (src, size, r, err, dt) in enumerate(pool.imap_unordered(chunk_stats, [(f"{d}/{c}", args.local_tmp) for c in pick]), 1):
+                rows += r
+                n_bytes += size
+                if err:
+                    errs.append((src, err))
+                    print(f"  [fail] {src}: {err}", flush=True)
+                if i % 50 == 0 or i == len(pick):
+                    print(f"  ... {i}/{len(pick)} chunks, {len(rows)} clips, {time.time() - t0:.0f}s", flush=True)
+        if not rows:
+            continue
+        nf = np.array([r["n"] for r in rows])
+        dur = np.array([r["dur"] for r in rows])
+        whs = Counter(r["wh"] for r in rows)
+        fx = np.array([r["fx"] for r in rows if r["fx"] is not None])
+        exact = len(pick) == len(chunks)
+        scale = 1.0 if exact else len(chunks) / len(pick)
+        print(f"  [{split} stats over {len(pick)}/{len(chunks)} chunks{'' if exact else ', 全量为外推'}] "
+              f"clips {len(rows)}{'' if exact else f' -> ~{int(len(rows) * scale)}'}, frames {int(nf.sum())}{'' if exact else f' -> ~{int(nf.sum() * scale)}'}")
+        print(f"    frames/clip min {nf.min()} p10 {int(np.percentile(nf, 10))} median {int(np.median(nf))} p90 {int(np.percentile(nf, 90))} max {nf.max()}; "
+              f"clip 时长 median {np.median(dur):.1f}s max {dur.max():.1f}s")
+        print(f"    resolution (w,h): {dict(whs.most_common(5))}; 归一化 fx median {np.median(fx):.3f} (p5 {np.percentile(fx, 5):.3f}, p95 {np.percentile(fx, 95):.3f}); "
+              f"jpg 平均 {human(np.mean([r['jpg_bytes'] for r in rows]))}/帧")
+        bad = [r["key"] for r in rows if r["bad"]]
+        print(f"    异常 clip（NaN / R 非正交 / 帧数不一致）{len(bad)}: {bad[:5]}; 读失败 chunk {len(errs)}")
+        if idx:
+            miss = [r["key"] for r in rows if r["key"] not in idx]
+            print(f"    clip key 不在 index.json 里的 {len(miss)}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("root", nargs="?", default="/efs-mi-pay-gy1/n84398917/RE10K_HF/train")
@@ -237,8 +338,13 @@ def main():
     ap.add_argument("--workers", type=int, default=32, help="全量扫描的线程数")
     ap.add_argument("--no-scan", action="store_true", help="跳过全量扫描")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--chunks", type=int, default=20, help="OBS 模式：每个 split 随机抽几个 chunk 统计；<=0 为全部")
+    ap.add_argument("--procs", type=int, default=8, help="OBS 模式：并行下载解析的进程数")
+    ap.add_argument("--local-tmp", default="/cache/probe_re10k", help="OBS 模式：chunk 本地临时目录（解析完即删）")
     args = ap.parse_args()
     random.seed(args.seed)
+    if args.root.startswith("obs://"):
+        return obs_probe(args)
     root = args.root.rstrip("/")
     print(f"[probe] {root}")
     parent = osp.dirname(root)
