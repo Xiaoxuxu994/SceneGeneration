@@ -67,6 +67,8 @@ def convert(out, rel, data):
     import numpy as np
     cv2.setNumThreads(1)
     im = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    if im is None:
+        raise ValueError(f"cannot decode {rel} ({len(data)} bytes)")
     h, w = im.shape[:2]
     s = ARGS.resize_long / max(h, w)
     if s < 1:
@@ -95,17 +97,16 @@ def unzip_scene(job):
         retry(lambda a, b: mox().file.copy(a, b), f"{ARGS.src}/{batch}/{zname}.zip", local)
         t_dl = time.time() - t0
         z = zipfile.ZipFile(local)
-        files, tj = [], None
-        for info in z.infolist():
-            if info.is_dir():
-                continue
-            rel = info.filename.split("/", 1)[1] if "/" in info.filename else info.filename   # 去掉 zip 里最外层的 <hash>/
-            if rel == "transforms.json":
-                tj = z.read(info)
-            else:
-                files.append((rel, info))
-        if tj is None:
-            return batch, h, "error: no transforms.json in zip", 0, time.time() - t0
+        infos = [i for i in z.infolist() if not i.is_dir()]
+        # 场景根目录 = 最浅的 transforms.json 所在目录（多数 zip 是 <hash>/，少数多套一层如 <hash>/<hash>/）
+        tjs = sorted((i for i in infos if osp.basename(i.filename) == "transforms.json"), key=lambda i: i.filename.count("/"))
+        if not tjs:
+            top = sorted({i.filename.split("/")[0] for i in infos})[:3]
+            return batch, h, f"error: no transforms.json in zip ({len(infos)} files, top {top})", 0, time.time() - t0
+        root = osp.dirname(tjs[0].filename)
+        root = root + "/" if root else ""
+        tj = z.read(tjs[0])
+        files = [(i.filename[len(root):], i) for i in infos if i.filename.startswith(root) and i is not tjs[0]]
         with ThreadPoolExecutor(ARGS.threads) as ex:
             list(ex.map(lambda f: write(*convert(out, f[0], z.read(f[1]))), files))
         write(f"{out}/transforms.json", tj)            # 最后写：完成标记
