@@ -1271,7 +1271,7 @@ SCAN_RULES = (
     ('bad_frames',  '坏帧比例高（单帧 AbsRel>0.08 或 >10% 占 20%+）', 0.25),
     ('scale',       '整体尺度偏（|log 新/旧| 中位）',                 0.05),
     ('drift',       '帧间尺度漂移（log p90/p10）',                    math.log(1.10)),
-    ('mv',          '旧深度自身多视图不一致（相邻帧 >5% 比例）',       0.35),
+    ('mv',          '旧深度自身多视图前方违例（投到相邻帧后比那帧表面近 5%+ 的比例；遮挡解释不了）', 0.10),
 )
 SCAN_GATE = dict(new_cov=0.04, frames_ok=0.6, min_px=200)   # 新标签可靠的最低要求
 
@@ -1307,11 +1307,13 @@ def old_multiview(old, z_far):
         sel = inb & (dn > 0) & (dn < z_far)
         ovs.append(sel.mean())
         if sel.sum() >= 200:
-            rs.append(np.abs(zz[sel] - dn[sel]) / dn[sel])
+            rs.append((zz[sel] - dn[sel]) / dn[sel])
     if not rs:
         return dict(mv_pairs=0)
     r = np.concatenate(rs)
-    return dict(mv_pairs=len(rs), mv_overlap=float(np.mean(ovs)), mv_med=float(np.median(r)), mv_bad5=float(np.mean(r > 0.05)))
+    # 双向 |r|>5% 会把遮挡（点跑到相邻帧表面后面）也算进去；前方违例（点跑到表面前面）遮挡解释不了，用它打分
+    return dict(mv_pairs=len(rs), mv_overlap=float(np.mean(ovs)), mv_med=float(np.median(np.abs(r))),
+                mv_bad5=float(np.mean(np.abs(r) > 0.05)), mv_front5=float(np.mean(r < -0.05)))
 
 
 def scan_scene(old, new, z_far):
@@ -1368,7 +1370,7 @@ def scan_scene(old, new, z_far):
     if mv:
         row.update(mv)
         if mv.get('mv_pairs'):
-            row['mv'] = mv['mv_bad5']
+            row['mv'] = mv['mv_front5']
     # 打分
     tags, score = [], 0.0
     for key, _, th in SCAN_RULES:
