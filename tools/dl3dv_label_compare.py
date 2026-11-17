@@ -26,7 +26,8 @@ DL3DV 新旧标签对比：同一场景、同一帧名，把 Pi3 训练原来读
     # 3) 任意机器（Mac 也行，只要 numpy/opencv/matplotlib）：出报告
     python tools/dl3dv_label_compare.py report --out OUT        # -> OUT/report/index.html
   一台机器两边都能读时：  ... all --scenes list.txt --out OUT --results <...>
-    # 4) 批量扫描（旧标签疑似失败、新标签可靠的场景）：old 步加 --neighbor-offset 4 再跑 scan
+    # 4) 批量扫描（旧标签疑似失败、新标签可靠的场景）：old / new 两步都加 --neighbor-offsets 3,6,-3,-6 再跑 scan
+    #    scan 里的多视图指标：前方违例（front_violation）与前后向几何一致性（geo_check：≤1 px 且 ≤1%，至少 2 个邻帧），新旧都算
     python tools/dl3dv_label_compare.py scan --out OUT --top 24   # -> OUT/scan/{scan.csv, scan_frames.csv, panels/, 3d/}
   打分规则见 SCAN_RULES；分批跑见 tools/dl3dv_compare/run.sh scan-new / scan-old / scan。
 
@@ -255,6 +256,34 @@ def save_frames_json(out, frames):
         os.replace(tmp, p)
 
 
+def neighbor_offsets(args):
+    """--neighbor-offsets '3,6,-3,-6'（旧的 --neighbor-offset k 也认）。"""
+    offs = [int(x) for x in (getattr(args, 'neighbor_offsets', '') or '').split(',') if x.strip()]
+    k = getattr(args, 'neighbor_offset', 0) or 0
+    if k and k not in offs:
+        offs.append(k)
+    return offs
+
+
+def neighbor_names(order, n, offs):
+    """抽样帧 n 在有序帧名 order 里按偏移取邻帧；越界时镜像到另一侧；重复或取不到的位置给 ''。"""
+    k = order.index(n)
+    out, seen = [], {n}
+    for o in offs:
+        kn = k + o if 0 <= k + o < len(order) else k - o
+        nm = order[kn] if 0 <= kn < len(order) else ''
+        out.append('' if nm in seen else nm)
+        if nm:
+            seen.add(nm)
+    return out
+
+
+def pad_hw(a, H, W, fill):
+    """把最后两维填/裁到 (H, W)（左上角对齐，K 不变）。"""
+    a = a[..., :H, :W]
+    return np.pad(a, [(0, 0)] * (a.ndim - 2) + [(0, H - a.shape[-2]), (0, W - a.shape[-1])], constant_values=fill)
+
+
 def pick_frames(available, sid, args, frames_json):
     """available: 帧名 stem 列表（已排序）。优先用 frames.json 里已有的选择，其次 --frames，再次均匀抽 n 帧。"""
     if sid in frames_json:
@@ -306,6 +335,7 @@ def run_old(args):
             rgbs, depths, raws, confs, masks, c2ws = [], [], [], [], [], []
             nb_names, nb_depths, nb_confs, nb_c2ws = [], [], [], []
             order = sorted(by)
+            offs = neighbor_offsets(args)
             for n in names:
                 fr = by[n]
                 rgb_path = join(args.rgb_root, sub, h, args.rgb_subdir, n + args.rgb_ext)
@@ -314,28 +344,29 @@ def run_old(args):
                     rgb = np.repeat(rgb[..., None], 3, -1)
                 rgb = rgb[..., :3].astype(np.uint8)
                 H, W = rgb.shape[:2]
-                if args.neighbor_offset:
-                    # 相邻帧（只要深度/置信度/位姿）：用来查旧深度自身的多视图一致性，不依赖新标签
-                    k = order.index(n)
-                    kn = k + args.neighbor_offset if k + args.neighbor_offset < len(order) else k - args.neighbor_offset
-                    if 0 <= kn < len(order) and kn != k:
-                        frn = by[order[kn]]
-                        dn = np.asarray(io_.read_any(join(wai, frn['mvsanywhere_depth']), return_dtype=np.float32), np.float32)
-                        dn = dn[..., 0] if dn.ndim == 3 else dn
-                        dn = cv2.resize(dn, (W, H), interpolation=cv2.INTER_NEAREST if args.depth_interp == 'nearest' else cv2.INTER_LANCZOS4)
-                        dn = np.nan_to_num(dn, nan=0.0, posinf=0.0, neginf=0.0)
-                        dn[dn <= 0] = 0.0
-                        if args.pct_twice:
-                            dn = io_.threshold(dn, 98)
-                        cn = np.asarray(io_.read_any(join(wai, frn['mvsanywhere_depth_confidence']), return_dtype=np.float32), np.float32)
-                        cn = cn[..., 0] if cn.ndim == 3 else cn
-                        if cn.shape[:2] != (H, W):
-                            cn = cv2.resize(cn, (W, H), interpolation=cv2.INTER_NEAREST)
-                        nb_names.append(order[kn]); nb_depths.append(dn.astype(np.float16)); nb_confs.append(cn.astype(np.float16))
-                        nb_c2ws.append(np.array(frn['transform_matrix'], np.float64))
-                    else:
-                        nb_names.append(''); nb_depths.append(np.zeros((H, W), np.float16))
-                        nb_confs.append(np.zeros((H, W), np.float16)); nb_c2ws.append(np.eye(4))
+                if offs:
+                    # 邻帧（只要深度/置信度/位姿）：查旧深度自身的多视图一致性，不依赖新标签
+                    row_n, row_d, row_c, row_p = [], [], [], []
+                    for nm in neighbor_names(order, n, offs):
+                        if nm:
+                            frn = by[nm]
+                            dn = np.asarray(io_.read_any(join(wai, frn['mvsanywhere_depth']), return_dtype=np.float32), np.float32)
+                            dn = dn[..., 0] if dn.ndim == 3 else dn
+                            dn = cv2.resize(dn, (W, H), interpolation=cv2.INTER_NEAREST if args.depth_interp == 'nearest' else cv2.INTER_LANCZOS4)
+                            dn = np.nan_to_num(dn, nan=0.0, posinf=0.0, neginf=0.0)
+                            dn[dn <= 0] = 0.0
+                            if args.pct_twice:
+                                dn = io_.threshold(dn, 98)
+                            cn = np.asarray(io_.read_any(join(wai, frn['mvsanywhere_depth_confidence']), return_dtype=np.float32), np.float32)
+                            cn = cn[..., 0] if cn.ndim == 3 else cn
+                            if cn.shape[:2] != (H, W):
+                                cn = cv2.resize(cn, (W, H), interpolation=cv2.INTER_NEAREST)
+                            row_n.append(nm), row_d.append(dn.astype(np.float16)), row_c.append(cn.astype(np.float16))
+                            row_p.append(np.array(frn['transform_matrix'], np.float64))
+                        else:
+                            row_n.append(''), row_d.append(np.zeros((H, W), np.float16)), row_c.append(np.zeros((H, W), np.float16))
+                            row_p.append(np.eye(4))
+                    nb_names.append(row_n), nb_depths.append(np.stack(row_d)), nb_confs.append(np.stack(row_c)), nb_c2ws.append(np.stack(row_p))
                 d = io_.read_any(join(wai, fr['mvsanywhere_depth']), return_dtype=np.float32)
                 d = np.asarray(d, np.float32)
                 if d.ndim == 3:
@@ -595,6 +626,29 @@ def run_new(args):
                     npz_keys = None
                 depth_dir = tv.listdir(f'{root}/depth')[:5]
                 by = {stem(im['name']): im for im in ims}
+                order_new = sorted(by)
+                offs = neighbor_offsets(args)
+                nb_rows = []
+
+                def load_new_depth(nm):
+                    """邻帧用：只读深度、有效掩码、K、w2c。"""
+                    im_ = by[nm]
+                    cam_ = cams[im_['camera_id']]
+                    w2c_ = np.eye(4)
+                    w2c_[:3, :3], w2c_[:3, 3] = qvec2rot(im_['q']), im_['t']
+                    p_ = dmap.get(nm)
+                    db_ = tv.read(p_) if p_ else None
+                    if db_ is None:
+                        d_ = np.zeros((cam_['height'], cam_['width']), np.float32)
+                        return d_, np.zeros(d_.shape, bool), cam_K(cam_), w2c_
+                    with np.load(io.BytesIO(db_)) as z_:
+                        d_ = np.asarray(z_['depth'], np.float32)
+                        v_ = np.asarray(z_['valid_mask'], bool) if 'valid_mask' in z_.files else np.ones(d_.shape, bool)
+                    v_ &= np.isfinite(d_) & (d_ > 0)
+                    K_ = cam_K(cam_)
+                    if d_.shape != (cam_['height'], cam_['width']):
+                        K_ = np.diag([d_.shape[1] / cam_['width'], d_.shape[0] / cam_['height'], 1.0]) @ K_
+                    return np.where(v_, d_, 0).astype(np.float32), v_, K_, w2c_
                 names, miss = pick_frames(sorted(by), sid, args, frames_json)
                 picked[sid] = names + miss
                 rgbs, depths, valids, Ks, w2cs, hw = [], [], [], [], [], []
@@ -629,6 +683,16 @@ def run_new(args):
                         rgb = cv2.resize(rgb, (d.shape[1], d.shape[0]), interpolation=cv2.INTER_AREA)
                     rgbs.append(rgb), depths.append(d), valids.append(v), Ks.append(K), w2cs.append(w2c)
                     hw.append(d.shape)
+                    if offs:
+                        row = dict(names=[], d=[], v=[], K=[], w2c=[])
+                        for nm in neighbor_names(order_new, n, offs):
+                            if nm:
+                                dn_, vn_, Kn_, wn_ = load_new_depth(nm)
+                            else:
+                                dn_, vn_, Kn_, wn_ = np.zeros(d.shape, np.float32), np.zeros(d.shape, bool), np.eye(3), np.eye(4)
+                            row['names'].append(nm), row['d'].append(pad_hw(dn_, *d.shape, 0)), row['v'].append(pad_hw(vn_, *d.shape, False))
+                            row['K'].append(Kn_), row['w2c'].append(wn_)
+                        nb_rows.append(row)
                 if not names:
                     raise RuntimeError(f'选中的帧都没有注册：{miss[:4]}')
                 if len(set(hw)) > 1:          # 极少见：同一场景帧尺寸不一 -> 填到最大尺寸，记下真实尺寸
@@ -638,6 +702,9 @@ def run_new(args):
                     rgbs = [pad(a, 0) for a in rgbs]
                     depths = [pad(a, np.nan) for a in depths]
                     valids = [pad(a, False) for a in valids]
+                    for row in nb_rows:
+                        row['d'] = [pad_hw(a, H, W, 0) for a in row['d']]
+                        row['v'] = [pad_hw(a, H, W, False) for a in row['v']]
                 all_names = sorted(by)
                 all_w2c = []
                 for n in all_names:
@@ -672,7 +739,12 @@ def run_new(args):
                 np.savez_compressed(dst + '.tmp.npz', names=np.array(names), rgb=np.stack(rgbs),
                                     depth=np.stack(depths).astype(np.float32), valid=np.stack(valids), K=np.stack(Ks),
                                     w2c=np.stack(w2cs), all_names=np.array(all_names), all_w2c=np.stack(all_w2c),
-                                    ply_xyz=pxyz, ply_rgb=prgb, info=np.array(json.dumps(info, default=str)))
+                                    ply_xyz=pxyz, ply_rgb=prgb, info=np.array(json.dumps(info, default=str)),
+                                    **(dict(nb_names=np.array([r['names'] for r in nb_rows]),
+                                            nb_depth=np.stack([np.stack(r['d']) for r in nb_rows]),
+                                            nb_valid=np.stack([np.stack(r['v']) for r in nb_rows]),
+                                            nb_K=np.stack([np.stack(r['K']) for r in nb_rows]),
+                                            nb_w2c=np.stack([np.stack(r['w2c']) for r in nb_rows])) if nb_rows else {}))
                 os.replace(dst + '.tmp.npz', dst)
                 status.append(dict(sid=sid, status='ok', frames=len(names), missing=len(miss), sec=round(time.time() - t0, 1)))
                 log(f'new {i + 1}/{len(sids)} {sid} 帧 {len(names)}（缺 {len(miss)}）{time.time() - t0:.1f}s')
@@ -1277,44 +1349,182 @@ SCAN_RULES = (
 SCAN_GATE = dict(new_cov=0.04, frames_ok=0.6, min_px=200)   # 新标签可靠的最低要求
 
 
-def old_multiview(old, z_far):
-    """旧深度第 i 帧反投到它的相邻帧（old 步 --neighbor-offset 读的那帧），和相邻帧旧深度比：不依赖新标签的自洽检查。"""
-    if 'nb_depth' not in old:
-        return None
-    K = old['K']
-    H, W = old['depth'].shape[1:]
-    rs, ovs = [], []
-    for i in range(len(old['names'])):
-        if not str(old['nb_names'][i]):
+def _nb_list(lab, i):
+    """第 i 个抽样帧的邻帧列表 [(depth, valid, K, c2w, name)]；兼容旧格式（每帧一个邻帧）。"""
+    if 'nb_depth' not in lab:
+        return []
+    names = lab['nb_names'][i]
+    names = [names] if np.ndim(names) == 0 else list(names)
+    D = lab['nb_depth'][i]
+    D = D[None] if D.ndim == 2 else D
+    out = []
+    for m, nm in enumerate(map(str, names)):
+        if not nm:
             continue
-        d = old['depth'][i].astype(np.float64)
-        ys, xs = np.nonzero((d > 0) & (d < z_far))
-        if len(ys) < 200:
-            continue
-        z = d[ys, xs]
-        X = np.stack([(xs + 0.5 - K[0, 2]) / K[0, 0] * z, (ys + 0.5 - K[1, 2]) / K[1, 1] * z, z], 1)
-        Xw = X @ old['c2w'][i][:3, :3].T + old['c2w'][i][:3, 3]
-        w2c = np.linalg.inv(old['nb_c2w'][i])
+        d = D[m].astype(np.float64)
+        if 'nb_valid' in lab:                                   # 新标签：自带 K / w2c / valid
+            v = lab['nb_valid'][i][m] & (d > 0)
+            out.append((d, v, lab['nb_K'][i][m], np.linalg.inv(lab['nb_w2c'][i][m]), nm))
+        else:                                                   # 旧标签：场景内参 + c2w
+            c2w = lab['nb_c2w'][i]
+            c2w = c2w[m] if c2w.ndim == 3 else c2w
+            out.append((d, d > 0, lab['K'], c2w, nm))
+    return out
+
+
+def front_violation(d, v, K, c2w, nbs, z_far=np.inf):
+    """源帧有效像素投到各邻帧，r = (z_投影 − z_邻帧)/z_邻帧。返回所有可比较点的 r（前方违例 = r < −5%）。"""
+    ys, xs = np.nonzero(v)
+    z = d[ys, xs].astype(np.float64)
+    X = np.stack([(xs + 0.5 - K[0, 2]) / K[0, 0] * z, (ys + 0.5 - K[1, 2]) / K[1, 1] * z, z], 1)
+    Xw = X @ c2w[:3, :3].T + c2w[:3, 3]
+    rs = []
+    for dj, vj, Kj, c2wj, _ in nbs:
+        w2c = np.linalg.inv(c2wj)
         Xc = Xw @ w2c[:3, :3].T + w2c[:3, 3]
         zz = Xc[:, 2]
         ok = zz > 1e-6
-        u = np.full(len(zz), -1, np.int64)
-        v = np.full(len(zz), -1, np.int64)
-        u[ok] = np.round(K[0, 0] * Xc[ok, 0] / zz[ok] + K[0, 2] - 0.5).astype(np.int64)
-        v[ok] = np.round(K[1, 1] * Xc[ok, 1] / zz[ok] + K[1, 2] - 0.5).astype(np.int64)
-        inb = ok & (u >= 0) & (u < W) & (v >= 0) & (v < H)
+        zs = np.where(ok, zz, 1.0)
+        xi = np.floor(Kj[0, 0] * Xc[:, 0] / zs + Kj[0, 2]).astype(np.int64)
+        yi = np.floor(Kj[1, 1] * Xc[:, 1] / zs + Kj[1, 2]).astype(np.int64)
+        Hj, Wj = dj.shape
+        inb = ok & (xi >= 0) & (xi < Wj) & (yi >= 0) & (yi < Hj)
         dn = np.zeros(len(zz))
-        dn[inb] = old['nb_depth'][i][v[inb], u[inb]].astype(np.float64)
-        sel = inb & (dn > 0) & (dn < z_far)
-        ovs.append(sel.mean())
-        if sel.sum() >= 200:
-            rs.append((zz[sel] - dn[sel]) / dn[sel])
+        good = np.zeros(len(zz), bool)
+        dn[inb] = dj[yi[inb], xi[inb]]
+        good[inb] = vj[yi[inb], xi[inb]] & (dn[inb] > 0) & (dn[inb] < z_far)
+        if good.any():
+            rs.append((zz[good] - dn[good]) / dn[good])
+    return np.concatenate(rs) if rs else np.zeros(0)
+
+
+GEO_THRESH = ((1.0, 0.01), (2.0, 0.02))      # (像素, 相对深度)：严格 / 宽松
+
+
+def geo_check(d, v, K, c2w, nbs):
+    """前后向几何一致性（稠密 MVS 融合常用的过滤规则，MVSNet / COLMAP fusion 同类）：
+    源像素 p 按深度 d 反投 -> 投到邻帧 j -> 读 j 的深度 d_j -> 从 j 反投 -> 投回源帧得 p'、深度 z'；
+    |p' − p| ≤ px 且 |z' − d|/d ≤ rel 记一次一致。像素约定：边缘原点，像素 (x, y) 中心 = (x+.5, y+.5)。
+    返回 ys, xs, n_chk（邻帧有值、能检查的个数）, n_ok[t]（各档阈值下一致的个数）。"""
+    ys, xs = np.nonzero(v)
+    z = d[ys, xs].astype(np.float64)
+    u0, v0 = xs + 0.5, ys + 0.5
+    X = np.stack([(u0 - K[0, 2]) / K[0, 0] * z, (v0 - K[1, 2]) / K[1, 1] * z, z], 1)
+    Xw = X @ c2w[:3, :3].T + c2w[:3, 3]
+    w2c_i = np.linalg.inv(c2w)
+    n_chk = np.zeros(len(z), np.int16)
+    n_ok = np.zeros((len(GEO_THRESH), len(z)), np.int16)
+    for dj, vj, Kj, c2wj, _ in nbs:
+        w2c = np.linalg.inv(c2wj)
+        Xc = Xw @ w2c[:3, :3].T + w2c[:3, 3]
+        zj = Xc[:, 2]
+        ok = zj > 1e-6
+        zs = np.where(ok, zj, 1.0)
+        uj = Kj[0, 0] * Xc[:, 0] / zs + Kj[0, 2]
+        vj_ = Kj[1, 1] * Xc[:, 1] / zs + Kj[1, 2]
+        xi, yi = np.floor(uj).astype(np.int64), np.floor(vj_).astype(np.int64)
+        Hj, Wj = dj.shape
+        inb = ok & (xi >= 0) & (xi < Wj) & (yi >= 0) & (yi < Hj)
+        dd = np.zeros(len(z))
+        good = np.zeros(len(z), bool)
+        dd[inb] = dj[yi[inb], xi[inb]]
+        good[inb] = vj[yi[inb], xi[inb]] & (dd[inb] > 0)
+        Xb = np.stack([(uj - Kj[0, 2]) / Kj[0, 0] * dd, (vj_ - Kj[1, 2]) / Kj[1, 1] * dd, dd], 1)
+        Xb = (Xb @ c2wj[:3, :3].T + c2wj[:3, 3]) @ w2c_i[:3, :3].T + w2c_i[:3, 3]
+        zb = Xb[:, 2]
+        okb = zb > 1e-6
+        zbs = np.where(okb, zb, 1.0)
+        err = np.hypot(K[0, 0] * Xb[:, 0] / zbs + K[0, 2] - u0, K[1, 1] * Xb[:, 1] / zbs + K[1, 2] - v0)
+        rel = np.abs(zb - z) / z
+        n_chk += good
+        for t, (px, rr) in enumerate(GEO_THRESH):
+            n_ok[t] += good & okb & (err <= px) & (rel <= rr)
+    return ys, xs, n_chk, n_ok
+
+
+def geo_summary(n_chk, n_ok, min_views=2, prefix=''):
+    """可检查 = 至少 min_views 个邻帧有值；一致 = 其中至少 min_views 个邻帧一致；冲突 = 可检查但一个都不一致。"""
+    chk = n_chk >= min_views
+    out = {f'{prefix}geo_checkable': float(chk.mean()) if len(chk) else None}
+    if chk.sum() >= 100:
+        out[f'{prefix}geo_ok'] = float(np.mean(n_ok[0][chk] >= min_views))
+        out[f'{prefix}geo_ok_loose'] = float(np.mean(n_ok[1][chk] >= min_views))
+        out[f'{prefix}geo_conflict'] = float(np.mean(n_ok[1][chk] == 0))
+    return out
+
+
+def old_multiview(old, z_far):
+    """旧深度：前方违例（投到邻帧后比邻帧表面近 5%+）。不依赖新标签。"""
+    if 'nb_depth' not in old:
+        return None
+    rs, n_pairs = [], 0
+    for i in range(len(old['names'])):
+        nbs = _nb_list(old, i)
+        d = old['depth'][i].astype(np.float64)
+        v = (d > 0) & (d < z_far)
+        if not nbs or v.sum() < 200:
+            continue
+        r = front_violation(d, v, old['K'], old['c2w'][i], nbs, z_far)
+        if len(r) >= 200:
+            rs.append(r)
+            n_pairs += len(nbs)
     if not rs:
         return dict(mv_pairs=0)
     r = np.concatenate(rs)
     # 双向 |r|>5% 会把遮挡（点跑到相邻帧表面后面）也算进去；前方违例（点跑到表面前面）遮挡解释不了，用它打分
-    return dict(mv_pairs=len(rs), mv_overlap=float(np.mean(ovs)), mv_med=float(np.median(np.abs(r))),
+    return dict(mv_pairs=n_pairs, mv_med=float(np.median(np.abs(r))),
                 mv_bad5=float(np.mean(np.abs(r) > 0.05)), mv_front5=float(np.mean(r < -0.05)))
+
+
+def geo_metrics(old, new, sim, z_far, newproj=None):
+    """多视图几何一致性：旧（训练像素 / conf 内 / 新标签有值处）、新，以及按旧像素是否一致拆开的旧 vs 新误差。
+    newproj: {旧帧下标: 新深度投到旧图的稀疏深度}，用于「新标签有值处」与误差拆分。"""
+    out = {}
+    if 'nb_depth' in old:
+        agg = dict(all=([], []), conf=([], []), atnew=([], []))
+        e_ok, e_bad = [], []
+        for i in range(len(old['names'])):
+            nbs = _nb_list(old, i)
+            d = old['depth'][i].astype(np.float64)
+            v = (d > 0) & (d < z_far)
+            if not nbs or v.sum() < 200:
+                continue
+            ys, xs, nc, no = geo_check(d, v, old['K'], old['c2w'][i], nbs)
+            agg['all'][0].append(nc), agg['all'][1].append(no)
+            cm = old['mask'][i][ys, xs]
+            agg['conf'][0].append(nc[cm]), agg['conf'][1].append(no[:, cm])
+            P = (newproj or {}).get(i)
+            if P is not None:
+                pv = P[ys, xs]
+                hm = pv > 0
+                agg['atnew'][0].append(nc[hm]), agg['atnew'][1].append(no[:, hm])
+                chk = hm & (nc >= 2)
+                rel = np.abs(d[ys, xs] - pv) / np.where(pv > 0, pv, 1)
+                e_ok.append(rel[chk & (no[0] >= 2)]), e_bad.append(rel[chk & (no[1] == 0)])
+        for k, pre in (('all', 'old_'), ('conf', 'old_conf_'), ('atnew', 'old_atnew_')):
+            if agg[k][0]:
+                out.update(geo_summary(np.concatenate(agg[k][0]), np.concatenate(agg[k][1], 1), prefix=pre))
+        if e_ok:
+            a, b = np.concatenate(e_ok), np.concatenate(e_bad)
+            if len(a) >= 100:
+                out['old_geo_ok_absrel'] = float(a.mean())
+                out['old_geo_ok_bad10'] = float(np.mean(a > 0.1))
+            if len(b) >= 100:
+                out['old_geo_conflict_absrel'] = float(b.mean())
+                out['old_geo_conflict_bad10'] = float(np.mean(b > 0.1))
+    if 'nb_depth' in new:
+        nc_all, no_all = [], []
+        for j in range(len(new['names'])):
+            nbs = _nb_list(new, j)
+            v = new['valid'][j]
+            if not nbs or v.sum() < 200:
+                continue
+            d = np.nan_to_num(new['depth'][j]).astype(np.float64)
+            ys, xs, nc, no = geo_check(d, v, new['K'][j], np.linalg.inv(new['w2c'][j]), nbs)
+            nc_all.append(nc), no_all.append(no)
+        if nc_all:
+            out.update(geo_summary(np.concatenate(nc_all), np.concatenate(no_all, 1), prefix='new_'))
+    return out
 
 
 def scan_scene(old, new, z_far):
@@ -1326,12 +1536,14 @@ def scan_scene(old, new, z_far):
     on = {str(n): i for i, n in enumerate(old['names'])}
     H, W = old['depth'].shape[1:]
     frames, po, pn, pin_o, pin_n, pout_o, pout_n = [], [], [], [], [], [], []
+    newproj = {}
     for j, n in enumerate(map(str, new['names'])):
         if n not in on:
             continue
         i = on[n]
         Xw, _ = new_points_world(new, j)
         P = project_old(Xw, sim, old['c2w'][i], old['K'], (H, W), None) if len(Xw) else np.zeros((H, W))
+        newproj[i] = P
         od = old['depth'][i].astype(np.float64)
         tr = (od > 0) & (od < z_far)
         om = old['mask'][i]
@@ -1367,6 +1579,7 @@ def scan_scene(old, new, z_far):
                 r2 = np.abs(a - b) / b
                 row[f'absrel_{tag}'] = float(r2.mean())
                 row[f'bad10_{tag}'] = float(np.mean(r2 > 0.1))
+    row.update(geo_metrics(old, new, sim, z_far, newproj))
     mv = old_multiview(old, z_far)
     if mv:
         row.update(mv)
@@ -1519,6 +1732,7 @@ def main(argv=None):
             p.add_argument('--frames', default='', help='指定帧名，逗号分隔（如 frame_00001,frame_00100），所有场景通用')
             p.add_argument('--frames-from', default='', help='另一台机器写的 frames.json，保证两边抽同一组帧')
             p.add_argument('--force', action='store_true', help='已有 npz 也重抽')
+            p.add_argument('--neighbor-offsets', default='', help="每个抽样帧再读这些偏移的邻帧深度，如 '3,6,-3,-6'；scan 用来做多视图一致性（新旧都能查）")
             p.add_argument('--shard', default='', help='i/n：只处理场景清单的第 i 份（共 n 份），多进程并行用')
 
     def old_args(p):
@@ -1532,7 +1746,7 @@ def main(argv=None):
         p.add_argument('--no-pct-twice', dest='pct_twice', action='store_false')
         p.add_argument('--apply-trans', action='store_true', help='与 DL3DVDataset(apply_trans=True) 一致（配置里默认 False）')
         p.add_argument('--allow-local-io', action='store_true', help='训练仓库导入失败时也继续（只能读本地文件）')
-        p.add_argument('--neighbor-offset', type=int, default=0, help='>0 时每个抽样帧再读第 +k 帧的旧深度，供 scan 查旧深度自身的多视图一致性')
+        p.add_argument('--neighbor-offset', type=int, default=0, help='（旧参数）等价于 --neighbor-offsets k')
 
     def new_args(p):
         p.add_argument('--results', default='', help='结果 tar 前缀：obs://.../<run>/results 或本地目录（<子集>/<hash>.tar 或平铺）')
