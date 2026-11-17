@@ -830,17 +830,23 @@ def summarize_scene(sid, old, new, pose, per, dist):
 
 
 # ============================================================================ 3) 报告
-def colorize(d, valid, lo=None, hi=None, cmap='turbo'):
+BG_INVALID = (170, 170, 170)                  # 无值像素统一中灰，避免和白色（误差≈0）混淆
+
+
+def colorize(d, valid, lo=None, hi=None, cmap='turbo', inv=False):
+    """inv=True：按逆深度上色，近处暖色（红）、远处冷色（蓝），和常见深度图习惯一致。"""
     import matplotlib
     cm = matplotlib.colormaps[cmap]
-    out = np.zeros((*d.shape, 3), np.uint8) + 255
+    out = np.zeros((*d.shape, 3), np.uint8) + np.array(BG_INVALID, np.uint8)
+    valid = valid & np.isfinite(d) & ((d > 0) if inv else True)
     if valid.sum() == 0:
         return out, (0, 1)
-    v = d[valid]
+    x = np.where(valid, 1.0 / np.maximum(d, 1e-9), 0) if inv else d
+    v = x[valid]
     lo = np.percentile(v, 2) if lo is None else lo
     hi = np.percentile(v, 98) if hi is None else hi
-    x = np.clip((d - lo) / max(hi - lo, 1e-9), 0, 1)
-    out[valid] = (cm(x[valid])[:, :3] * 255).astype(np.uint8)
+    t = np.clip((x - lo) / max(hi - lo, 1e-9), 0, 1)
+    out[valid] = (cm(t[valid])[:, :3] * 255).astype(np.uint8)
     return out, (lo, hi)
 
 
@@ -857,26 +863,24 @@ def dilate_sparse(img, valid, k=3):
     return out, vd
 
 
-def edge_overlay(rgb, depth, valid, color=(255, 0, 0)):
-    """RGB 灰度 + 深度不连续边（红）：看深度边是否贴着图像边。"""
+def dilate_signed(img, valid, k=3):
+    """稀疏有符号图的显示膨胀：取邻域内 |值| 最大者，保留符号（只用于显示）。"""
+    pos, vd = dilate_sparse(np.maximum(img, 0), valid, k)
+    neg, _ = dilate_sparse(np.maximum(-img, 0), valid, k)
+    return np.where(pos >= neg, pos, -neg), vd
+
+
+def edge_overlay(rgb, depth, valid, color=(255, 0, 255)):
+    """原色 RGB + 深度不连续边（品红）：看深度边是否贴着图像边。"""
     import cv2
-    g = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-    base = np.repeat(g[..., None], 3, -1).astype(np.uint8)
+    base = rgb[..., :3].astype(np.uint8).copy()
     ld = np.where(valid & (depth > 0), np.log(np.maximum(depth, 1e-6)), 0).astype(np.float32)
     gx = cv2.Sobel(ld, cv2.CV_32F, 1, 0, ksize=3)
     gy = cv2.Sobel(ld, cv2.CV_32F, 0, 1, ksize=3)
     mag = np.hypot(gx, gy)
     vv = cv2.erode(valid.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
-    e = (mag > 0.15) & vv
+    e = (mag / 8 > 0.05) & vv          # Sobel 增益约 8；相邻像素 log 深度跳 >5% 才算边，斜面不算
     base[e] = color
-    return base
-
-
-def points_overlay(rgb, valid, color=(0, 120, 255)):
-    import cv2
-    g = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-    base = np.repeat(g[..., None], 3, -1).astype(np.uint8)
-    base[valid] = (0.35 * base[valid] + 0.65 * np.array(color)).astype(np.uint8)
     return base
 
 
@@ -887,8 +891,8 @@ def render_scene_png(sid, old, new, per, proj, dest):
     on = {str(n): i for i, n in enumerate(old['names'])}
     nn = {str(n): j for j, n in enumerate(new['names'])}
     frames = [p['frame'] for p in per]
-    cols = ['旧 RGB（images_8）+ 旧深度边', '旧深度 mvsanywhere（训练掩码内）', '旧置信度', '新 RGB（去畸变）+ 新深度像素',
-            '新深度（RoMa 投影，膨胀显示）', '新深度投到旧图：|log(新/旧·s)|']
+    cols = ['旧 RGB（images_8）+ 旧深度边（品红）', '旧深度（训练掩码内；近红远蓝，灰=无）', '旧置信度（黄高紫低）',
+            '新 RGB（去畸变后原图）', '新深度（同色标，膨胀显示；灰=无）', '新/旧 偏差（红=新更远 蓝=新更近，±10%；白=一致）']
     oh, ow = old['depth'].shape[1:3]
     cw = 3.4                                   # 每列宽（英寸）；行高按旧图宽高比，外加一行文字
     rh = cw * oh / ow + 0.32
@@ -907,22 +911,22 @@ def render_scene_png(sid, old, new, per, proj, dest):
         s_scene = None
         if st:
             s_scene = st['ratio_med']
-        od_c, rng_o = colorize(o_d, o_m)
+        od_c, rng_o = colorize(o_d, o_m, inv=True)
         nd_show, nv_show = dilate_sparse(np.nan_to_num(n_d), n_v, 3)
         # 新深度用旧深度同一色标（换算到旧单位）：nd / s
         if s_scene:
-            nd_c, _ = colorize(nd_show / s_scene, nv_show, *rng_o)
+            nd_c, _ = colorize(nd_show / s_scene, nv_show, *rng_o, inv=True)
         else:
-            nd_c, _ = colorize(nd_show, nv_show)
+            nd_c, _ = colorize(nd_show, nv_show, inv=True)
         err = np.zeros(o_d.shape, np.float32)
         em = np.zeros(o_d.shape, bool)
         if P is not None and s_scene:
             em = (P > 0) & o_m
-            err[em] = np.abs(np.log(P[em] / (o_d[em] * s_scene)))
-        err_d, em_d = dilate_sparse(err, em, 3)
-        er_c, _ = colorize(err_d, em_d, 0, 0.2, 'magma')
+            err[em] = np.log(P[em] / (o_d[em] * s_scene))
+        err_d, em_d = dilate_signed(err, em, 3)
+        er_c, _ = colorize(err_d, em_d, -0.10, 0.10, 'RdBu_r')
         conf_c, _ = colorize(o_c, np.ones_like(o_m), 0, 1, 'viridis')
-        imgs = [edge_overlay(o_rgb, o_d, o_m), od_c, conf_c, points_overlay(n_rgb, n_v), nd_c, er_c]
+        imgs = [edge_overlay(o_rgb, o_d, o_m), od_c, conf_c, n_rgb[..., :3].astype(np.uint8), nd_c, er_c]
         for c, im in enumerate(imgs):
             ax = axes[r, c]
             ax.imshow(im, aspect='auto')
