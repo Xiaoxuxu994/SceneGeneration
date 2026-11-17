@@ -21,7 +21,8 @@ DL3DV 新旧标签对比：同一场景、同一帧名，把 Pi3 训练原来读
     python tools/dl3dv_label_compare.py old --scenes list.txt --out OUT --n-frames 8
     # 2) 能读 OBS 结果 tar 的机器（ROMA 镜像里有 moxing）：按同一份 frames.json 抽新标签
     python tools/dl3dv_label_compare.py new --scenes list.txt --out OUT \
-        --results obs://bucket-471/z00533370/dataset/DL3DV-test/dl3dv_s256/results [--frames-from OUT/frames.json]
+        --results obs://bucket-471/z00533370/dataset/DL3DV-test/glr/dl3dv_s256/results [--frames-from OUT/frames.json]
+  固定场景/帧的一键版本见 tools/dl3dv_compare/run.sh（old / new 各一条命令，结束后打成 tar.gz 便于传出）。
     # 3) 任意机器（Mac 也行，只要 numpy/opencv/matplotlib）：出报告
     python tools/dl3dv_label_compare.py report --out OUT        # -> OUT/report/index.html
   一台机器两边都能读时：  ... all --scenes list.txt --out OUT --results <...>
@@ -265,7 +266,10 @@ def run_old(args):
         wai = join(args.wai_root, f'{sub}-{h}')
         t0 = time.time()
         try:
-            meta = io_.read_json(join(wai, 'scene_meta.json'))
+            raw_meta = io_.read_bytes(join(wai, 'scene_meta.json'))
+            with open(osp.join(args.out, 'old', safe(sid) + '_scene_meta.json'), 'wb') as fh:
+                fh.write(raw_meta)                # 原样留一份：相机字段/畸变/帧字段都以它为准
+            meta = json.loads(raw_meta)
             dmeta = None
             if io_.exists(join(wai, 'scene_meta_distorted.json')):
                 dmeta = io_.read_json(join(wai, 'scene_meta_distorted.json'))
@@ -530,6 +534,19 @@ def run_new(args):
                 cams = read_cameras_bin(tv.read(f'{root}/sparse/0/cameras.bin'))
                 ims = read_images_bin(tv.read(f'{root}/sparse/0/images.bin'))
                 dmap, fa = depth_entries(tv, root, ims)
+                for key, rel in (('final_assets', f'{root}/final_assets.json'), ('frame_sampling', f'{root}/frame_sampling.json'),
+                                 ('cameras_bin', f'{root}/sparse/0/cameras.bin'), ('images_bin', f'{root}/sparse/0/images.bin')):
+                    b = tv.read(rel)          # 原样留一份：格式是从代码推断的，真实数据回来后据此核对
+                    if b:
+                        ext = '.json' if key in ('final_assets', 'frame_sampling') else '.bin'
+                        with open(osp.join(args.out, 'new', f'{safe(sid)}_{key}{ext}'), 'wb') as fh:
+                            fh.write(b)
+                if dmap:                      # 第一个深度 npz 的键/形状/dtype，核对格式用
+                    with np.load(io.BytesIO(tv.read(next(iter(dmap.values()))))) as z:
+                        npz_keys = {k: [list(z[k].shape), str(z[k].dtype)] for k in z.files}
+                else:
+                    npz_keys = None
+                depth_dir = tv.listdir(f'{root}/depth')[:5]
                 by = {stem(im['name']): im for im in ims}
                 names, miss = pick_frames(sorted(by), sid, args, frames_json)
                 picked[sid] = names + miss
@@ -599,6 +616,7 @@ def run_new(args):
                 lr = small.get('ledger_row') or rows.get(sid) or {}
                 info = dict(sid=sid, tar=src, root=root, missing=miss, n_registered=len(ims),
                             n_depth_files=len(dmap), hw=[list(x) for x in hw], ply_points=pn,
+                            depth_npz_keys=npz_keys, depth_dir_head=depth_dir,
                             final_assets={k: fa.get(k) for k in ('format', 'status', 'alignment') if k in fa},
                             quality_status=st.get('quality_status') or (lr.get('glr') or {}).get('quality_status'),
                             ledger_class=lr.get('class'), vlm=_brief_vlm(small.get('vlm') or lr.get('vlm')),
