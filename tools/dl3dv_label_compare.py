@@ -921,14 +921,14 @@ def edge_overlay(rgb, depth, valid, color=(255, 0, 255)):
     return base
 
 
-def render_scene_png(sid, old, new, per, proj, dest):
+def render_scene_png(sid, old, new, per, proj, dest, z_far=60.0):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     on = {str(n): i for i, n in enumerate(old['names'])}
     nn = {str(n): j for j, n in enumerate(new['names'])}
     frames = [p['frame'] for p in per]
-    cols = ['旧 RGB（images_8）+ 旧深度边（品红）', '旧深度（训练掩码内；近红远蓝，灰=无）', '旧置信度（黄高紫低）',
+    cols = ['旧 RGB（images_8）+ 旧深度边（品红）', '旧深度（训练实际监督像素；近红远蓝，灰=无）', '旧置信度（黄高紫低；>0.25 为 conf 掩码）',
             '新 RGB（去畸变后原图）', '新深度（同色标，膨胀显示；灰=无）', '新/旧 偏差（红=新更远 蓝=新更近，±10%；白=一致）']
     oh, ow = old['depth'].shape[1:3]
     cw = 3.4                                   # 每列宽（英寸）；行高按旧图宽高比，外加一行文字
@@ -948,7 +948,8 @@ def render_scene_png(sid, old, new, per, proj, dest):
         s_scene = None
         if st:
             s_scene = st['ratio_med']
-        od_c, rng_o = colorize(o_d, o_m, inv=True)
+        o_tr = (o_d > 0) & (o_d < z_far)          # 训练实际监督的像素：conf 掩码在训练里没有生效
+        od_c, rng_o = colorize(o_d, o_tr, inv=True)
         nd_show, nv_show = dilate_sparse(np.nan_to_num(n_d), n_v, 3)
         # 新深度用旧深度同一色标（换算到旧单位）：nd / s
         if s_scene:
@@ -958,7 +959,7 @@ def render_scene_png(sid, old, new, per, proj, dest):
         err = np.zeros(o_d.shape, np.float32)
         em = np.zeros(o_d.shape, bool)
         if P is not None and s_scene:
-            em = (P > 0) & o_m
+            em = (P > 0) & o_tr
             err[em] = np.log(P[em] / (o_d[em] * s_scene))
         err_d, em_d = dilate_signed(err, em, 3)
         er_c, _ = colorize(err_d, em_d, -0.10, 0.10, 'RdBu_r')
@@ -968,12 +969,12 @@ def render_scene_png(sid, old, new, per, proj, dest):
             ax = axes[r, c]
             ax.imshow(im, aspect='auto')
             ax.set_xticks([]), ax.set_yticks([])
-        txt = f"{n}   旧有效 {rec['old_valid']:.0%}   新有效 {rec['new_valid']:.1%}"
+        txt = f"{n}   旧训练像素 {o_tr.mean():.0%}（conf>0.25 {rec['old_valid']:.0%}）   新有效 {rec['new_valid']:.1%}"
         if st:
-            txt += f"   新/旧 {st['ratio_med']:.3f}   AbsRel(针孔投影) {st['absrel']:.3f}   δ<1.05 {st['d105']:.0%}"
+            txt += f"   新/旧 {st['ratio_med']:.3f}   conf 内 AbsRel {st['absrel']:.3f}   δ<1.05 {st['d105']:.0%}"
         d2 = rec.get('dist')
         if d2:
-            txt += f"   AbsRel(带畸变投影) {d2['absrel']:.3f}"
+            txt += f"   conf 内 AbsRel(带畸变投影) {d2['absrel']:.3f}"
         axes[r, 0].text(0, 1.02, txt, transform=axes[r, 0].transAxes, fontsize=8, ha='left', va='bottom')
     for c, name in enumerate(cols):
         axes[0, c].text(0.5, 1.02 + 0.32 / (cw * oh / ow) * 0.9, name, transform=axes[0, c].transAxes, fontsize=9,
