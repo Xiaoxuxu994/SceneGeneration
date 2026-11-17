@@ -26,6 +26,9 @@ DL3DV 新旧标签对比：同一场景、同一帧名，把 Pi3 训练原来读
     # 3) 任意机器（Mac 也行，只要 numpy/opencv/matplotlib）：出报告
     python tools/dl3dv_label_compare.py report --out OUT        # -> OUT/report/index.html
   一台机器两边都能读时：  ... all --scenes list.txt --out OUT --results <...>
+    # 4) 批量扫描（旧标签疑似失败、新标签可靠的场景）：old 步加 --neighbor-offset 4 再跑 scan
+    python tools/dl3dv_label_compare.py scan --out OUT --top 24   # -> OUT/scan/{scan.csv, scan_frames.csv, panels/, 3d/}
+  打分规则见 SCAN_RULES；分批跑见 tools/dl3dv_compare/run.sh scan-new / scan-old / scan。
 
 场景清单：每行 `1K/<64位hash>`（Agentic-Anno tools/dl3dv/pilot/scenes_*.txt 的格式），也接受 `1K-<hash>`；# 开头为注释。
 也可以 `--ledger-dir <E/roma/runs/<run>>` 直接用打标台账里 class=complete 的场景（只在 new/all 有用）。
@@ -191,6 +194,11 @@ def read_scenes(args):
         out = spread(out, args.limit)
     if not out:
         raise SystemExit('没有场景：给 --scenes / --sids / --ledger-dir')
+    sh = getattr(args, 'shard', '') or ''
+    if sh:
+        i, n = (int(x) for x in sh.split('/'))
+        out = out[i::n]
+        log(f'分片 {i}/{n}：{len(out)} 个场景')
     return out
 
 
@@ -234,14 +242,17 @@ def load_frames_json(out):
 
 
 def save_frames_json(out, frames):
+    import fcntl
     p = osp.join(out, 'frames.json')
-    cur = load_frames_json(out)
-    for k, v in frames.items():
-        cur.setdefault(k, v)              # 已有的选择不覆盖：两边必须抽同一组帧
-    tmp = p + '.tmp'
-    with open(tmp, 'w') as fh:
-        json.dump(cur, fh, indent=1, sort_keys=True)
-    os.replace(tmp, p)
+    with open(p + '.lock', 'w') as lk:    # 多个分片进程同时写时加锁
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        cur = load_frames_json(out)
+        for k, v in frames.items():
+            cur.setdefault(k, v)              # 已有的选择不覆盖：两边必须抽同一组帧
+        tmp = p + f'.tmp{os.getpid()}'
+        with open(tmp, 'w') as fh:
+            json.dump(cur, fh, indent=1, sort_keys=True)
+        os.replace(tmp, p)
 
 
 def pick_frames(available, sid, args, frames_json):
@@ -293,6 +304,8 @@ def run_old(args):
             names, miss = pick_frames(sorted(by), sid, args, frames_json)
             picked[sid] = names + miss
             rgbs, depths, raws, confs, masks, c2ws = [], [], [], [], [], []
+            nb_names, nb_depths, nb_confs, nb_c2ws = [], [], [], []
+            order = sorted(by)
             for n in names:
                 fr = by[n]
                 rgb_path = join(args.rgb_root, sub, h, args.rgb_subdir, n + args.rgb_ext)
@@ -301,6 +314,28 @@ def run_old(args):
                     rgb = np.repeat(rgb[..., None], 3, -1)
                 rgb = rgb[..., :3].astype(np.uint8)
                 H, W = rgb.shape[:2]
+                if args.neighbor_offset:
+                    # 相邻帧（只要深度/置信度/位姿）：用来查旧深度自身的多视图一致性，不依赖新标签
+                    k = order.index(n)
+                    kn = k + args.neighbor_offset if k + args.neighbor_offset < len(order) else k - args.neighbor_offset
+                    if 0 <= kn < len(order) and kn != k:
+                        frn = by[order[kn]]
+                        dn = np.asarray(io_.read_any(join(wai, frn['mvsanywhere_depth']), return_dtype=np.float32), np.float32)
+                        dn = dn[..., 0] if dn.ndim == 3 else dn
+                        dn = cv2.resize(dn, (W, H), interpolation=cv2.INTER_NEAREST if args.depth_interp == 'nearest' else cv2.INTER_LANCZOS4)
+                        dn = np.nan_to_num(dn, nan=0.0, posinf=0.0, neginf=0.0)
+                        dn[dn <= 0] = 0.0
+                        if args.pct_twice:
+                            dn = io_.threshold(dn, 98)
+                        cn = np.asarray(io_.read_any(join(wai, frn['mvsanywhere_depth_confidence']), return_dtype=np.float32), np.float32)
+                        cn = cn[..., 0] if cn.ndim == 3 else cn
+                        if cn.shape[:2] != (H, W):
+                            cn = cv2.resize(cn, (W, H), interpolation=cv2.INTER_NEAREST)
+                        nb_names.append(order[kn]); nb_depths.append(dn.astype(np.float16)); nb_confs.append(cn.astype(np.float16))
+                        nb_c2ws.append(np.array(frn['transform_matrix'], np.float64))
+                    else:
+                        nb_names.append(''); nb_depths.append(np.zeros((H, W), np.float16))
+                        nb_confs.append(np.zeros((H, W), np.float16)); nb_c2ws.append(np.eye(4))
                 d = io_.read_any(join(wai, fr['mvsanywhere_depth']), return_dtype=np.float32)
                 d = np.asarray(d, np.float32)
                 if d.ndim == 3:
@@ -341,7 +376,9 @@ def run_old(args):
             np.savez_compressed(dst + '.tmp.npz', names=np.array(names), rgb=np.stack(rgbs), depth=np.stack(depths),
                                 depth_raw=np.stack(raws), conf=np.stack(confs), mask=np.stack(masks), K=K,
                                 c2w=np.stack(c2ws), all_names=np.array(all_names), all_c2w=all_c2w,
-                                info=np.array(json.dumps(info, default=str)))
+                                info=np.array(json.dumps(info, default=str)),
+                                **(dict(nb_names=np.array(nb_names), nb_depth=np.stack(nb_depths), nb_conf=np.stack(nb_confs),
+                                        nb_c2w=np.stack(nb_c2ws)) if nb_names else {}))
             os.replace(dst + '.tmp.npz', dst)
             status.append(dict(sid=sid, status='ok', frames=len(names), missing=len(miss), sec=round(time.time() - t0, 1)))
             log(f'old {i + 1}/{len(sids)} {sid} 帧 {len(names)}（缺 {len(miss)}）{time.time() - t0:.1f}s')
@@ -349,7 +386,7 @@ def run_old(args):
             status.append(dict(sid=sid, status='error', error=f'{type(exc).__name__}: {exc}'[:300]))
             log(f'old {i + 1}/{len(sids)} {sid} 失败：{type(exc).__name__}: {exc}')
     save_frames_json(args.out, picked)
-    _write_status(args.out, 'old', status)
+    _write_status(args.out, 'old', status, getattr(args, 'shard', ''))
 
 
 # ============================================================================ 2) 新标签（GLR-v3 结果 tar）
@@ -648,7 +685,7 @@ def run_new(args):
     finally:
         shutil.rmtree(work, ignore_errors=True)
     save_frames_json(args.out, picked)
-    _write_status(args.out, 'new', status)
+    _write_status(args.out, 'new', status, getattr(args, 'shard', ''))
 
 
 def _brief_vlm(v):
@@ -657,8 +694,8 @@ def _brief_vlm(v):
     return {k: v.get(k) for k in ('verdict', 'label', 'decision', 'answer', 'reason') if k in v} or None
 
 
-def _write_status(out, what, status):
-    p = osp.join(out, f'status_{what}.json')
+def _write_status(out, what, status, shard=''):
+    p = osp.join(out, f'status_{what}' + (f"_s{shard.replace('/', 'of')}" if shard else '') + '.json')
     with open(p, 'w') as fh:
         json.dump(status, fh, indent=1, ensure_ascii=False)
     c = {}
@@ -1225,6 +1262,245 @@ document.querySelectorAll('#t th').forEach((th,i)=>th.onclick=()=>{{
         fh.write(page)
 
 
+# ============================================================================ 4) 批量扫描：旧标签疑似失败、新标签可靠
+# 每项指标除以阈值，>=1 记一个标签；场景分数 = 各项的最大值。阈值是按 6 场景试点定的起点，扫完看分布再调。
+SCAN_RULES = (
+    # key            说明                                          阈值
+    ('absrel',      '训练像素 AbsRel 高（旧 vs 新）',                0.05),
+    ('bad10',       '训练像素误差>10% 的比例高',                     0.12),
+    ('bad_frames',  '坏帧比例高（单帧 AbsRel>0.08 或 >10% 占 20%+）', 0.25),
+    ('scale',       '整体尺度偏（|log 新/旧| 中位）',                 0.05),
+    ('drift',       '帧间尺度漂移（log p90/p10）',                    math.log(1.10)),
+    ('mv',          '旧深度自身多视图不一致（相邻帧 >5% 比例）',       0.35),
+)
+SCAN_GATE = dict(new_cov=0.04, frames_ok=0.6, min_px=200)   # 新标签可靠的最低要求
+
+
+def old_multiview(old, z_far):
+    """旧深度第 i 帧反投到它的相邻帧（old 步 --neighbor-offset 读的那帧），和相邻帧旧深度比：不依赖新标签的自洽检查。"""
+    if 'nb_depth' not in old:
+        return None
+    K = old['K']
+    H, W = old['depth'].shape[1:]
+    rs, ovs = [], []
+    for i in range(len(old['names'])):
+        if not str(old['nb_names'][i]):
+            continue
+        d = old['depth'][i].astype(np.float64)
+        ys, xs = np.nonzero((d > 0) & (d < z_far))
+        if len(ys) < 200:
+            continue
+        z = d[ys, xs]
+        X = np.stack([(xs + 0.5 - K[0, 2]) / K[0, 0] * z, (ys + 0.5 - K[1, 2]) / K[1, 1] * z, z], 1)
+        Xw = X @ old['c2w'][i][:3, :3].T + old['c2w'][i][:3, 3]
+        w2c = np.linalg.inv(old['nb_c2w'][i])
+        Xc = Xw @ w2c[:3, :3].T + w2c[:3, 3]
+        zz = Xc[:, 2]
+        ok = zz > 1e-6
+        u = np.full(len(zz), -1, np.int64)
+        v = np.full(len(zz), -1, np.int64)
+        u[ok] = np.round(K[0, 0] * Xc[ok, 0] / zz[ok] + K[0, 2] - 0.5).astype(np.int64)
+        v[ok] = np.round(K[1, 1] * Xc[ok, 1] / zz[ok] + K[1, 2] - 0.5).astype(np.int64)
+        inb = ok & (u >= 0) & (u < W) & (v >= 0) & (v < H)
+        dn = np.zeros(len(zz))
+        dn[inb] = old['nb_depth'][i][v[inb], u[inb]].astype(np.float64)
+        sel = inb & (dn > 0) & (dn < z_far)
+        ovs.append(sel.mean())
+        if sel.sum() >= 200:
+            rs.append(np.abs(zz[sel] - dn[sel]) / dn[sel])
+    if not rs:
+        return dict(mv_pairs=0)
+    r = np.concatenate(rs)
+    return dict(mv_pairs=len(rs), mv_overlap=float(np.mean(ovs)), mv_med=float(np.median(r)), mv_bad5=float(np.mean(r > 0.05)))
+
+
+def scan_scene(old, new, z_far):
+    pose, sim = pose_check(old, new)
+    row = dict(pose_rot_med_deg=pose.get('rot_med_deg'), pose_sim3_scale=pose.get('sim3_scale'))
+    if sim is None:
+        row['error'] = 'pose_check 失败（共同帧 <3）'
+        return row, []
+    on = {str(n): i for i, n in enumerate(old['names'])}
+    H, W = old['depth'].shape[1:]
+    frames, po, pn, pin_o, pin_n, pout_o, pout_n = [], [], [], [], [], [], []
+    for j, n in enumerate(map(str, new['names'])):
+        if n not in on:
+            continue
+        i = on[n]
+        Xw, _ = new_points_world(new, j)
+        P = project_old(Xw, sim, old['c2w'][i], old['K'], (H, W), None) if len(Xw) else np.zeros((H, W))
+        od = old['depth'][i].astype(np.float64)
+        tr = (od > 0) & (od < z_far)
+        om = old['mask'][i]
+        m = (P > 0) & tr
+        rec = dict(frame=n, new_valid=float(new['valid'][j].mean()), tr_cov=float(tr.mean()), conf_cov=float(om.mean()),
+                   n_px=int(m.sum()))
+        if m.sum() >= SCAN_GATE['min_px']:
+            rel = np.abs(od[m] - P[m]) / P[m]
+            rec.update(ratio=float(np.median(P[m] / od[m])), absrel=float(rel.mean()), bad10=float(np.mean(rel > 0.1)))
+            rec['bad'] = bool(rec['absrel'] > 0.08 or rec['bad10'] > 0.20)
+            po.append(od[m]), pn.append(P[m])
+            mi, mo = m & om, m & ~om
+            pin_o.append(od[mi]), pin_n.append(P[mi]), pout_o.append(od[mo]), pout_n.append(P[mo])
+        frames.append(rec)
+    good = [f for f in frames if 'absrel' in f]
+    row.update(frames=len(frames), frames_ok=len(good),
+               new_cov=float(np.median([f['new_valid'] for f in frames])) if frames else 0.0,
+               conf_cov=float(np.mean([f['conf_cov'] for f in frames])) if frames else None,
+               tr_cov=float(np.mean([f['tr_cov'] for f in frames])) if frames else None)
+    if good:
+        o, n_ = np.concatenate(po), np.concatenate(pn)
+        rel = np.abs(o - n_) / n_
+        ratios = np.array([f['ratio'] for f in good])
+        row.update(absrel=float(rel.mean()), bad10=float(np.mean(rel > 0.1)),
+                   bad_frames=float(np.mean([f['bad'] for f in good])),
+                   worst_frame_absrel=float(max(f['absrel'] for f in good)),
+                   ratio_med=float(np.median(ratios)),
+                   scale=float(abs(np.log(np.median(ratios)))),
+                   drift=float(np.log(np.percentile(ratios, 90) / max(np.percentile(ratios, 10), 1e-9))) if len(ratios) >= 3 else 0.0)
+        for tag, a, b in (('in_conf', pin_o, pin_n), ('low_conf', pout_o, pout_n)):
+            a, b = np.concatenate(a), np.concatenate(b)
+            if len(b) >= 200:
+                r2 = np.abs(a - b) / b
+                row[f'absrel_{tag}'] = float(r2.mean())
+                row[f'bad10_{tag}'] = float(np.mean(r2 > 0.1))
+    mv = old_multiview(old, z_far)
+    if mv:
+        row.update(mv)
+        if mv.get('mv_pairs'):
+            row['mv'] = mv['mv_bad5']
+    # 打分
+    tags, score = [], 0.0
+    for key, _, th in SCAN_RULES:
+        v = row.get(key)
+        if v is None or not math.isfinite(v):
+            continue
+        x = v / th
+        row[f'x_{key}'] = round(x, 3)
+        score = max(score, x)
+        if x >= 1:
+            tags.append(key)
+    row['score'] = round(score, 3)
+    row['tags'] = ','.join(tags)
+    row['new_reliable'] = bool(row['new_cov'] >= SCAN_GATE['new_cov'] and frames and
+                               row['frames_ok'] >= SCAN_GATE['frames_ok'] * len(frames))
+    if tags and row['new_reliable']:
+        strong = 'mv' in tags and any(t in tags for t in ('absrel', 'bad10', 'bad_frames', 'scale'))
+        row['category'] = '旧疑似失败·新可靠' + ('（强）' if strong else '')
+    elif tags:
+        row['category'] = '有分歧·新标签覆盖不足'
+    elif row['new_reliable']:
+        row['category'] = '一致'
+    else:
+        row['category'] = '新标签覆盖不足'
+    return row, frames
+
+
+def run_scan(args):
+    np.seterr(divide='ignore', over='ignore', invalid='ignore')
+    _font_setup()
+    out = osp.join(args.out, 'scan')
+    for d in ('panels', '3d'):
+        os.makedirs(osp.join(out, d), exist_ok=True)
+    ls = lambda d: {f[:-4] for f in os.listdir(osp.join(args.out, d)) if f.endswith('.npz') and not f.endswith('.tmp.npz')} \
+        if osp.isdir(osp.join(args.out, d)) else set()
+    olds, news = ls('old'), ls('new')
+
+    def statuses(what):
+        st = {}
+        for f in sorted(os.listdir(args.out)):
+            if f.startswith(f'status_{what}') and f.endswith('.json'):
+                for r in json.load(open(osp.join(args.out, f))):
+                    if r.get('status') != 'skip_existing' or r['sid'] not in st:
+                        st[r['sid']] = r
+        return st
+    st_old, st_new = statuses('old'), statuses('new')
+    log(f'旧 npz {len(olds)}，新 npz {len(news)}，两边都有 {len(olds & news)}')
+    rows, frows = [], []
+    for k, name in enumerate(sorted(news)):
+        new = dict(np.load(osp.join(args.out, 'new', name + '.npz')))
+        ninfo = json.loads(str(new['info']))
+        sid = ninfo['sid']
+        base = dict(sid=sid, name=name, quality=ninfo.get('quality_status'), n_registered=ninfo.get('n_registered'))
+        if name not in olds:
+            e = (st_old.get(sid) or {}).get('error', '没有旧 npz')
+            rows.append({**base, 'category': '旧标签缺失/读取失败', 'score': None, 'tags': 'old_missing', 'error': e})
+            continue
+        old = dict(np.load(osp.join(args.out, 'old', name + '.npz')))
+        try:
+            row, frames = scan_scene(old, new, args.z_far)
+        except Exception as exc:  # noqa: BLE001
+            row, frames = dict(category='扫描出错', error=f'{type(exc).__name__}: {exc}'[:200]), []
+        rows.append({**base, **row})
+        for f in frames:
+            frows.append(dict(sid=sid, name=name, **f))
+        if (k + 1) % 20 == 0:
+            log(f'scan {k + 1}/{len(news)}')
+    for sid, r in st_new.items():          # 新标签抽取失败的（多半是 GLR 没打完）
+        if r.get('status') == 'error' and safe(sid) not in news:
+            rows.append(dict(sid=sid, name=safe(sid), category='新标签缺失（GLR 未完成或抽取失败）', score=None,
+                             tags='new_missing', error=r.get('error')))
+    rank = sorted(rows, key=lambda r: (-(r['score'] or -1)))
+    keys = []
+    for r in rank:
+        for kk in r:
+            if kk not in keys:
+                keys.append(kk)
+    with open(osp.join(out, 'scan.csv'), 'w', newline='') as fh:
+        w = csv.DictWriter(fh, fieldnames=keys)
+        w.writeheader()
+        for r in rank:
+            w.writerow({kk: fmt(r.get(kk)) if isinstance(r.get(kk), float) else r.get(kk) for kk in keys})
+    if frows:
+        fk = []
+        for r in frows:
+            for kk in r:
+                if kk not in fk:
+                    fk.append(kk)
+        with open(osp.join(out, 'scan_frames.csv'), 'w', newline='') as fh:
+            w = csv.DictWriter(fh, fieldnames=fk)
+            w.writeheader()
+            for r in frows:
+                w.writerow({kk: fmt(r.get(kk)) if isinstance(r.get(kk), float) else r.get(kk) for kk in fk})
+    cats = {}
+    for r in rows:
+        cats[r['category']] = cats.get(r['category'], 0) + 1
+    rule_hits = {key: sum(1 for r in rows if key in (r.get('tags') or '').split(',')) for key, _, _ in SCAN_RULES}
+    summary = dict(n=len(rows), categories=cats, rule_hits=rule_hits, rules=[dict(key=a, desc=b, thr=c) for a, b, c in SCAN_RULES],
+                   gate=SCAN_GATE, z_far=args.z_far)
+    with open(osp.join(out, 'summary.json'), 'w') as fh:
+        json.dump(summary, fh, indent=1, ensure_ascii=False)
+    log(f'分类：{cats}')
+    log(f'各规则命中：{rule_hits}')
+    # 出图：疑似旧失败的前 K 个 + 分数最低的几个作对照
+    flagged = [r for r in rank if str(r.get('category', '')).startswith('旧疑似失败')][:args.top]
+    calm = [r for r in sorted((r for r in rows if r.get('category') == '一致'), key=lambda r: r['score'])][:args.controls]
+    for r in flagged + calm:
+        name = r['name']
+        try:
+            old = dict(np.load(osp.join(args.out, 'old', name + '.npz')))
+            new = dict(np.load(osp.join(args.out, 'new', name + '.npz')))
+            pose, sim = pose_check(old, new)
+            per, proj, _ = scene_metrics(old, new, sim)
+            png = osp.join(out, 'panels', name + '.png')
+            render_scene_png(r['sid'], old, new, per, proj, png)
+            try:
+                from PIL import Image
+                im = Image.open(png).convert('RGB')
+                w_, h_ = im.size
+                im.resize((1700, round(h_ * 1700 / w_)), Image.LANCZOS).save(png[:-4] + '.jpg', quality=82, optimize=True)
+                os.remove(png)
+            except Exception:  # noqa: BLE001
+                pass
+            render_scene_3d(r['sid'], old, new, sim, osp.join(out, '3d', name + '.html'), max_per_frame=4000)
+            log(f"出图 {name}  {r.get('category')}  score={r.get('score')}  {r.get('tags')}")
+        except Exception as exc:  # noqa: BLE001
+            log(f'出图失败 {name}: {type(exc).__name__}: {exc}')
+    with open(osp.join(out, 'rendered.json'), 'w') as fh:
+        json.dump(dict(flagged=[r['name'] for r in flagged], controls=[r['name'] for r in calm]), fh, indent=1)
+    log(f'扫描结果：{out}/scan.csv（{len(rows)} 行），出图 {len(flagged)} + 对照 {len(calm)}')
+
+
 # ============================================================================ CLI
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[1], formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1240,6 +1516,7 @@ def main(argv=None):
             p.add_argument('--frames', default='', help='指定帧名，逗号分隔（如 frame_00001,frame_00100），所有场景通用')
             p.add_argument('--frames-from', default='', help='另一台机器写的 frames.json，保证两边抽同一组帧')
             p.add_argument('--force', action='store_true', help='已有 npz 也重抽')
+            p.add_argument('--shard', default='', help='i/n：只处理场景清单的第 i 份（共 n 份），多进程并行用')
 
     def old_args(p):
         p.add_argument('--wai-root', default=WAI_ROOT)
@@ -1252,6 +1529,7 @@ def main(argv=None):
         p.add_argument('--no-pct-twice', dest='pct_twice', action='store_false')
         p.add_argument('--apply-trans', action='store_true', help='与 DL3DVDataset(apply_trans=True) 一致（配置里默认 False）')
         p.add_argument('--allow-local-io', action='store_true', help='训练仓库导入失败时也继续（只能读本地文件）')
+        p.add_argument('--neighbor-offset', type=int, default=0, help='>0 时每个抽样帧再读第 +k 帧的旧深度，供 scan 查旧深度自身的多视图一致性')
 
     def new_args(p):
         p.add_argument('--results', default='', help='结果 tar 前缀：obs://.../<run>/results 或本地目录（<子集>/<hash>.tar 或平铺）')
@@ -1265,6 +1543,11 @@ def main(argv=None):
     common(p), new_args(p)
     p = sp.add_parser('report', help='对比报告')
     common(p, scenes=False)
+    p = sp.add_parser('scan', help='批量扫描：给每个场景打「旧标签疑似失败、新标签可靠」的分，排序并为前 K 个出图')
+    common(p, scenes=False)
+    p.add_argument('--top', type=int, default=24, help='为分数最高的前 K 个场景出 12 帧对比图和 3D 页')
+    p.add_argument('--controls', type=int, default=4, help='再为分数最低的几个场景出图，作对照')
+    p.add_argument('--z-far', type=float, default=60.0, help='与训练配置一致（datamix z_far）')
     p = sp.add_parser('all', help='old + new + report（一台机器两边都能读时）')
     common(p), old_args(p), new_args(p)
     args = ap.parse_args(argv)
@@ -1275,6 +1558,8 @@ def main(argv=None):
         run_new(args)
     elif args.cmd == 'report':
         run_report(args)
+    elif args.cmd == 'scan':
+        run_scan(args)
     else:
         run_old(args)
         args.frames_from = ''
