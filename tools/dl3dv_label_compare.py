@@ -134,9 +134,19 @@ class IO:
 
     def copy_to_local(self, src, dst):
         if src.startswith('obs://'):
-            if not self.repo:
-                raise SystemExit('读 obs:// 需要训练仓库的 fileio + moxing')
-            self.fio._mox().file.copy(self.fio.resolve(src), dst)
+            if self.repo:
+                self.fio._mox().file.copy(self.fio.resolve(src), dst)
+                return
+            # new 步骤只需要下载 tar：训练仓库导入失败（如 ROMA 镜像没有 hydra）时直接用 moxing
+            if not hasattr(self, '_mox'):
+                try:
+                    import moxing as mox
+                    mox.file.set_auth(path_style=True, is_secure=False, retry=10, retry_wait=1)
+                    self._mox = mox
+                    log('训练仓库没导入，改用 moxing 直接读 obs://')
+                except Exception as exc:  # noqa: BLE001
+                    raise SystemExit(f'读 obs:// 需要 moxing（{type(exc).__name__}: {exc}）')
+            self._mox.file.copy(src, dst)
         else:
             shutil.copyfile(src, dst)
 
