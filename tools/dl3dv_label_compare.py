@@ -958,9 +958,11 @@ def _font_setup():
     matplotlib.rcParams['axes.unicode_minus'] = False
 
 
-def old_points_world(old, i, sim, max_n, rng):
+def old_points_world(old, i, sim, max_n, rng, z_far=60.0):
+    """旧深度第 i 帧 -> 新（COLMAP）世界。取训练实际监督的像素（depth>0 且 <z_far，conf 掩码不生效），
+    返回 (Xw, rgb, conf_ok)，conf_ok 标记 conf>0.25 的子集。"""
     d, m, K, c2w = old['depth'][i], old['mask'][i], old['K'], old['c2w'][i]
-    ys, xs = np.nonzero(m)
+    ys, xs = np.nonzero((d > 0) & (d < z_far))
     if len(ys) > max_n:
         k = rng.choice(len(ys), max_n, replace=False)
         ys, xs = ys[k], xs[k]
@@ -968,56 +970,145 @@ def old_points_world(old, i, sim, max_n, rng):
     X = np.stack([(xs + 0.5 - K[0, 2]) / K[0, 0] * z, (ys + 0.5 - K[1, 2]) / K[1, 1] * z, z], 1)
     Xw = X @ c2w[:3, :3].T + c2w[:3, 3]
     s, R, t = sim
-    return (s * (Xw @ R.T)) + t, old['rgb'][i][ys, xs]
+    return (s * (Xw @ R.T)) + t, old['rgb'][i][ys, xs, :3], m[ys, xs]
+
+
+def _b64(a):
+    import base64
+    return base64.b64encode(np.ascontiguousarray(a).tobytes()).decode()
 
 
 def render_scene_3d(sid, old, new, sim, dest, max_per_frame=6000):
-    """plotly 3D：旧深度点（橙）、新深度点（蓝）、最终 PLY（原色）、两边相机中心。全部在新（COLMAP）世界。"""
+    """左右两个 3D 视图（同步视角）：左 = 旧深度点（训练实际像素），右 = 新深度点；都在新（COLMAP）世界。
+    颜色可切换：原图 RGB / 单色 / 按帧；旧点可切换只看 conf>0.25。点数据用 base64 嵌入，页面体积小。"""
     rng = np.random.default_rng(0)
     on = {str(n): i for i, n in enumerate(old['names'])}
-    traces = []
-
-    def sc(xyz, name, color=None, rgb=None, size=1.5, visible=True):
-        if len(xyz) == 0:
-            return
-        if rgb is not None:
-            col = [f'rgb({a},{b},{c})' for a, b, c in rgb.tolist()]
-        else:
-            col = color
-        traces.append(dict(type='scatter3d', mode='markers', name=name, x=np.round(xyz[:, 0], 4).tolist(),
-                           y=np.round(xyz[:, 1], 4).tolist(), z=np.round(xyz[:, 2], 4).tolist(),
-                           marker=dict(size=size, color=col, opacity=0.8), visible=True if visible else 'legendonly'))
-
-    olds, newp = [], []
-    for j, n in enumerate(map(str, new['names'])):
+    O = dict(xyz=[], rgb=[], conf=[], fid=[])
+    N = dict(xyz=[], rgb=[], fid=[])
+    frames = [str(n) for n in new['names']]
+    for j, n in enumerate(frames):
         if n in on and sim is not None:
-            olds.append(old_points_world(old, on[n], sim, max_per_frame, rng)[0])
+            Xw, rgb, ok = old_points_world(old, on[n], sim, max_per_frame, rng)
+            O['xyz'].append(Xw); O['rgb'].append(rgb); O['conf'].append(ok); O['fid'].append(np.full(len(Xw), j))
+        d, v = new['depth'][j], new['valid'][j]
+        ys, xs = np.nonzero(v)
         Xw, _ = new_points_world(new, j)
+        rgb = new['rgb'][j][ys, xs, :3]
         if len(Xw) > max_per_frame:
-            Xw = Xw[rng.choice(len(Xw), max_per_frame, replace=False)]
-        newp.append(Xw)
-    if olds:
-        sc(np.concatenate(olds), '旧深度（mvsanywhere，Sim3 对齐到新世界）', color='rgb(255,140,0)')
-    if newp:
-        sc(np.concatenate(newp), '新深度（RoMa 投影）', color='rgb(30,110,255)')
-    if len(new['ply_xyz']):
-        sc(new['ply_xyz'], '最终点云 points3D.ply（原色）', rgb=new['ply_rgb'], size=1.2, visible=False)
+            k = rng.choice(len(Xw), max_per_frame, replace=False)
+            Xw, rgb = Xw[k], rgb[k]
+        N['xyz'].append(Xw); N['rgb'].append(rgb); N['fid'].append(np.full(len(Xw), j))
+
+    def pack(D):
+        if not D['xyz']:
+            return dict(n=0)
+        out = dict(n=int(sum(len(x) for x in D['xyz'])),
+                   xyz=_b64(np.concatenate(D['xyz']).astype(np.float32)),
+                   rgb=_b64(np.concatenate(D['rgb']).astype(np.uint8)),
+                   fid=_b64(np.concatenate(D['fid']).astype(np.uint8)))
+        if 'conf' in D:
+            out['conf'] = _b64(np.concatenate(D['conf']).astype(np.uint8))
+        return out
+
     cn = np.stack([np.linalg.inv(w)[:3, 3] for w in new['all_w2c']])
-    traces.append(dict(type='scatter3d', mode='lines', name='新相机轨迹', x=cn[:, 0].tolist(), y=cn[:, 1].tolist(),
-                       z=cn[:, 2].tolist(), line=dict(color='rgb(30,110,255)', width=3)))
+    # 场景的「上」方向：OpenCV 相机 -y 轴在世界里的平均方向
+    up = -np.mean([np.linalg.inv(w)[:3, 1] for w in new['all_w2c']], 0)
+    up = up / max(np.linalg.norm(up), 1e-9)
+    co = None
     if sim is not None:
-        s, R, t = sim
-        co = old['all_c2w'][:, :3, 3]
-        co = (s * (co @ R.T)) + t
-        traces.append(dict(type='scatter3d', mode='lines', name='旧相机轨迹（对齐后）', x=co[:, 0].tolist(),
-                           y=co[:, 1].tolist(), z=co[:, 2].tolist(), line=dict(color='rgb(255,140,0)', width=3, dash='dash')))
-    layout = dict(title=sid, scene=dict(aspectmode='data'), legend=dict(x=0, y=1), margin=dict(l=0, r=0, t=40, b=0))
-    page = f"""<!doctype html><html><head><meta charset="utf-8"><title>{html.escape(sid)} 3D</title>
-<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
-<style>body{{margin:0;font-family:sans-serif}}#p{{width:100vw;height:100vh}}</style></head><body><div id="p"></div>
-<script>Plotly.newPlot('p',{json.dumps(traces)},{json.dumps(layout)});</script></body></html>"""
+        s_, R_, t_ = sim
+        co = ((s_ * (old['all_c2w'][:, :3, 3] @ R_.T)) + t_)
+    data = dict(sid=sid, old=pack(O), new=pack(N), frames=frames, up=up.round(4).tolist(),
+                cam_new=np.round(cn, 4).tolist(), cam_old=None if co is None else np.round(co, 4).tolist())
+    page = _3D_TEMPLATE.replace('%%TITLE%%', html.escape(sid)).replace('%%DATA%%', json.dumps(data))
     with open(dest, 'w') as fh:
         fh.write(page)
+
+
+_3D_TEMPLATE = r"""<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>%%TITLE%% 3D 对比</title>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<style>
+:root{--bg:#fff;--fg:#1d1d1f;--mut:#6b6b70;--line:#d9d9de;--chip:#f2f2f5;--acc:#2563eb}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121214;--fg:#ececf0;--mut:#9a9aa3;--line:#2c2c31;--chip:#1e1e22;--acc:#6ea0ff}}
+:root[data-theme="dark"]{--bg:#121214;--fg:#ececf0;--mut:#9a9aa3;--line:#2c2c31;--chip:#1e1e22;--acc:#6ea0ff}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:13px/1.45 -apple-system,"PingFang SC","Noto Sans SC",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line)}
+header h1{font-size:14px;margin:0;font-weight:600;word-break:break-all}
+.ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ctl span{color:var(--mut)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{border:0;background:var(--chip);color:var(--fg);padding:4px 9px;font:inherit;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--acc);color:#fff}
+input[type=range]{width:90px}
+main{display:grid;grid-template-columns:1fr 1fr;height:calc(100% - 50px)}
+.pane{position:relative;min-height:0;border-right:1px solid var(--line)}
+.pane:last-child{border-right:0}
+.pane h2{position:absolute;z-index:2;top:6px;left:10px;margin:0;font-size:13px;font-weight:600;background:color-mix(in srgb,var(--bg) 80%,transparent);padding:2px 6px;border-radius:4px}
+.pane h2 small{font-weight:400;color:var(--mut);margin-left:6px}
+.plot{position:absolute;inset:0}
+@media (max-width:760px){main{grid-template-columns:1fr;grid-template-rows:1fr 1fr;height:auto}.pane{height:60vh;border-right:0;border-bottom:1px solid var(--line)}}
+</style></head><body>
+<header><h1>%%TITLE%%</h1>
+<div class="ctl"><span>颜色</span><div class="seg" id="cm">
+<button data-v="rgb" aria-pressed="true">原图 RGB</button><button data-v="solid" aria-pressed="false">单色</button><button data-v="frame" aria-pressed="false">按帧</button></div></div>
+<div class="ctl"><span>旧点</span><div class="seg" id="om">
+<button data-v="train" aria-pressed="true">训练实际像素</button><button data-v="conf" aria-pressed="false">仅 conf&gt;0.25</button></div></div>
+<div class="ctl"><span>点大小</span><input id="ps" type="range" min="0.5" max="4" step="0.25" value="1.5"></div>
+<div class="ctl"><span>帧</span><select id="fr"><option value="-1">全部</option></select></div>
+</header>
+<main>
+<div class="pane"><h2>旧标签 · mvsanywhere<small id="on"></small></h2><div class="plot" id="pL"></div></div>
+<div class="pane"><h2>新标签 · GLR RoMa<small id="nn"></small></h2><div class="plot" id="pR"></div></div>
+</main>
+<script>
+const D = %%DATA%%;
+function dec(b64, T){const s=atob(b64),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return new T(u.buffer)}
+function unpack(P){if(!P.n)return null;const x=dec(P.xyz,Float32Array),c=dec(P.rgb,Uint8Array),f=dec(P.fid,Uint8Array);
+  const o={n:P.n,X:new Float32Array(P.n),Y:new Float32Array(P.n),Z:new Float32Array(P.n),rgb:c,fid:f,conf:P.conf?dec(P.conf,Uint8Array):null};
+  for(let i=0;i<P.n;i++){o.X[i]=x[3*i];o.Y[i]=x[3*i+1];o.Z[i]=x[3*i+2]}return o}
+const OLD=unpack(D.old), NEW=unpack(D.new);
+const st={cm:'rgb',om:'train',ps:1.5,fr:-1};
+const fsel=document.getElementById('fr');D.frames.forEach((n,i)=>{const o=document.createElement('option');o.value=i;o.textContent=n;fsel.appendChild(o)});
+function frameColor(i,n){const h=(i/Math.max(n,1))*300;return `hsl(${h},75%,50%)`}
+function build(P,solid,isOld){
+  if(!P)return {x:[],y:[],z:[],c:[],k:0};
+  const x=[],y=[],z=[],c=[];
+  for(let i=0;i<P.n;i++){
+    if(st.fr>=0&&P.fid[i]!=st.fr)continue;
+    if(isOld&&st.om==='conf'&&P.conf&&!P.conf[i])continue;
+    x.push(P.X[i]);y.push(P.Y[i]);z.push(P.Z[i]);
+    c.push(st.cm==='rgb'?`rgb(${P.rgb[3*i]},${P.rgb[3*i+1]},${P.rgb[3*i+2]})`:st.cm==='solid'?solid:frameColor(P.fid[i],D.frames.length));
+  }return {x,y,z,c,k:x.length}}
+function cams(){const t=[];const L=(p,name,col,dash)=>p&&t.push({type:'scatter3d',mode:'lines',name,x:p.map(q=>q[0]),y:p.map(q=>q[1]),z:p.map(q=>q[2]),line:{color:col,width:3,dash},hoverinfo:'name',showlegend:false});
+  L(D.cam_new,'新相机轨迹','#2563eb','solid');L(D.cam_old,'旧相机轨迹','#d97706','dash');return t}
+// 两侧用同一坐标范围，保证同步视角时比例一致
+function range(){let lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];for(const P of [OLD,NEW]){if(!P)continue;const A=[P.X,P.Y,P.Z];
+  for(let a=0;a<3;a++){const s=Array.from(A[a]).sort((u,v)=>u-v);lo[a]=Math.min(lo[a],s[Math.floor(s.length*.01)]);hi[a]=Math.max(hi[a],s[Math.floor(s.length*.99)])}}
+  return [lo,hi]}
+const [LO,HI]=range();const span=Math.max(HI[0]-LO[0],HI[1]-LO[1],HI[2]-LO[2]);
+function ax(a){const m=(LO[a]+HI[a])/2;return {range:[m-span*.55,m+span*.55],visible:false}}
+const layout=()=>({margin:{l:0,r:0,t:0,b:0},paper_bgcolor:'rgba(0,0,0,0)',font:{color:getComputedStyle(document.body).color},
+  scene:{xaxis:ax(0),yaxis:ax(1),zaxis:ax(2),aspectmode:'cube',camera:{up:{x:D.up[0],y:D.up[1],z:D.up[2]}}},showlegend:false,uirevision:'keep'});
+function draw(){
+  const o=build(OLD,'#d97706',true),n=build(NEW,'#2563eb',false);
+  document.getElementById('on').textContent=`${o.k.toLocaleString()} 点`;document.getElementById('nn').textContent=`${n.k.toLocaleString()} 点`;
+  const tr=(b,name)=>({type:'scatter3d',mode:'markers',name,x:b.x,y:b.y,z:b.z,marker:{size:st.ps,color:b.c,opacity:.9},hoverinfo:'skip'});
+  Plotly.react('pL',[tr(o,'旧'),...cams()],layout(),{displaylogo:false,responsive:true});
+  Plotly.react('pR',[tr(n,'新'),...cams()],layout(),{displaylogo:false,responsive:true});
+}
+draw();
+// 同步视角：拖动一侧，另一侧跟随
+let lock=false;
+function sync(src,dst){document.getElementById(src).on('plotly_relayout',e=>{if(lock)return;const cam=e['scene.camera'];if(!cam)return;
+  lock=true;Plotly.relayout(dst,{'scene.camera':cam}).then(()=>{lock=false})})}
+sync('pL','pR');sync('pR','pL');
+function seg(id,key){document.querySelectorAll(`#${id} button`).forEach(b=>b.onclick=()=>{document.querySelectorAll(`#${id} button`).forEach(x=>x.setAttribute('aria-pressed',x===b));st[key]=b.dataset.v;draw()})}
+seg('cm','cm');seg('om','om');
+document.getElementById('ps').oninput=e=>{st.ps=+e.target.value;draw()};
+fsel.onchange=e=>{st.fr=+e.target.value;draw()};
+</script></body></html>"""
 
 
 def fmt(v, nd=3):
