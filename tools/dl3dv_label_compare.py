@@ -1068,13 +1068,14 @@ def _font_setup():
     matplotlib.rcParams['axes.unicode_minus'] = False
 
 
-def old_points_world(old, i, sim, max_n, rng, z_far=60.0):
+def old_points_world(old, i, sim, max_n, rng, z_far=60.0, rate=None):
     """旧深度第 i 帧 -> 新（COLMAP）世界。取训练实际监督的像素（depth>0 且 <z_far，conf 掩码不生效），
-    返回 (Xw, rgb, conf_ok)，conf_ok 标记 conf>0.25 的子集。"""
+    返回 (Xw, rgb, conf_ok)，conf_ok 标记 conf>0.25 的子集。rate 给定时按这个比例随机抽（与新标签同一采样率）。"""
     d, m, K, c2w = old['depth'][i], old['mask'][i], old['K'], old['c2w'][i]
     ys, xs = np.nonzero((d > 0) & (d < z_far))
-    if len(ys) > max_n:
-        k = rng.choice(len(ys), max_n, replace=False)
+    n_keep = len(ys) if rate is None and len(ys) <= max_n else (max_n if rate is None else int(round(len(ys) * rate)))
+    if n_keep < len(ys):
+        k = rng.choice(len(ys), n_keep, replace=False)
         ys, xs = ys[k], xs[k]
     z = d[ys, xs].astype(np.float64)
     X = np.stack([(xs + 0.5 - K[0, 2]) / K[0, 0] * z, (ys + 0.5 - K[1, 2]) / K[1, 1] * z, z], 1)
@@ -1088,24 +1089,34 @@ def _b64(a):
     return base64.b64encode(np.ascontiguousarray(a).tobytes()).decode()
 
 
-def render_scene_3d(sid, old, new, sim, dest, max_per_frame=6000):
+def render_scene_3d(sid, old, new, sim, dest, max_per_frame=12000, z_far=60.0):
     """左右两个 3D 视图（同步视角）：左 = 旧深度点（训练实际像素），右 = 新深度点；都在新（COLMAP）世界。
+    两边按【同一采样率】抽点（每帧旧训练像素抽到 max_per_frame 为止，新标签用相同比例），显示的点数之比 = 真实像素数之比。
     颜色可切换：原图 RGB / 单色 / 按帧；旧点可切换只看 conf>0.25。点数据用 base64 嵌入，页面体积小。"""
+    true = dict(old=0, old_conf=0, new=0)
     rng = np.random.default_rng(0)
     on = {str(n): i for i, n in enumerate(old['names'])}
     O = dict(xyz=[], rgb=[], conf=[], fid=[])
     N = dict(xyz=[], rgb=[], fid=[])
     frames = [str(n) for n in new['names']]
     for j, n in enumerate(frames):
+        rate = 1.0
         if n in on and sim is not None:
-            Xw, rgb, ok = old_points_world(old, on[n], sim, max_per_frame, rng)
+            i = on[n]
+            dd = old['depth'][i]
+            tr = (dd > 0) & (dd < z_far)
+            true['old'] += int(tr.sum()); true['old_conf'] += int((tr & old['mask'][i]).sum())
+            rate = min(1.0, max_per_frame / max(int(tr.sum()), 1))
+            Xw, rgb, ok = old_points_world(old, i, sim, max_per_frame, rng, z_far, rate=rate)
             O['xyz'].append(Xw); O['rgb'].append(rgb); O['conf'].append(ok); O['fid'].append(np.full(len(Xw), j))
         d, v = new['depth'][j], new['valid'][j]
         ys, xs = np.nonzero(v)
+        true['new'] += int(len(ys))
         Xw, _ = new_points_world(new, j)
         rgb = new['rgb'][j][ys, xs, :3]
-        if len(Xw) > max_per_frame:
-            k = rng.choice(len(Xw), max_per_frame, replace=False)
+        n_keep = int(round(len(Xw) * rate))
+        if n_keep < len(Xw):
+            k = rng.choice(len(Xw), n_keep, replace=False)
             Xw, rgb = Xw[k], rgb[k]
         N['xyz'].append(Xw); N['rgb'].append(rgb); N['fid'].append(np.full(len(Xw), j))
 
@@ -1128,7 +1139,7 @@ def render_scene_3d(sid, old, new, sim, dest, max_per_frame=6000):
     if sim is not None:
         s_, R_, t_ = sim
         co = ((s_ * (old['all_c2w'][:, :3, 3] @ R_.T)) + t_)
-    data = dict(sid=sid, old=pack(O), new=pack(N), frames=frames, up=up.round(4).tolist(),
+    data = dict(sid=sid, old=pack(O), new=pack(N), frames=frames, up=up.round(4).tolist(), true=true, nf=len(frames),
                 cam_new=np.round(cn, 4).tolist(), cam_old=None if co is None else np.round(co, 4).tolist())
     page = _3D_TEMPLATE.replace('%%TITLE%%', html.escape(sid)).replace('%%DATA%%', json.dumps(data))
     with open(dest, 'w') as fh:
@@ -1146,6 +1157,7 @@ _3D_TEMPLATE = r"""<!doctype html><html lang="zh"><head><meta charset="utf-8">
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:13px/1.45 -apple-system,"PingFang SC","Noto Sans SC",sans-serif}
 header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line)}
 header h1{font-size:14px;margin:0;font-weight:600;word-break:break-all}
+.hint{margin:0;color:var(--mut);font-size:12px}
 .ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .ctl span{color:var(--mut)}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
@@ -1167,6 +1179,7 @@ main{display:grid;grid-template-columns:1fr 1fr;height:calc(100% - 50px)}
 <button data-v="train" aria-pressed="true">训练实际像素</button><button data-v="conf" aria-pressed="false">仅 conf&gt;0.25</button></div></div>
 <div class="ctl"><span>点大小</span><input id="ps" type="range" min="0.5" max="4" step="0.25" value="1.5"></div>
 <div class="ctl"><span>帧</span><select id="fr"><option value="-1">全部</option></select></div>
+<p class="hint">两边按同一采样率抽点，显示的点数之比 = 实际像素数之比</p>
 </header>
 <main>
 <div class="pane"><h2>旧标签 · mvsanywhere<small id="on"></small></h2><div class="plot" id="pL"></div></div>
@@ -1203,7 +1216,10 @@ const layout=()=>({margin:{l:0,r:0,t:0,b:0},paper_bgcolor:'rgba(0,0,0,0)',font:{
   scene:{xaxis:ax(0),yaxis:ax(1),zaxis:ax(2),aspectmode:'cube',camera:{up:{x:D.up[0],y:D.up[1],z:D.up[2]}}},showlegend:false,uirevision:'keep'});
 function draw(){
   const o=build(OLD,'#d97706',true),n=build(NEW,'#2563eb',false);
-  document.getElementById('on').textContent=`${o.k.toLocaleString()} 点`;document.getElementById('nn').textContent=`${n.k.toLocaleString()} 点`;
+  const nf=st.fr>=0?1:D.nf, per=(x)=>Math.round(x/D.nf).toLocaleString();
+  const ot=st.om==='conf'?D.true.old_conf:D.true.old;
+  document.getElementById('on').textContent=`显示 ${o.k.toLocaleString()} 点 · 每帧实际 ${per(ot)} 像素`;
+  document.getElementById('nn').textContent=`显示 ${n.k.toLocaleString()} 点 · 每帧实际 ${per(D.true.new)} 像素`;
   const tr=(b,name)=>({type:'scatter3d',mode:'markers',name,x:b.x,y:b.y,z:b.z,marker:{size:st.ps,color:b.c,opacity:.9},hoverinfo:'skip'});
   Plotly.react('pL',[tr(o,'旧'),...cams()],layout(),{displaylogo:false,responsive:true});
   Plotly.react('pR',[tr(n,'新'),...cams()],layout(),{displaylogo:false,responsive:true});
@@ -1708,7 +1724,7 @@ def run_scan(args):
                 os.remove(png)
             except Exception:  # noqa: BLE001
                 pass
-            render_scene_3d(r['sid'], old, new, sim, osp.join(out, '3d', name + '.html'), max_per_frame=4000)
+            render_scene_3d(r['sid'], old, new, sim, osp.join(out, '3d', name + '.html'), max_per_frame=8000)
             log(f"出图 {name}  {r.get('category')}  score={r.get('score')}  {r.get('tags')}")
         except Exception as exc:  # noqa: BLE001
             log(f'出图失败 {name}: {type(exc).__name__}: {exc}')
